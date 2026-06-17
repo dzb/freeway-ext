@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jujin8.freeway</groupId>
+        <artifactId>freeway-parent</artifactId>
+        <version>1.2.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>freeway-ext</artifactId>
+    <packaging>pom</packaging>
+
+    <name>Freeway :: Extensions</name>
+    <description>
+        Adapter modules for the Freeway framework.
+        Each module pulls in a specific third-party dependency on top of the lightweight core.
+    </description>
+    <url>https://github.com/dzb/freeway-ext</url>
+
+    <properties>
+        <freeway.version>1.2.0-SNAPSHOT</freeway.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-commons</artifactId>
+                <version>${freeway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-ioc</artifactId>
+                <version>${freeway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-http</artifactId>
+                <version>${freeway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-http</artifactId>
+                <version>${freeway.version}</version>
+                <type>test-jar</type>
+                <classifier>tests</classifier>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-boot</artifactId>
+                <version>${freeway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.jujin8.freeway</groupId>
+                <artifactId>freeway-db</artifactId>
+                <version>${freeway.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <modules>
+        <module>freeway-http-robaho</module>
+        <module>freeway-http-undertow</module>
+        <module>freeway-http-jetty</module>
+        <module>freeway-mq-kafka</module>
+        <module>freeway-db-hikari</module>
+    </modules>
+</project>

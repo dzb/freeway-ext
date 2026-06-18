@@ -18,7 +18,7 @@ Add the Maven Central snapshot repository, then pick the modules you need:
 ```xml
 <dependency>
     <groupId>com.jujin8.freeway</groupId>
-    <artifactId>freeway-http-underto</artifactId>
+    <artifactId>freeway-http-undertow</artifactId>
     <version>${freeway.version}</version>
 </dependency>
 ```

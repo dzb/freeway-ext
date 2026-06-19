@@ -35,16 +35,17 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
 
     @Override
     public void send(String topic, Object event) {
+        byte[] bytes;
         try {
-            byte[] bytes = codec.toJson(event).getBytes(StandardCharsets.UTF_8);
-            var record = new ProducerRecord<String, byte[]>(topic, null, bytes);
-            record.headers().add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
-            producer.send(record, (meta, ex) -> {
-                if (ex != null) LOG.warn("Kafka send failed for topic '{}'", topic, ex);
-            });
+            bytes = codec.toJson(event).getBytes(StandardCharsets.UTF_8);
         } catch (Exception ex) {
-            LOG.warn("Failed to serialize event for topic '{}'", topic, ex);
+            throw new RuntimeException("Failed to serialize event for topic '" + topic + "'", ex);
         }
+        var record = new ProducerRecord<String, byte[]>(topic, null, bytes);
+        record.headers().add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
+        producer.send(record, (meta, ex) -> {
+            if (ex != null) LOG.warn("Kafka send failed for topic '{}'", topic, ex);
+        });
     }
 
     @Override

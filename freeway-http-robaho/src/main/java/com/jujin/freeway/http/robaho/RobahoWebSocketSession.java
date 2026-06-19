@@ -39,7 +39,8 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
         this.headers = snapshotHeaders(exchange);
     }
 
-    private final StringBuilder continuationBuffer = new StringBuilder();
+    private final StringBuilder textBuffer = new StringBuilder();
+    private java.io.ByteArrayOutputStream binaryBuffer;
     private boolean continuationIsText;
 
     @Override
@@ -69,23 +70,33 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
             OpCode opCode = frame.getOpCode();
             if (opCode == OpCode.Text) {
                 continuationIsText = true;
-                continuationBuffer.setLength(0);
-                continuationBuffer.append(frame.getTextPayload());
-                listener.onText(frame.getTextPayload());
+                textBuffer.setLength(0);
+                textBuffer.append(frame.getTextPayload());
+                if (frame.isFin()) {
+                    listener.onText(textBuffer.toString());
+                }
             } else if (opCode == OpCode.Binary) {
                 continuationIsText = false;
-                continuationBuffer.setLength(0);
-                listener.onBinary(frame.getBinaryPayload());
+                binaryBuffer = new java.io.ByteArrayOutputStream();
+                binaryBuffer.write(frame.getBinaryPayload());
+                if (frame.isFin()) {
+                    listener.onBinary(binaryBuffer.toByteArray());
+                }
             } else if (opCode == OpCode.Continuation) {
                 if (continuationIsText) {
-                    String text = frame.getTextPayload();
-                    continuationBuffer.append(text);
-                    listener.onText(continuationBuffer.toString());
+                    textBuffer.append(frame.getTextPayload());
+                    if (frame.isFin()) {
+                        listener.onText(textBuffer.toString());
+                        textBuffer.setLength(0);
+                    }
                 } else {
-                    byte[] data = frame.getBinaryPayload();
-                    listener.onBinary(data);
+                    binaryBuffer.write(frame.getBinaryPayload());
+                    if (frame.isFin()) {
+                        listener.onBinary(binaryBuffer.toByteArray());
+                        binaryBuffer.close();
+                        binaryBuffer = null;
+                    }
                 }
-                continuationBuffer.setLength(0);
             }
         } catch (Exception ex) {
             LOG.warn("WebSocket listener onMessage failed for {}", frame.getOpCode(), ex);
@@ -145,13 +156,13 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
 
     @Override
     public String header(String name) {
-        List<String> values = headers.get(name);
+        List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
         return values != null && !values.isEmpty() ? values.get(0) : null;
     }
 
     @Override
     public List<String> headers(String name) {
-        return headers.getOrDefault(name, List.of());
+        return headers.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), List.of());
     }
 
     @Override
@@ -194,20 +205,33 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
     @Override
     public void close(int code, String reason) throws IOException {
         CloseCode closeCode = CloseCode.find(code);
-        if (closeCode == null) {
-            if (code < 3000 || code > 4999) {
-                throw new IllegalArgumentException("Unsupported websocket close code: " + code
-                    + ". Standard codes: 1000-1015, registered: 3000-3999, private: 4000-4999");
-            }
-            closeCode = CloseCode.GoingAway;
+        if (closeCode != null) {
+            super.close(closeCode, reason, false);
+            return;
         }
-        super.close(closeCode, reason, false);
+        if (code < 3000 || code > 4999) {
+            throw new IllegalArgumentException("Unsupported websocket close code: " + code
+                + ". Standard codes: 1000-1015, registered: 3000-3999, private: 4000-4999");
+        }
+        // Custom code (3xxx/4xxx): send raw close frame with the real code,
+        // then call super.close() to transition the state machine to CLOSING.
+        // The second close frame (GoingAway) is redundant but harmless —
+        // the peer already received the correct code in the first frame.
+        byte[] reasonBytes = reason != null
+            ? reason.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+            : new byte[0];
+        byte[] payload = new byte[2 + reasonBytes.length];
+        payload[0] = (byte) (code >> 8);
+        payload[1] = (byte) code;
+        System.arraycopy(reasonBytes, 0, payload, 2, reasonBytes.length);
+        super.sendFrame(new WebSocketFrame(OpCode.Close, true, payload));
+        super.close(CloseCode.GoingAway, reason, false);
     }
 
     private static Map<String, List<String>> snapshotHeaders(HttpExchange exchange) {
         LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
         exchange.getRequestHeaders().forEach((name, values) -> {
-            headers.put(name, List.copyOf(values));
+            headers.put(name.toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
         });
         return Map.copyOf(headers);
     }

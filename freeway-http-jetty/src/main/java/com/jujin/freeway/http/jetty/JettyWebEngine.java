@@ -128,7 +128,7 @@ final class JettyWebEngine implements HttpEngine {
         String upgrade = request.getHeaders().get("Upgrade");
         String connection = request.getHeaders().get("Connection");
         return upgrade != null && "websocket".equalsIgnoreCase(upgrade)
-            && connection != null && connection.toLowerCase().contains("upgrade");
+            && connection != null && connection.toLowerCase(java.util.Locale.ROOT).contains("upgrade");
     }
 
     private static String method(Request request) {
@@ -158,7 +158,7 @@ final class JettyWebEngine implements HttpEngine {
         LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
         for (String name : request.getHeaders().getFieldNamesCollection()) {
             List<String> values = new ArrayList<>(request.getHeaders().getValuesList(name));
-            headers.put(name, List.copyOf(values));
+            headers.put(name.toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
         }
         return Map.copyOf(headers);
     }

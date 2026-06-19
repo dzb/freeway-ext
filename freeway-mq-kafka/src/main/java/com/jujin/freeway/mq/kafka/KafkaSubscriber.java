@@ -38,6 +38,7 @@ public class KafkaSubscriber implements AutoCloseable {
         props.put("group.id", config.groupId());
         props.put("key.deserializer", StringDeserializer.class.getName());
         props.put("value.deserializer", ByteArrayDeserializer.class.getName());
+        props.put("enable.auto.commit", "false");
         props.put("auto.offset.reset", "earliest");
         this.consumer = new KafkaConsumer<>(props);
     }
@@ -53,7 +54,8 @@ public class KafkaSubscriber implements AutoCloseable {
     private void pollLoop() {
         while (running) {
             try {
-                for (var record : consumer.poll(Duration.ofSeconds(1))) {
+                var records = consumer.poll(Duration.ofSeconds(1));
+                for (var record : records) {
                     try {
                         Defer.within(() -> {
                             Object event;
@@ -65,11 +67,15 @@ public class KafkaSubscriber implements AutoCloseable {
                             bus.publish(record.topic(), event);
                         });
                     } catch (Exception e) {
-                        LOG.warn("Failed to process Kafka message from '{}'", record.topic(), e);
+                        LOG.warn("Failed to process Kafka message from '{}' at offset {}; skipping",
+                            record.topic(), record.offset(), e);
                     }
                 }
+                if (!records.isEmpty()) {
+                    consumer.commitSync();
+                }
             } catch (Exception e) {
-                if (running) LOG.warn("Kafka poll failed", e);
+                if (running) LOG.warn("Kafka poll or commit failed; will retry", e);
             }
         }
     }

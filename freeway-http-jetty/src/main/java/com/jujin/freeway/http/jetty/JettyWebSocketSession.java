@@ -78,13 +78,13 @@ final class JettyWebSocketSession implements WebSocketSession {
 
     @Override
     public String header(String name) {
-        List<String> values = headers.get(name);
+        List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
         return values != null && !values.isEmpty() ? values.get(0) : null;
     }
 
     @Override
     public List<String> headers(String name) {
-        return headers.getOrDefault(name, List.of());
+        return headers.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), List.of());
     }
 
     @Override

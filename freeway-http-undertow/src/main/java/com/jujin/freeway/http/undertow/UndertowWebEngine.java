@@ -119,7 +119,7 @@ final class UndertowWebEngine implements HttpEngine {
         String upgrade = exchange.getRequestHeaders().getFirst(Headers.UPGRADE);
         String connection = exchange.getRequestHeaders().getFirst(Headers.CONNECTION);
         return upgrade != null && "websocket".equalsIgnoreCase(upgrade)
-            && connection != null && connection.toLowerCase().contains("upgrade");
+            && connection != null && connection.toLowerCase(java.util.Locale.ROOT).contains("upgrade");
     }
 
     private static String method(HttpServerExchange exchange) {
@@ -150,7 +150,7 @@ final class UndertowWebEngine implements HttpEngine {
             for (String value : exchange.getRequestHeaders().get(name)) {
                 values.add(value);
             }
-            headers.put(name.toString(), List.copyOf(values));
+            headers.put(name.toString().toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
         }
         return Map.copyOf(headers);
     }

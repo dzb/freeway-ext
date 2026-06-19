@@ -36,8 +36,9 @@ public final class HikariPool implements Pool {
     @Override
     public PooledConnection borrow() {
         try {
+            Connection conn = ds.getConnection();
             borrowCount.incrementAndGet();
-            return new HkConn(ds.getConnection());
+            return new HkConn(conn);
         } catch (SQLException e) {
             throw new SqlException("Failed to borrow connection", e);
         }

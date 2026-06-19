@@ -91,7 +91,10 @@ final class UndertowWebSocketSession implements WebSocketSession {
 
             @Override
             protected void onError(WebSocketChannel channel, Throwable error) {
-                UndertowWebSocketSession.this.listener.onError(error);
+                try {
+                    UndertowWebSocketSession.this.listener.onError(error);
+                } catch (Exception ignored) {
+                }
             }
         });
         channel.resumeReceives();

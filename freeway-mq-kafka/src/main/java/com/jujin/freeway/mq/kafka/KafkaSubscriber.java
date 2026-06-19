@@ -24,6 +24,7 @@ public class KafkaSubscriber implements AutoCloseable {
     private final JsonCodec codec;
     private final KafkaConfig config;
     private volatile boolean running;
+    private volatile Thread pollThread;
 
     public KafkaSubscriber(KafkaConfig config, EventBus bus) {
         this(config, bus, new JsonCodecDefault());
@@ -47,7 +48,7 @@ public class KafkaSubscriber implements AutoCloseable {
         if (config.topics().isEmpty()) return;
         running = true;
         consumer.subscribe(config.topics());
-        Thread.ofVirtual().name("freeway-kafka-subscriber").start(this::pollLoop);
+        pollThread = Thread.ofVirtual().name("freeway-kafka-subscriber").start(this::pollLoop);
         LOG.info("Kafka subscriber started for topics: {}", config.topics());
     }
 
@@ -57,18 +58,16 @@ public class KafkaSubscriber implements AutoCloseable {
                 var records = consumer.poll(Duration.ofSeconds(1));
                 for (var record : records) {
                     try {
-                        Defer.within(() -> {
-                            Object event;
-                            try {
-                                event = deserialize(record);
-                            } catch (Exception e) {
-                                throw new RuntimeException(e);
-                            }
-                            bus.publish(record.topic(), event);
-                        });
+                        processRecord(record);
                     } catch (Exception e) {
-                        LOG.warn("Failed to process Kafka message from '{}' at offset {}; skipping",
+                        LOG.warn("First attempt failed for '{}' at offset {}; retrying once",
                             record.topic(), record.offset(), e);
+                        try {
+                            processRecord(record);
+                        } catch (Exception e2) {
+                            LOG.warn("Retry failed for '{}' at offset {}; skipping",
+                                record.topic(), record.offset(), e2);
+                        }
                     }
                 }
                 if (!records.isEmpty()) {
@@ -78,6 +77,18 @@ public class KafkaSubscriber implements AutoCloseable {
                 if (running) LOG.warn("Kafka poll or commit failed; will retry", e);
             }
         }
+    }
+
+    private void processRecord(ConsumerRecord<String, byte[]> record) {
+        Defer.within(() -> {
+            Object event;
+            try {
+                event = deserialize(record);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            bus.publish(record.topic(), event);
+        });
     }
 
     private Object deserialize(ConsumerRecord<String, byte[]> record) throws Exception {
@@ -102,6 +113,14 @@ public class KafkaSubscriber implements AutoCloseable {
     @Override
     public void close() {
         running = false;
+        consumer.wakeup();
+        try {
+            if (pollThread != null) {
+                pollThread.join(Duration.ofSeconds(5).toMillis());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
         consumer.close();
         LOG.info("Kafka subscriber stopped");
     }

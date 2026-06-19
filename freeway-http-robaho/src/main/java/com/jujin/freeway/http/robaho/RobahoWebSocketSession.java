@@ -213,10 +213,14 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
             throw new IllegalArgumentException("Unsupported websocket close code: " + code
                 + ". Standard codes: 1000-1015, registered: 3000-3999, private: 4000-4999");
         }
-        // Custom code (3xxx/4xxx): send raw close frame with the real code,
-        // then call super.close() to transition the state machine to CLOSING.
-        // The second close frame (GoingAway) is redundant but harmless —
-        // the peer already received the correct code in the first frame.
+        // Custom code (3xxx/4xxx): the base class only accepts CloseCode enum
+        // values, so we send a raw close frame with the real code. The base
+        // class's readWebsocket loop will complete the close handshake when
+        // the peer responds — it sends the standard echo close frame and
+        // transitions to CLOSED. Minor tradeoff: state remains OPEN until
+        // the peer responds, so onClose sees remote=true (as if peer-initiated).
+        // We avoid calling super.close() to prevent sending a second close
+        // frame with a downgraded code (GoingAway).
         byte[] reasonBytes = reason != null
             ? reason.getBytes(java.nio.charset.StandardCharsets.UTF_8)
             : new byte[0];
@@ -225,7 +229,6 @@ final class RobahoWebSocketSession extends WebSocket implements WebSocketSession
         payload[1] = (byte) code;
         System.arraycopy(reasonBytes, 0, payload, 2, reasonBytes.length);
         super.sendFrame(new WebSocketFrame(OpCode.Close, true, payload));
-        super.close(CloseCode.GoingAway, reason, false);
     }
 
     private static Map<String, List<String>> snapshotHeaders(HttpExchange exchange) {

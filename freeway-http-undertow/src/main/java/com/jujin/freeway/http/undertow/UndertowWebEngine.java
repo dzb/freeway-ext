@@ -52,7 +52,7 @@ final class UndertowWebEngine implements HttpEngine {
             .build();
         server.start();
         LOG.info("Freeway undertow web engine started on {}:{}", config.host(), listenerPort(server));
-        return new UndertowHandle(server, gracefulShutdown, config.shutdownGraceSeconds(), config.host());
+        return new UndertowHandle(server, gracefulShutdown, config.shutdownGrace(), config.host());
     }
 
     private void handle(HttpServerExchange exchange, HttpRequestHandler handler) {
@@ -158,7 +158,7 @@ final class UndertowWebEngine implements HttpEngine {
     private record UndertowHandle(
         Undertow server,
         GracefulShutdownHandler gracefulShutdown,
-        int shutdownGraceSeconds,
+        java.time.Duration shutdownGrace,
         String host
     ) implements HttpServerHandle {
         @Override
@@ -170,7 +170,7 @@ final class UndertowWebEngine implements HttpEngine {
         public void close() {
             try {
                 gracefulShutdown.shutdown();
-                gracefulShutdown.awaitShutdown(Math.max(0, shutdownGraceSeconds) * 1000L);
+                gracefulShutdown.awaitShutdown(Math.max(0, (int) shutdownGrace.toSeconds()) * 1000L);
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             } finally {

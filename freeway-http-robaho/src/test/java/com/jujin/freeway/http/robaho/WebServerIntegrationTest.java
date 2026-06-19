@@ -40,15 +40,15 @@ class WebServerIntegrationTest {
         if (container != null) {
             container.close();
         }
-        System.clearProperty("web.server.port");
-        System.clearProperty("web.server.host");
+        System.clearProperty("freeway.web.server.port");
+        System.clearProperty("freeway.web.server.host");
     }
 
     @Test
     void servesRoutesFiltersAndJson() throws Exception {
         port = freePort();
-        System.setProperty("web.server.host", "127.0.0.1");
-        System.setProperty("web.server.port", String.valueOf(port));
+        System.setProperty("freeway.web.server.host", "127.0.0.1");
+        System.setProperty("freeway.web.server.port", String.valueOf(port));
 
         Path staticRoot = Files.createTempDirectory("freeway-static");
         Files.writeString(staticRoot.resolve("index.html"), "<html><body>home</body></html>");
@@ -198,7 +198,7 @@ class WebServerIntegrationTest {
 
     private static HttpRequest request(String path) {
         return HttpRequest.newBuilder()
-            .uri(URI.create("http://127.0.0.1:" + System.getProperty("web.server.port") + path))
+            .uri(URI.create("http://127.0.0.1:" + System.getProperty("freeway.web.server.port") + path))
             .GET()
             .build();
     }

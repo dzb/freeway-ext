@@ -36,17 +36,17 @@ class UndertowFrameProbeTest {
         if (app != null) {
             app.close();
         }
-        System.clearProperty("web.server.port");
-        System.clearProperty("web.server.host");
-        System.clearProperty("web.engine");
+        System.clearProperty("freeway.web.server.port");
+        System.clearProperty("freeway.web.server.host");
+        System.clearProperty("freeway.web.engine");
     }
 
     @Test
     void probeUndertowTextFrameFinBit() throws Exception {
         int port = freePort();
-        System.setProperty("web.server.host", "127.0.0.1");
-        System.setProperty("web.server.port", String.valueOf(port));
-        System.setProperty("web.engine", "undertow");
+        System.setProperty("freeway.web.server.host", "127.0.0.1");
+        System.setProperty("freeway.web.server.port", String.valueOf(port));
+        System.setProperty("freeway.web.engine", "undertow");
 
         app = FreewayApp.run(new String[0], new TestAppModule());
         assertTrue(app.get(WebServer.class).isRunning());

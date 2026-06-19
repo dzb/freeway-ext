@@ -63,7 +63,7 @@ final class RobahoWebEngine implements HttpEngine {
         });
         server.start();
         LOG.info("Freeway web engine started on {}:{}", config.host(), server.getAddress().getPort());
-        return new RobahoHandle(server, executor, config.shutdownGraceSeconds(), config.host());
+        return new RobahoHandle(server, executor, config.shutdownGrace(), config.host());
     }
 
     private void handleWebSocket(HttpExchange exchange, RequestContext requestContext, WebSocketMatch match) throws IOException {
@@ -85,7 +85,7 @@ final class RobahoWebEngine implements HttpEngine {
     private record RobahoHandle(
         HttpServer server,
         ExecutorService executor,
-        int shutdownGraceSeconds,
+        java.time.Duration shutdownGrace,
         String host
     ) implements HttpServerHandle {
         @Override
@@ -96,7 +96,7 @@ final class RobahoWebEngine implements HttpEngine {
         @Override
         public void close() {
             try {
-                server.stop(shutdownGraceSeconds);
+                server.stop((int) shutdownGrace.toSeconds());
             } finally {
                 executor.shutdown();
                 try {

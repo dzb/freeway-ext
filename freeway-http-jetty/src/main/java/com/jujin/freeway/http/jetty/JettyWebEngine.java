@@ -40,7 +40,7 @@ final class JettyWebEngine implements HttpEngine {
         connector.setPort(config.port());
         connector.setAcceptQueueSize(config.backlog());
         server.addConnector(connector);
-        server.setStopTimeout(Math.max(0, config.shutdownGraceSeconds()) * 1000L);
+        server.setStopTimeout(Math.max(0, (int) config.shutdownGrace().toSeconds()) * 1000L);
 
         ServerWebSocketContainer webSocketContainer = ServerWebSocketContainer.ensure(server);
         GracefulHandler graceful = new GracefulHandler();
@@ -76,7 +76,7 @@ final class JettyWebEngine implements HttpEngine {
 
         int port = currentPort(server);
         LOG.info("Freeway jetty web engine started on {}:{}", config.host(), port);
-        return new JettyHandle(server, graceful, config.shutdownGraceSeconds(), config.host(), port);
+        return new JettyHandle(server, graceful, config.shutdownGrace(), config.host(), port);
     }
 
     private boolean handleWebSocket(
@@ -178,7 +178,7 @@ final class JettyWebEngine implements HttpEngine {
     private record JettyHandle(
         Server server,
         GracefulHandler graceful,
-        int shutdownGraceSeconds,
+        java.time.Duration shutdownGrace,
         String host,
         int port
     ) implements HttpServerHandle {
@@ -190,7 +190,7 @@ final class JettyWebEngine implements HttpEngine {
         @Override
         public void close() {
             try {
-                graceful.shutdown().get(Math.max(0, shutdownGraceSeconds), TimeUnit.SECONDS);
+                graceful.shutdown().get(Math.max(0, (int) shutdownGrace.toSeconds()), TimeUnit.SECONDS);
             } catch (Exception ex) {
                 // fall through to stop
             } finally {

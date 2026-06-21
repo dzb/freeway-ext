@@ -184,6 +184,11 @@ final class UndertowWebSocketSession implements WebSocketSession {
         WebSockets.sendCloseBlocking(code, reason != null ? reason : "", channel);
     }
 
+    @Override
+    public void flush() throws IOException {
+        // Undertow's WebSocket sends frames immediately, no buffering needed
+    }
+
     private void fail(WebSocketChannel channel, Throwable cause) throws IOException {
         try {
             listener.onError(cause);

@@ -14,16 +14,14 @@ cd ../freeway && mvn install -DskipTests
 mvn test
 
 # 3. Single module
-mvn -pl freeway-http-jetty -am test
+mvn -pl freeway-http-undertow -am test
 ```
 
 ## Module Dependency Graph
 
 ```
 freeway-ext (parent, inherits from freeway-parent)
- ├─ freeway-http-robaho   ── freeway-ioc, freeway-http, robaho/httpserver
  ├─ freeway-http-undertow ── freeway-ioc, freeway-http, undertow-core
- ├─ freeway-http-jetty    ── freeway-ioc, freeway-http, jetty-server, jetty-websocket
  ├─ freeway-mq-kafka      ── freeway-ioc, freeway-commons, kafka-clients
  └─ freeway-db-hikari     ── freeway-ioc, freeway-db, HikariCP
 ```
@@ -42,5 +40,5 @@ Each depends only on Freeway core modules and its specific third-party library.
 
 ## Naming
 
-- Adapter packages: `com.jujin.freeway.{area}.{implementation}` (e.g. `http.jetty`, `db.hikari`).
+- Adapter packages: `com.jujin.freeway.{area}.{implementation}` (e.g. `http.undertow`, `db.hikari`).
 - Module artifact names follow the core convention: `freeway-{area}-{impl}`.

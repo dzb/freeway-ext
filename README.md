@@ -1,15 +1,31 @@
 # freeway-ext
 
 Optional third-party integrations for the [Freeway](https://github.com/dzb/freeway) framework.
-The core is full-stack but zero-dependency; these modules add capabilities that require external libraries.
 
-| Module | Description | External Dependency |
+## Built-in engine
+
+Freeway core ships with **`FreewayHttpEngine`** — a raw-socket engine built from scratch
+on virtual threads (one per connection).  It supports:
+
+- HTTP/1.1 with keep-alive and per-connection context reuse
+- HTTP/2 — both h2c (cleartext upgrade via `PRI * HTTP/2.0` preface) and h2 (TLS with ALPN negotiation)
+- WebSocket — full RFC 6455 implementation (text, binary, ping/pong, close handshake, fragmentation)
+- HTTPS — TLS wrapping with ALPN for protocol selection
+
+Internally it uses a bulk-read parser with reusable 4 KB buffers, assembles the entire
+HTTP response into a single buffer for one-shot socket writes, and reuses parser and
+context objects across keep-alive requests on the same connection.  Zero third-party
+dependencies.
+
+For the vast majority of applications, this is all you need.
+
+## When to use an extension module
+
+| Module | When to use | External Dependency |
 |--------|-------------|-------------------|
-| `freeway-http-robaho` | High-performance HTTP engine with WebSocket | [robaho/httpserver](https://github.com/robaho/httpserver) |
-| `freeway-http-undertow` | Undertow HTTP engine adapter | [Undertow](https://undertow.io) 2.3 |
-| `freeway-http-jetty` | Jetty 12 HTTP engine + WebSocket adapter | [Jetty](https://jetty.org) 12.1 |
-| `freeway-db-hikari` | HikariCP connection pool adapter | [HikariCP](https://github.com/brettwooldridge/HikariCP) 6.2 |
-| `freeway-mq-kafka` | Kafka EventBus bridge for distributed pub/sub | [Kafka Clients](https://kafka.apache.org) 3.9 |
+| `freeway-http-undertow` | Servlet API, Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.3 |
+| `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 3.9 |
+| `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 6.2 |
 
 ## Install
 

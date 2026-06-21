@@ -88,6 +88,7 @@ final class UndertowHttpContext extends HttpContext {
     public byte[] body() throws IOException {
         if (cachedBody == null) {
             try (InputStream in = exchange.getInputStream()) {
+                long cl = exchange.getRequestContentLength();
                 cachedBody = readBodyLimited(in);
             }
         }
@@ -116,7 +117,7 @@ final class UndertowHttpContext extends HttpContext {
     }
 
     @Override
-    public int statusCode() {
+    public int status() {
         return responseStatus;
     }
 

@@ -86,7 +86,7 @@ Run the microbenchmarks through the JMH launcher:
 
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
-  -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchmarkMain \
+  -Dexec.mainClass=org.openjdk.jmh.Main \
   -Dexec.args='-bm thrpt -f 0 -wi 5 -i 5 com.jujin.freeway.http.engine.HttpParserBenchmark'
 ```
 

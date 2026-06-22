@@ -7,11 +7,9 @@ import com.jujin.freeway.ioc.Module2;
 public final class UndertowWebEngineModule implements Module2{
     @Override
     public void bind(Binder binder) {
-        binder.bind(UndertowWebEngine.class)
-            .to(UndertowWebEngine.class)
-            .id("undertow");
         binder.bind(HttpEngine.class)
             .to(UndertowWebEngine.class)
+            .id("undertow")
             .primary();
     }
 }

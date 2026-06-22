@@ -1,8 +1,11 @@
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
-import com.jujin.freeway.http.*;
+import com.jujin.freeway.http.WebServer;
+import com.jujin.freeway.http.route.Route;
+import com.jujin.freeway.http.websocket.WebSocketGroup;
+import com.jujin.freeway.http.websocket.WebSocketListener;
+import com.jujin.freeway.http.websocket.WebSocketRoute;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Module2;
 import org.junit.jupiter.api.AfterEach;
@@ -22,23 +25,17 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.websocket.WebSocketGroup;
-import com.jujin.freeway.http.websocket.WebSocketListener;
-import com.jujin.freeway.http.websocket.WebSocketRoute;
-
 class UndertowFrameProbeTest {
-    private AppRuntime app;
+    private com.jujin.freeway.boot.AppRuntime app;
 
     @AfterEach
     void tearDown() {
         if (app != null) {
             app.close();
+            app = null;
         }
         System.clearProperty("freeway.web.server.port");
         System.clearProperty("freeway.web.server.host");
-        System.clearProperty("freeway.web.engine");
     }
 
     @Test
@@ -46,9 +43,8 @@ class UndertowFrameProbeTest {
         int port = freePort();
         System.setProperty("freeway.web.server.host", "127.0.0.1");
         System.setProperty("freeway.web.server.port", String.valueOf(port));
-        System.setProperty("freeway.web.engine", "undertow");
 
-        app = FreewayApp.run(new String[0], new TestAppModule());
+        app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
         assertTrue(app.get(WebServer.class).isRunning());
 
         try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -76,7 +72,7 @@ class UndertowFrameProbeTest {
         }
     }
 
-    public static final class TestAppModule implements Module2{
+    static final class TestAppModule implements Module2 {
         @Override
         public void bind(Binder binder) {
             binder.contribute(WebSocketGroup.class).add(WebSocketGroup.of("/api",

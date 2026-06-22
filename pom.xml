@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.jujin8.freeway</groupId>
         <artifactId>freeway-parent</artifactId>
-        <version>1.2.0-SNAPSHOT</version>
+        <version>1.2.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>freeway-ext</artifactId>
@@ -21,7 +21,7 @@
     <url>https://github.com/dzb/freeway-ext</url>
 
     <properties>
-        <freeway.version>1.2.0-SNAPSHOT</freeway.version>
+        <freeway.version>1.2.1-SNAPSHOT</freeway.version>
     </properties>
 
     <dependencyManagement>

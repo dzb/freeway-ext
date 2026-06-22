@@ -18,14 +18,14 @@ import java.util.concurrent.*;
  * <pre>
  * mvn -f freeway-benchmark/pom.xml -am process-classes
  * mvn -f freeway-benchmark/pom.xml exec:java \
- *   -Dexec.mainClass=com.jujin.freeway.benchmarks.ForkedBenchmark \
+ *   -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchFork \
  *   -Dbench.engine=freeway -Dbench.mode=keepalive \
  *   -Dbench.requests=20000 -Dbench.concurrency=32 -Dbench.runs=3
  * </pre>
  */
-public final class ForkedBenchmark {
+public final class BenchFork {
 
-    private static final String MAIN_CLASS = "com.jujin.freeway.benchmarks.ForkedBenchmark";
+    private static final String MAIN_CLASS = "com.jujin.freeway.benchmarks.BenchFork";
 
     public static void main(String[] args) throws Exception {
         String role = p("bench.role", "suite");

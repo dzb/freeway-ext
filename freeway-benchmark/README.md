@@ -48,13 +48,13 @@ mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
 
 ## Forked (Isolated) Benchmark
 
-`ForkedBenchmark` runs server and client in **separate JVM processes** — zero
+`BenchFork` runs server and client in **separate JVM processes** — zero
 cross-contamination between measured target and measurement harness. Use this
 when you need process-level isolation for final performance claims.
 
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
-  -Dexec.mainClass=com.jujin.freeway.benchmarks.ForkedBenchmark \
+  -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchFork \
   -Dbench.engine=freeway -Dbench.mode=keepalive \
   -Dbench.requests=20000 -Dbench.concurrency=32 -Dbench.warmup=2000 -Dbench.runs=3
 ```
@@ -68,7 +68,7 @@ java --add-opens=java.base/java.lang=ALL-UNNAMED \
      -cp "$(cat freeway-benchmark/target/benchmark.classpath);freeway-benchmark/target/classes" \
      -Dbench.engine=freeway -Dbench.requests=20000 -Dbench.concurrency=32 \
      -Dbench.warmup=2000 -Dbench.runs=3 \
-     com.jujin.freeway.benchmarks.ForkedBenchmark
+     com.jujin.freeway.benchmarks.BenchFork
 ```
 
 Supported engines:

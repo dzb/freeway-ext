@@ -4,6 +4,8 @@ import com.jujin.freeway.db.schema.Column;
 import com.jujin.freeway.db.schema.Generated;
 import com.jujin.freeway.db.schema.Id;
 import com.jujin.freeway.db.schema.Table;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.time.Instant;
 
 /** A single benchmark run session. */
@@ -26,7 +28,24 @@ public record BenchmarkRun(
                                        int concurrency, int requests,
                                        int warmup, int runs) {
         return new BenchmarkRun(0, engine, scenario, concurrency, requests,
-            warmup, runs, "", jvm(), os(), cpu(), Instant.now());
+            warmup, runs, gitSha(), jvm(), os(), cpu(), Instant.now());
+    }
+
+    private static String gitSha() {
+        try {
+            var proc = new ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+                .redirectErrorStream(true)
+                .start();
+            try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                var line = reader.readLine();
+                if (line != null && !line.isBlank()) {
+                    return line.trim();
+                }
+            }
+            proc.waitFor();
+        } catch (Exception ignored) {
+        }
+        return "";
     }
 
     private static String jvm() {
@@ -42,6 +61,8 @@ public record BenchmarkRun(
     }
 
     private static String cpu() {
-        return "available=" + Runtime.getRuntime().availableProcessors();
+        int cpus = Runtime.getRuntime().availableProcessors();
+        String model = System.getProperty("os.arch");
+        return model + " " + cpus + " threads";
     }
 }

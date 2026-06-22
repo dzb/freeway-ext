@@ -47,12 +47,15 @@ public final class ListCommand implements Command {
             return;
         }
 
-        System.out.printf("%-4s %-16s %-10s %-6s %s%n",
-            "ID", "Engine", "Scenario", "Concur", "Created");
-        System.out.println("─".repeat(60));
+        System.out.printf("%-4s %-16s %-10s %-6s %-9s %-20s %s%n",
+            "ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created");
+        System.out.println("─".repeat(100));
         for (var r : runs) {
-            System.out.printf("%-4d %-16s %-10s %-6d %s%n",
+            System.out.printf("%-4d %-16s %-10s %-6d %-9s %-20s %s%n",
                 r.id(), r.engine(), r.scenario(), r.concurrency(),
+                r.commitSha().isBlank() ? "—" : r.commitSha(),
+                r.jdkInfo().length() > 20
+                    ? r.jdkInfo().substring(0, 20) : r.jdkInfo(),
                 r.createdAt().toString().replace("T", " ").substring(0, 19));
         }
     }

@@ -16,13 +16,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
-import java.util.List;
-import java.util.Map;
-import java.util.List;
 
 /**
- * {@code bench run} — runs a black-box HTTP benchmark and persists results.
+ * {@code bench run} — runs a black-box HTTP or WebSocket benchmark and persists results.
  *
  * <p>Arguments:
  * <pre>
@@ -32,6 +30,8 @@ import java.util.List;
  * --requests=5000       requests per run
  * --warmup=500          warmup requests before measurement
  * --runs=3              number of measurement runs
+ * --mode=keepalive      connection mode: keepalive, short, or ws
+ * --output=results.json optional: write JSON results to file
  * </pre>
  */
 public final class RunCommand implements Command {
@@ -41,15 +41,22 @@ public final class RunCommand implements Command {
         var engine = ctx.get("engine", "freeway");
         var scenario = ctx.get("scenario", "ping");
         var modeStr = ctx.get("mode", "keepalive");
-        int concurrency = ctx.getInt("concurrency", 32);
         if (modeStr.equalsIgnoreCase("long")) modeStr = "keepalive";
+        int concurrency = ctx.getInt("concurrency", 32);
         int requests = ctx.getInt("requests", 5000);
         int warmup = ctx.getInt("warmup", 500);
         int runs = ctx.getInt("runs", 3);
 
+        var modeLabel = modeStr.toLowerCase(Locale.ROOT);
+        var benchMode = switch (modeLabel) {
+            case "short" -> BenchRunner.Mode.SHORT;
+            case "ws", "websocket" -> BenchRunner.Mode.WS;
+            default -> BenchRunner.Mode.KEEPALIVE;
+        };
+
         System.out.printf("bench run --engine=%s --scenario=%s --concurrency=%d "
-            + "--requests=%d --warmup=%d --runs=%d%n",
-            engine, scenario, concurrency, requests, warmup, runs);
+            + "--requests=%d --warmup=%d --runs=%d --mode=%s%n",
+            engine, scenario, concurrency, requests, warmup, runs, modeLabel);
 
         // Retrieve Database from container (provided by BenchDbModule)
         var container = ctx.container();
@@ -67,22 +74,22 @@ public final class RunCommand implements Command {
         // Run the benchmark
         var eng = ServerHarness.Engine.fromString(engine);
         var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase());
-        var mode = "short".equalsIgnoreCase(modeStr)
-            ? BenchRunner.Mode.SHORT : BenchRunner.Mode.KEEPALIVE;
         var results = new ArrayList<BenchmarkResult>();
+        var scores = new double[runs];
 
         try (var harness = ServerHarness.start(eng, scn)) {
             int port = harness.port();
 
             for (int r = 0; r < runs; r++) {
                 System.out.printf("  run %d/%d ...%n", r + 1, runs);
-                var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode);
+                var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, benchMode);
+                scores[r] = ir.rps();
 
                 System.out.printf("    rps=%.0f p50=%dus p95=%dus p99=%dus "
                     + "errors=%d%n", ir.rps(), ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
 
                 var result = BenchmarkResult.of(runId, engine + "/" + scenario,
-                    "keepalive", ir.rps(), 0, "req/s",
+                    modeLabel, ir.rps(), 0, "req/s",
                     ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
                 results.add(result);
                 orm.insert(result);
@@ -90,8 +97,20 @@ public final class RunCommand implements Command {
             }
         }
 
+        // Compute score_error as stddev across all runs
+        double avgRps = 0;
+        for (double s : scores) avgRps += s;
+        avgRps /= runs;
+        double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
+        // Update the median result record with computed error
+        var medianI = results.stream()
+            .sorted(java.util.Comparator.comparingDouble(BenchmarkResult::score))
+            .skip(runs / 2)
+            .findFirst().orElseThrow();
+        db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?", error, medianI.id());
+
         eventBus.publish(new BenchEvent.RunCompleted(runId));
-        System.out.printf("Done. Run #%d saved.%n", runId);
+        System.out.printf("Done. Run #%d saved. avg=%.0f ± %.0f req/s%n", runId, avgRps, error);
 
         // Print summary table
         System.out.println();
@@ -103,44 +122,44 @@ public final class RunCommand implements Command {
                 i + 1, r.score(), r.p50us(), r.p95us(), r.p99us(), r.errors());
         }
         if (results.size() > 1) {
-            var median = results.stream()
-                .sorted(java.util.Comparator.comparingDouble(BenchmarkResult::score))
-                .skip(results.size() / 2)
-                .findFirst().orElseThrow();
+            var median = medianI;
             System.out.printf("| **Median** | **%.0f** | **%dμs** | **%dμs** | **%dμs** | **%d** |%n",
                 median.score(), median.p50us(), median.p95us(), median.p99us(), median.errors());
         }
-	        System.out.println();
-	
-	        // Write JSON output if --output is specified
-	        String outputPath = ctx.get("output", null);
-	        if (outputPath != null && !outputPath.isBlank()) {
-	            var jsonMap = new LinkedHashMap<String, Object>();
-	            jsonMap.put("run_id", runId);
-	            jsonMap.put("engine", engine);
-	            jsonMap.put("scenario", scenario);
-	            jsonMap.put("concurrency", concurrency);
-	            jsonMap.put("requests", requests);
-	            jsonMap.put("warmup", warmup);
-	            jsonMap.put("runs", runs);
-	
-	            var runsList = new ArrayList<Map<String, Object>>();
-	            for (int i = 0; i < results.size(); i++) {
-	                var r = results.get(i);
-	                var m = new LinkedHashMap<String, Object>();
-	                m.put("run", i + 1);
-	                m.put("rps", r.score());
-	                m.put("p50_us", r.p50us());
-	                m.put("p95_us", r.p95us());
-	                m.put("p99_us", r.p99us());
-	                m.put("errors", r.errors());
-	                runsList.add(m);
-	            }
-	            jsonMap.put("results", runsList);
-	
-	            var json = new JsonCodecDefault().toJson(jsonMap);
-	            Files.writeString(Path.of(outputPath), json, StandardCharsets.UTF_8);
-	            System.out.println("Results written to " + outputPath);
-	        }
-	    }
+        System.out.println();
+
+        // Write JSON output if --output is specified
+        String outputPath = ctx.get("output", null);
+        if (outputPath != null && !outputPath.isBlank()) {
+            var jsonMap = new LinkedHashMap<String, Object>();
+            jsonMap.put("run_id", runId);
+            jsonMap.put("engine", engine);
+            jsonMap.put("scenario", scenario);
+            jsonMap.put("concurrency", concurrency);
+            jsonMap.put("requests", requests);
+            jsonMap.put("warmup", warmup);
+            jsonMap.put("runs", runs);
+            jsonMap.put("avg_rps", avgRps);
+            jsonMap.put("stddev_rps", error);
+            jsonMap.put("mode", modeLabel);
+
+            var runsList = new ArrayList<Map<String, Object>>();
+            for (int i = 0; i < results.size(); i++) {
+                var r = results.get(i);
+                var m = new LinkedHashMap<String, Object>();
+                m.put("run", i + 1);
+                m.put("rps", r.score());
+                m.put("p50_us", r.p50us());
+                m.put("p95_us", r.p95us());
+                m.put("p99_us", r.p99us());
+                m.put("errors", r.errors());
+                runsList.add(m);
+            }
+            jsonMap.put("results", runsList);
+
+            var json = new JsonCodecDefault().toJson(jsonMap);
+            Files.writeString(Path.of(outputPath), json, StandardCharsets.UTF_8);
+            System.out.println("Results written to " + outputPath);
+        }
+    }
 }

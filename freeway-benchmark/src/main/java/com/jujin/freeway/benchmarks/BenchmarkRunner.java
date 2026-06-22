@@ -1,16 +1,16 @@
 package com.jujin.freeway.benchmarks;
 
-import com.jujin.freeway.benchmarks.client.*;
+import com.jujin.freeway.bench.cli.BenchRunner;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Benchmark runner. Defaults to fork mode: server + client in separate JVMs.
+ * In-process benchmarks delegate to {@link BenchRunner} (shared with CLI).
  * <pre>
  * mvn -pl freeway-benchmark process-classes
  * mvn -pl freeway-benchmark exec:java -Dexec.mainClass=...BenchmarkRunner
@@ -108,14 +108,15 @@ public final class BenchmarkRunner {
         throw new RuntimeException("No RESULT line in output:\n" + output);
     }
 
-    // --- in-process mode ---
+    // --- in-process mode (delegates to BenchRunner) ---
 
     private static Result runInProcess(String engine, String mode, int requests, int concurrency, int warmup) throws Exception {
         var eng = ServerHarness.Engine.fromString(engine);
+        var benchMode = resolveMode(mode);
         try (var h = ServerHarness.start(eng, ServerHarness.Scenario.PING)) {
-            return "ws".equalsIgnoreCase(mode)
-                ? benchWs(engine, mode, h.port(), requests, concurrency, warmup)
-                : benchHttp(engine, mode, h.port(), requests, concurrency, warmup);
+            var ir = BenchRunner.run(h.port(), concurrency, requests, warmup,
+                ServerHarness.Scenario.PING, benchMode);
+            return toResult(engine, mode, requests, ir);
         }
     }
 
@@ -131,67 +132,22 @@ public final class BenchmarkRunner {
     }
 
     private static void runClient(String engine, String mode, int port, int requests, int concurrency, int warmup) throws Exception {
-        Result r = "ws".equalsIgnoreCase(mode)
-            ? benchWs(engine, mode, port, requests, concurrency, warmup)
-            : benchHttp(engine, mode, port, requests, concurrency, warmup);
+        var benchMode = resolveMode(mode);
+        var ir = BenchRunner.run(port, concurrency, requests, warmup,
+            ServerHarness.Scenario.PING, benchMode);
+        var r = toResult(engine, mode, requests, ir);
         System.out.println("RESULT " + r);
     }
 
-    // --- benchmark logic (shared) ---
-
-    private static Result benchHttp(String engine, String mode, int port, int requests, int concurrency, int warmup) throws Exception {
-        boolean keepAlive = !"short".equalsIgnoreCase(mode);
-        long[] lats = new long[requests];
-        AtomicInteger next = new AtomicInteger(), errors = new AtomicInteger();
-        ExecutorService w = Executors.newFixedThreadPool(concurrency);
-        long t0 = System.nanoTime();
-        try {
-            Future<?>[] tasks = new Future<?>[concurrency];
-            for (int t = 0; t < concurrency; t++) {
-                tasks[t] = w.submit(() -> {
-                    try {
-                        if (keepAlive) {
-                            try (var c = new Http11Client(port)) {
-                                while (true) { int i = next.getAndIncrement(); if (i >= requests) break; long ts = System.nanoTime(); if (c.sendPing()) lats[i] = (System.nanoTime() - ts) / 1000L; else errors.incrementAndGet(); }
-                            }
-                        } else {
-                            while (true) { int i = next.getAndIncrement(); if (i >= requests) break; try (var c = new Http11Client(port)) { long ts = System.nanoTime(); if (c.sendPing()) lats[i] = (System.nanoTime() - ts) / 1000L; else errors.incrementAndGet(); } }
-                        }
-                    } catch (Exception e) { errors.incrementAndGet(); }
-                    return null;
-                });
-            }
-            for (var t : tasks) t.get(120, TimeUnit.SECONDS);
-        } finally { w.shutdownNow(); }
-        return build(engine, mode, requests, errors.get(), lats, t0);
+    private static BenchRunner.Mode resolveMode(String mode) {
+        if ("ws".equalsIgnoreCase(mode) || "websocket".equalsIgnoreCase(mode)) return BenchRunner.Mode.WS;
+        if ("short".equalsIgnoreCase(mode)) return BenchRunner.Mode.SHORT;
+        return BenchRunner.Mode.KEEPALIVE;
     }
 
-    private static Result benchWs(String engine, String mode, int port, int requests, int concurrency, int warmup) throws Exception {
-        long[] lats = new long[requests];
-        AtomicInteger next = new AtomicInteger(), errors = new AtomicInteger();
-        ExecutorService w = Executors.newFixedThreadPool(concurrency);
-        long t0 = System.nanoTime();
-        try {
-            Future<?>[] tasks = new Future<?>[concurrency];
-            for (int t = 0; t < concurrency; t++) {
-                tasks[t] = w.submit(() -> {
-                    try (var c = new WsClient(port)) {
-                        for (int j = 0; j < warmup / concurrency; j++) c.echo("w");
-                        while (true) { int i = next.getAndIncrement(); if (i >= requests) break; try { lats[i] = c.echo("ping") / 1000L; } catch (Exception e) { errors.incrementAndGet(); } }
-                    } catch (Exception e) { errors.incrementAndGet(); }
-                    return null;
-                });
-            }
-            for (var t : tasks) t.get(120, TimeUnit.SECONDS);
-        } finally { w.shutdownNow(); }
-        return build(engine, mode, requests, errors.get(), lats, t0);
-    }
-
-    private static Result build(String e, String m, int req, int errs, long[] lats, long t0) {
-        int ok = req - errs;
-        long[] s = Arrays.copyOf(lats, ok); Arrays.sort(s);
-        return new Result(e, m, req, ok, errs, ok * 1e9 / (System.nanoTime() - t0),
-            Result.percentile(s, 0.50), Result.percentile(s, 0.95), Result.percentile(s, 0.99));
+    private static Result toResult(String engine, String mode, int requests, BenchRunner.IterationResult ir) {
+        return new Result(engine, mode, requests, requests - ir.errors(), ir.errors(),
+            ir.rps(), ir.p50us(), ir.p95us(), ir.p99us());
     }
 
     // --- helpers ---

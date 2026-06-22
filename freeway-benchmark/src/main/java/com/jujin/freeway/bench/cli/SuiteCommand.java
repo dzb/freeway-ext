@@ -29,7 +29,8 @@ import java.util.Map;
  * --requests=2000
  * --warmup=200
  * --runs=3
- * --output=report.md       (optional: write Markdown report to file)
+ * --mode=keepalive      connection mode: keepalive, short, or ws
+ * --output=report.md    optional: write Markdown report to file
  * </pre>
  *
  * <p>Each combination of (engine, scenario, concurrency) is run sequentially.
@@ -55,8 +56,12 @@ public final class SuiteCommand implements Command {
         int runs = ctx.getInt("runs", 3);
         var modeStr = ctx.get("mode", "keepalive");
         if (modeStr.equalsIgnoreCase("long")) modeStr = "keepalive";
-        var mode = "short".equalsIgnoreCase(modeStr)
-            ? BenchRunner.Mode.SHORT : BenchRunner.Mode.KEEPALIVE;
+        var modeLabel = modeStr.toLowerCase(Locale.ROOT);
+        var benchMode = switch (modeLabel) {
+            case "short" -> BenchRunner.Mode.SHORT;
+            case "ws", "websocket" -> BenchRunner.Mode.WS;
+            default -> BenchRunner.Mode.KEEPALIVE;
+        };
         String outputPath = ctx.get("output", null);
 
         int total = engines.size() * scenarios.size() * concurrencies.length * runs;
@@ -67,7 +72,7 @@ public final class SuiteCommand implements Command {
         System.out.printf("Engines: %s | Scenarios: %s | Concurrency: %s | "
             + "Requests: %d | Warmup: %d | Runs: %d | Mode: %s%n",
             engines, scenarios, java.util.Arrays.toString(concurrencies),
-            requests, warmup, runs, modeStr);
+            requests, warmup, runs, modeLabel);
         System.out.printf("Total iterations: %d%n", total);
         System.out.println();
 
@@ -89,18 +94,20 @@ public final class SuiteCommand implements Command {
                         engine, scenario, concurrency);
                     System.out.println();
 
+                    var scores = new double[runs];
                     List<BenchRunner.IterationResult> iterationResults = new ArrayList<>();
 
                     try (var harness = ServerHarness.start(eng, scn)) {
                         int port = harness.port();
                         for (int r = 0; r < runs; r++) {
                             done++;
-                            var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode);
+                            var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, benchMode);
+                            scores[r] = ir.rps();
                             iterationResults.add(ir);
 
                             var result = BenchmarkResult.of(runId,
                                 engine + "/" + scenario,
-                                "keepalive", ir.rps(), 0, "req/s",
+                                modeLabel, ir.rps(), 0, "req/s",
                                 ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
                             orm.insert(result);
                             eventBus.publish(new BenchEvent.ResultCollected(result));
@@ -109,6 +116,20 @@ public final class SuiteCommand implements Command {
                                 + "[%d/%d]%n",
                                 r + 1, runs, ir.rps(), ir.p50us(), done, total);
                         }
+                    }
+
+                    // Compute score_error and update median
+                    double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
+                    var medianId = orm.findAll(BenchmarkResult.class, "id ASC", 0, 0).stream()
+                        .filter(res -> res.runId() == runId)
+                        .sorted(Comparator.comparingDouble(BenchmarkResult::score))
+                        .skip(runs / 2)
+                        .findFirst()
+                        .map(BenchmarkResult::id)
+                        .orElse(0L);
+                    if (medianId > 0) {
+                        db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?",
+                            error, medianId);
                     }
 
                     // Pick median iteration as representative
@@ -124,6 +145,21 @@ public final class SuiteCommand implements Command {
         }
 
         // Print comprehensive comparison table
+        printSummary(allResults);
+
+        // Write report to file if requested
+        if (outputPath != null && !outputPath.isBlank()) {
+            writeReport(outputPath, allResults);
+        }
+
+        System.out.printf("%nSuite complete: %d iteration(s), %d total combinations.%n",
+            done, engines.size() * scenarios.size() * concurrencies.length);
+    }
+
+    private record SuiteResult(String engine, String scenario, int concurrency,
+                                double rps, long p50us, long p95us, long p99us) {}
+
+    private static void printSummary(List<SuiteResult> allResults) {
         System.out.println("## Suite Summary");
         System.out.println();
         System.out.printf("| %-16s | %-10s | %6s | %9s | %6s | %6s | %6s |%n",
@@ -138,30 +174,24 @@ public final class SuiteCommand implements Command {
                 formatRps(r.rps()), r.p50us() + "μs",
                 r.p95us() + "μs", r.p99us() + "μs");
         }
-
-        // Write report to file if requested
-        if (outputPath != null && !outputPath.isBlank()) {
-            var report = new StringBuilder();
-            report.append("# Suite Report\n\n");
-            report.append("| Engine | Scenario | Concur | RPS | p50 | p95 | p99 |\n");
-            report.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n");
-            for (var r : allResults) {
-                report.append(String.format(Locale.ROOT,
-                    "| %s | %s | %d | %s | %dμs | %dμs | %dμs |\n",
-                    r.engine(), r.scenario(), r.concurrency(),
-                    formatRps(r.rps()), r.p50us(), r.p95us(), r.p99us()));
-            }
-            java.nio.file.Files.writeString(java.nio.file.Path.of(outputPath),
-                report.toString(), java.nio.charset.StandardCharsets.UTF_8);
-            System.out.println("Report written to " + outputPath);
-        }
-
-        System.out.printf("%nSuite complete: %d iteration(s), %d total combinations.%n",
-            done, engines.size() * scenarios.size() * concurrencies.length);
     }
 
-    private record SuiteResult(String engine, String scenario, int concurrency,
-                                double rps, long p50us, long p95us, long p99us) {}
+    private static void writeReport(String outputPath, List<SuiteResult> allResults)
+            throws Exception {
+        var report = new StringBuilder();
+        report.append("# Suite Report\n\n");
+        report.append("| Engine | Scenario | Concur | RPS | p50 | p95 | p99 |\n");
+        report.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n");
+        for (var r : allResults) {
+            report.append(String.format(Locale.ROOT,
+                "| %s | %s | %d | %s | %dμs | %dμs | %dμs |\n",
+                r.engine(), r.scenario(), r.concurrency(),
+                formatRps(r.rps()), r.p50us(), r.p95us(), r.p99us()));
+        }
+        java.nio.file.Files.writeString(java.nio.file.Path.of(outputPath),
+            report.toString(), java.nio.charset.StandardCharsets.UTF_8);
+        System.out.println("Report written to " + outputPath);
+    }
 
     private static List<String> parseList(String value) {
         var list = new ArrayList<String>();

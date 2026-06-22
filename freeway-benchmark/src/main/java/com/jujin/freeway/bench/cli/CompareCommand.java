@@ -6,22 +6,34 @@ import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * {@code bench compare} — compares two benchmark runs.
+ * {@code bench compare} — compares two benchmark runs with regression detection.
+ *
+ * <p>Thresholds (per BENCHMARK_PROTOCOL.md):
+ * <ul>
+ *   <li>RPS change &lt; 3%   — noise, no flag</li>
+ *   <li>RPS drop   &ge; 3%   — ⚠ regression</li>
+ *   <li>p95/p99 up &ge; 5%   — ⚠ latency regression</li>
+ * </ul>
  *
  * <p>Arguments:
  * <pre>
- * --from=<run-id>      baseline run ID (default: latest - 1)
+ * --from=<run-id>      baseline run ID (default: best prior matching run)
  * --to=<run-id>        candidate run ID (default: latest)
  * </pre>
  */
 public final class CompareCommand implements Command {
+
+    private static final double NOISE_THRESHOLD_RPS = 0.03;   // 3% RPS noise
+    private static final double REGRESSION_LATENCY = 0.05;    // 5% latency regression
 
     @Override
     public void run(Context ctx) throws Exception {
@@ -48,7 +60,6 @@ public final class CompareCommand implements Command {
         if (ctx.args().containsKey("from")) {
             fromId = ctx.getInt("from", 0);
         } else {
-            // Find best prior run with matching parameters
             fromId = db.query(
                 "SELECT r.id FROM bench_runs r JOIN bench_results res ON r.id = res.run_id "
                 + "WHERE r.engine = ? AND r.scenario = ? AND r.concurrency = ? "
@@ -79,14 +90,17 @@ public final class CompareCommand implements Command {
         System.out.println();
         System.out.println("## Compare: Run #" + fromId + " (baseline) vs Run #" + toId + " (candidate)");
         System.out.println();
-        System.out.printf("| %-28s | %12s %12s %7s | %12s %12s %7s | %s |%n",
+        System.out.printf("| %-28s | %12s %12s %7s | %12s %12s %7s | %8s |%n",
             "Benchmark", "RPS", "p50", "p95", "RPS", "p50", "p95", "ΔRPS");
-        System.out.println("|" + "─".repeat(30) + "|" + "─".repeat(34) + "|" + "─".repeat(34) + "|" + "─".repeat(8) + "|");
+        System.out.println("|" + "─".repeat(30) + "|" + "─".repeat(34) + "|" + "─".repeat(34) + "|" + "─".repeat(10) + "|");
 
         // Collect all unique benchmark names
-        var allBenchmarks = new java.util.LinkedHashSet<String>();
+        var allBenchmarks = new LinkedHashSet<String>();
         allBenchmarks.addAll(fromIndex.keySet());
         allBenchmarks.addAll(toIndex.keySet());
+
+        var regressions = new ArrayList<String>();
+        var improvements = new ArrayList<String>();
 
         for (String bench : allBenchmarks) {
             var f = fromIndex.get(bench);
@@ -99,27 +113,70 @@ public final class CompareCommand implements Command {
             String fromP95 = f != null ? f.p95us() + "μs" : "—";
             String toP95 = t != null ? t.p95us() + "μs" : "—";
 
-            String delta;
+            String flag = "";
             if (f != null && t != null) {
-                double d = (t.score() - f.score()) / f.score() * 100;
-                delta = String.format(Locale.ROOT, "%+.1f%%", d);
-            } else {
-                delta = "—";
-            }
+                double rpsDelta = (t.score() - f.score()) / f.score();
+                double p95Delta = f.p95us() > 0 ? (double)(t.p95us() - f.p95us()) / f.p95us() : 0;
+                double p99Delta = f.p99us() > 0 ? (double)(t.p99us() - f.p99us()) / f.p99us() : 0;
 
-            System.out.printf("| %-28s | %12s %12s %7s | %12s %12s %7s | %s |%n",
-                bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta);
+                // Regression detection
+                if (rpsDelta < -NOISE_THRESHOLD_RPS) {
+                    flag = " ⚠RPS↓";
+                    regressions.add(bench + " RPS " + formatDelta(rpsDelta));
+                }
+                if (p95Delta > REGRESSION_LATENCY || p99Delta > REGRESSION_LATENCY) {
+                    if (!flag.contains("⚠")) flag = " ⚠LAT";
+                    else flag = " ⚠RPS+LAT";
+                    regressions.add(bench + " latency p95 " + formatDelta(p95Delta)
+                        + " p99 " + formatDelta(p99Delta));
+                }
+                if (rpsDelta > NOISE_THRESHOLD_RPS) {
+                    improvements.add(bench + " RPS " + formatDelta(rpsDelta));
+                }
+
+                var delta = String.format(Locale.ROOT, "%+.1f%%%s", rpsDelta * 100, flag);
+                System.out.printf("| %-28s | %12s %12s %7s | %12s %12s %7s | %s |%n",
+                    bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta);
+            } else {
+                String delta = "—";
+                System.out.printf("| %-28s | %12s %12s %7s | %12s %12s %7s | %8s |%n",
+                    bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta);
+            }
         }
 
         System.out.println();
         System.out.println("Baseline:  " + formatRun(fromRun));
         System.out.println("Candidate: " + formatRun(toRun));
+
+        // Print regression summary
+        if (!regressions.isEmpty()) {
+            System.out.println();
+            System.out.println("⚠  **REGRESSIONS DETECTED:**");
+            for (var r : regressions) {
+                System.out.println("  - " + r);
+            }
+        }
+        if (!improvements.isEmpty()) {
+            System.out.println();
+            System.out.println("✅ Improvements:");
+            for (var i : improvements) {
+                System.out.println("  - " + i);
+            }
+        }
+        if (regressions.isEmpty() && improvements.isEmpty()) {
+            System.out.println();
+            System.out.println("✅ No significant changes (all within noise threshold).");
+        }
     }
 
     private static String formatRps(double rps) {
         if (rps >= 1_000_000) return String.format(Locale.ROOT, "%.2fM", rps / 1_000_000);
         if (rps >= 1_000) return String.format(Locale.ROOT, "%.1fk", rps / 1_000);
         return String.format(Locale.ROOT, "%.0f", rps);
+    }
+
+    private static String formatDelta(double d) {
+        return String.format(Locale.ROOT, "%+.1f%%", d * 100);
     }
 
     private static String formatRun(BenchmarkRun run) {

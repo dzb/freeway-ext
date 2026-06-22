@@ -31,3 +31,5 @@ replay_pid*
 # Temp scripts
 _script_*.bat
 _script_*.sh
+freeway-benchmark/bench.db
+freeway-benchmark/target/

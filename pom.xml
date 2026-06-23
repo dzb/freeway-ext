@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.jujin8.freeway</groupId>
         <artifactId>freeway-parent</artifactId>
-        <version>1.2.1-SNAPSHOT</version>
+        <version>1.2.2-SNAPSHOT</version>
     </parent>
 
     <artifactId>freeway-ext</artifactId>
@@ -27,7 +27,7 @@
     </scm>
 
     <properties>
-        <freeway.version>1.2.1-SNAPSHOT</freeway.version>
+        <freeway.version>1.2.2-SNAPSHOT</freeway.version>
     </properties>
 
     <dependencyManagement>

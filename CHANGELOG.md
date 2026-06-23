@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **freeway-benchmark**: JMH-based benchmark module migrated from Freeway core,
+  covering HTTP, WebSocket, and DB adapter workloads (`c07c84a`).
+
+### Changed
+
+- **Undertow**: optimized I/O thread allocation caching request fields, removed
+  unnecessary `volatile` access (`5ba7456`).
+- **Benchmark**: renamed `BenchmarkRunner` → `ForkedBenchmark` → `BenchFork`,
+  removed `BenchmarkMain`, now uses `org.openjdk.jmh.Main` directly
+  (`1f57f65`, `52d5964`, `90eb79f`).
+
+### Fixed
+
+- **Benchmark**: implemented warmup, WebSocket support, score error tracking,
+  and regression detection; unified forked and in-process runners (`7253337`).
+- **Build**: added SCM override to parent POM (inherited value pointed to the
+  wrong repository), fixed test-jar dependency version from
+  `${project.version}` to `${freeway.version}` (`c1ef18e`).
+
+## 1.2.1 (2026-06-22)
+
+### Changed
+
+- Adapted to core IoC flush fix (`05c9583`).
+
 ## 1.2.0 (2026-06-22)
 
 ### Removed

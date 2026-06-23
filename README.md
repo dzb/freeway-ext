@@ -23,9 +23,10 @@ For the vast majority of applications, this is all you need.
 
 | Module | When to use | External Dependency |
 |--------|-------------|-------------------|
-| `freeway-http-undertow` | Servlet API, Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.3 |
+| `freeway-http-undertow` | Servlet API, Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.3.24 |
 | `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 3.9 |
-| `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 6.2 |
+| `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 6.2.1 |
+| `freeway-benchmark` | JMH-based micro-benchmarks for HTTP, WebSocket, and DB adapters | [JMH](https://github.com/openjdk/jmh) 1.37 |
 
 ## Install
 
@@ -47,8 +48,11 @@ Requires JDK 25+. Build Freeway core first, then extensions:
 
 ```bash
 # 1. Install core modules into local Maven repository
-cd freeway && mvn install -DskipTests
+cd ../freeway && mvn install -DskipTests
 
-# 2. Build extensions
-cd freeway-ext && mvn test
+# 2. Build all extensions
+cd - && mvn test
+
+# 3. Single module
+mvn -pl freeway-http-undertow -am test
 ```

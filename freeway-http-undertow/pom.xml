@@ -45,7 +45,7 @@
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-http</artifactId>
-            <version>${project.version}</version>
+            <version>${freeway.version}</version>
             <type>test-jar</type>
             <classifier>tests</classifier>
             <scope>test</scope>

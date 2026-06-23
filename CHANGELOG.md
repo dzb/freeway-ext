@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.0-SNAPSHOT (unreleased)
+## 1.2.0 (2026-06-22)
 
 ### Removed
 

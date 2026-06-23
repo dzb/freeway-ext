@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -22,9 +23,11 @@ final class UndertowHttpContext extends HttpContext {
     private final HttpServerExchange exchange;
     private final RequestContext requestContext;
     private final Map<String, List<String>> queryParams;
-    private volatile byte[] cachedBody;
+    private final String method;  // cached — allocated once per request
+    private final String path;    // cached — allocated once per request
+    private byte[] cachedBody;
     private int responseStatus = 200;
-    private volatile boolean responded;
+    private boolean responded;
 
     UndertowHttpContext(
         HttpServerExchange exchange,
@@ -38,26 +41,27 @@ final class UndertowHttpContext extends HttpContext {
             requestContext,
             "requestContext"
         );
-        this.queryParams = parseQueryParams(exchange.getQueryParameters());
+        this.queryParams = snapshotQuery(exchange.getQueryParameters());
+        this.method = exchange.getRequestMethod() != null
+            ? exchange.getRequestMethod().toString() : "";
+        String rel = exchange.getRelativePath();
+        this.path = rel != null ? rel : "/";
     }
 
     @Override
     public String method() {
-        return exchange.getRequestMethod() != null
-            ? exchange.getRequestMethod().toString()
-            : "";
+        return method;
     }
 
     @Override
     public String path() {
-        String relative = exchange.getRelativePath();
-        return relative != null ? relative : "/";
+        return path;
     }
 
     @Override
     public String queryParam(String name) {
         List<String> values = queryParams.get(name);
-        return values != null && !values.isEmpty() ? values.get(0) : null;
+        return values != null && !values.isEmpty() ? values.getFirst() : null;
     }
 
     @Override
@@ -77,18 +81,21 @@ final class UndertowHttpContext extends HttpContext {
 
     @Override
     public List<String> headers(String name) {
-        List<String> values = new ArrayList<>();
-        for (String value : exchange.getRequestHeaders().get(name)) {
-            values.add(value);
+        Deque<String> values = exchange.getRequestHeaders().get(name);
+        if (values == null || values.isEmpty()) {
+            return List.of();
         }
-        return List.copyOf(values);
+        if (values.size() == 1) {
+            return List.of(values.getFirst());
+        }
+        return new ArrayList<>(values);
     }
 
     @Override
     public byte[] body() throws IOException {
         if (cachedBody == null) {
+            exchange.startBlocking();
             try (InputStream in = exchange.getInputStream()) {
-                long cl = exchange.getRequestContentLength();
                 cachedBody = readBodyLimited(in);
             }
         }
@@ -124,7 +131,8 @@ final class UndertowHttpContext extends HttpContext {
     @Override
     public HttpContext headerSet(String name, String value) {
         validateHeaderValue(value);
-        exchange.getResponseHeaders().put(new HttpString(name), value);
+        exchange.getResponseHeaders().put(
+            HttpString.tryFromString(name.toLowerCase(Locale.ROOT)), value);
         return this;
     }
 
@@ -133,29 +141,28 @@ final class UndertowHttpContext extends HttpContext {
         if (responded) {
             return this;
         }
-        boolean headRequest = "HEAD".equalsIgnoreCase(method());
-        if (!headRequest && responseStatus != 204 && responseStatus != 304) {
+        boolean head = "HEAD".equalsIgnoreCase(method);
+        boolean noBody = head || responseStatus == 204 || responseStatus == 304;
+        if (!noBody) {
             exchange.setResponseContentLength(data.length);
         }
         responded = true;
-        try (OutputStream os = exchange.getOutputStream()) {
-            if (
-                !headRequest &&
-                responseStatus != 204 &&
-                responseStatus != 304 &&
-                data.length > 0
-            ) {
+        if (!noBody && data.length > 0) {
+            try (OutputStream os = exchange.getOutputStream()) {
                 os.write(data);
             }
         }
         return this;
     }
 
-    private static Map<String, List<String>> parseQueryParams(
+    private static Map<String, List<String>> snapshotQuery(
         Map<String, Deque<String>> source
     ) {
-        LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
-        for (Map.Entry<String, Deque<String>> entry : source.entrySet()) {
+        if (source.isEmpty()) {
+            return Map.of();
+        }
+        var params = new LinkedHashMap<String, List<String>>(source.size());
+        for (var entry : source.entrySet()) {
             params.put(entry.getKey(), List.copyOf(entry.getValue()));
         }
         return Map.copyOf(params);

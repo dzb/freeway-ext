@@ -23,7 +23,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.*;
 
-final class UndertowWebEngine implements HttpEngine {
+public final class UndertowWebEngine implements HttpEngine {
     private static final Logger LOG = LoggerFactory.getLogger(UndertowWebEngine.class);
     private final JsonCodec jsonCodec;
     private final Coercer coercer;
@@ -49,6 +49,8 @@ final class UndertowWebEngine implements HttpEngine {
         Undertow server = Undertow.builder()
             .addHttpListener(config.port(), config.host())
             .setHandler(gracefulShutdown)
+            .setIoThreads(1)
+            .setWorkerThreads(Runtime.getRuntime().availableProcessors() * 2)
             .build();
         server.start();
         LOG.info("Freeway undertow web engine started on {}:{}", config.host(), listenerPort(server));

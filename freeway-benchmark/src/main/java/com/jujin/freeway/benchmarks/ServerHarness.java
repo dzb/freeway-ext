@@ -5,7 +5,16 @@ import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.undertow.UndertowWebEngine;
-import com.jujin.freeway.http.engine.FreewayHttpEngine;
+import com.jujin.freeway.http.jetty.JettyWebEngine;
+import org.eclipse.jetty.http.HttpHeader;
+import org.eclipse.jetty.server.Handler;
+import org.eclipse.jetty.server.Request;
+import org.eclipse.jetty.server.Response;
+import org.eclipse.jetty.server.Server;
+import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.util.Callback;
+import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
+import org.eclipse.jetty.websocket.server.WebSocketCreator;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.ExceptionMapper;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -26,6 +35,7 @@ import io.undertow.websockets.WebSocketProtocolHandshakeHandler;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
@@ -56,7 +66,9 @@ public final class ServerHarness implements AutoCloseable {
         JDK_NATIVE("jdk-native"),
         ROBAHO_NATIVE("robaho-native"),
         UNDERTOW_NATIVE("undertow-native"),
-        UNDERTOW_ADAPTER("undertow-adapter");
+        UNDERTOW_ADAPTER("undertow-adapter"),
+        JETTY_ADAPTER("jetty-adapter"),
+        JETTY_NATIVE("jetty-native");
 
         private final String label;
         Engine(String label) { this.label = label; }
@@ -69,7 +81,7 @@ public final class ServerHarness implements AutoCloseable {
                 if (e.label.equalsIgnoreCase(s)) return e;
             }
             throw new IllegalArgumentException("Unknown engine: " + s
-                + ". Supported: freeway, jdk-native, robaho-native, undertow-native, undertow-adapter");
+                + ". Supported: freeway, jdk-native, robaho-native, undertow-native, undertow-adapter, jetty-adapter, jetty-native");
         }
     }
 
@@ -115,7 +127,7 @@ public final class ServerHarness implements AutoCloseable {
      */
     public static ServerHarness start(Engine engine, Scenario scenario) throws Exception {
         if (scenario == Scenario.WS_ECHO) {
-            if (engine != Engine.FREEWAY && engine != Engine.UNDERTOW_NATIVE) {
+            if (engine != Engine.FREEWAY && engine != Engine.UNDERTOW_NATIVE && engine != Engine.JETTY_NATIVE) {
                 throw new UnsupportedOperationException(
                     "WS_ECHO scenario not supported for " + engine.label());
             }
@@ -126,6 +138,8 @@ public final class ServerHarness implements AutoCloseable {
             case ROBAHO_NATIVE -> bare("robaho.net.httpserver.DefaultHttpServerProvider", scenario);
             case UNDERTOW_NATIVE -> undertow(scenario);
             case UNDERTOW_ADAPTER -> undertowAdapter(scenario);
+            case JETTY_ADAPTER -> jettyAdapter(scenario);
+            case JETTY_NATIVE -> jetty(scenario);
         };
     }
 
@@ -135,6 +149,32 @@ public final class ServerHarness implements AutoCloseable {
 
     private static ServerHarness freeway(Scenario scenario) throws Exception {
         var engine = new FreewayHttpEngine(new JsonCodecDefault(), new CoercerDefault());
+        var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
+        WebSocketIndex wsIndex;
+        RouteIndex routeIndex;
+        if (scenario == Scenario.WS_ECHO) {
+            routeIndex = new RouteIndex(List.of(), List.of());
+            wsIndex = freewayWebSocketRoutes();
+        } else {
+            routeIndex = freewayRoutes(scenario);
+            wsIndex = new WebSocketIndex(List.of(), List.of());
+        }
+        var pipeline = new RequestPipeline(
+            routeIndex, wsIndex,
+            noopCors(),
+            noopHealth(),
+            List.<StaticResourceMount>of(),
+            List.<HttpFilter>of(),
+            List.<ExceptionMapper>of()
+        );
+        var srv = new WebServer(engine, config, event -> {}, pipeline);
+        srv.start();
+        return new ServerHarness(srv, srv.port());
+    }
+
+    /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */
+    private static ServerHarness jettyAdapter(Scenario scenario) throws Exception {
+        var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
         var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
         WebSocketIndex wsIndex;
         RouteIndex routeIndex;
@@ -348,5 +388,124 @@ public final class ServerHarness implements AutoCloseable {
             channel.resumeReceives();
         };
         return new WebSocketProtocolHandshakeHandler(callback);
+    }
+
+    // ---------------------------------------------------------------
+    // Engine: Jetty native
+    // ---------------------------------------------------------------
+
+    private static ServerHarness jetty(Scenario scenario) throws Exception {
+        Server server = new Server();
+        ServerConnector connector = new ServerConnector(server);
+        connector.setHost("127.0.0.1");
+        connector.setPort(0);
+        server.addConnector(connector);
+
+        if (scenario == Scenario.WS_ECHO) {
+            ServerWebSocketContainer wsContainer =
+                ServerWebSocketContainer.ensure(server);
+            wsContainer.addMapping("/ws/echo", (WebSocketCreator)
+                (upgradeRequest, upgradeResponse, wsCallback) -> {
+                    var listener = new JettyEchoListener();
+                    listener.setSessionCallback(wsCallback);
+                    return listener;
+                });
+        }
+        server.setHandler(jettyHandler(scenario));
+        server.start();
+        int port = connector.getLocalPort();
+        return new ServerHarness(() -> server.stop(), port);
+    }
+
+    private static Handler jettyHandler(Scenario scenario) {
+        if (scenario == Scenario.WS_ECHO) {
+            return null; // handled by WebSocket container
+        }
+        return new Handler.Abstract() {
+            @Override
+            public boolean handle(Request request, Response response, Callback callback) {
+                return switch (scenario) {
+                    case PING -> {
+                        response.setStatus(200);
+                        response.getHeaders().put(HttpHeader.CONTENT_TYPE, "text/plain");
+                        response.getHeaders().put(HttpHeader.CONTENT_LENGTH, "4");
+                        response.write(true, ByteBuffer.wrap(PONG_BYTES), callback);
+                        yield true;
+                    }
+                    case JSON -> {
+                        byte[] body = JSON_BODY.getBytes(StandardCharsets.UTF_8);
+                        response.setStatus(200);
+                        response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json");
+                        response.getHeaders().put(HttpHeader.CONTENT_LENGTH,
+                            String.valueOf(body.length));
+                        response.write(true, ByteBuffer.wrap(body), callback);
+                        yield true;
+                    }
+                    case ECHO_BODY -> {
+                        if (!"POST".equals(request.getMethod())) {
+                            response.setStatus(405);
+                            callback.succeeded();
+                            yield true;
+                        }
+                        try {
+                            byte[] body = Request.asInputStream(request).readAllBytes();
+                            response.setStatus(200);
+                            response.getHeaders().put(HttpHeader.CONTENT_LENGTH,
+                                String.valueOf(body.length));
+                            response.write(true, ByteBuffer.wrap(body), callback);
+                        } catch (Exception e) {
+                            response.setStatus(500);
+                            callback.succeeded();
+                        }
+                        yield true;
+                    }
+                    case WS_ECHO -> throw new UnsupportedOperationException(
+                        "WS_ECHO must go through WebSocket container");
+                };
+            }
+        };
+    }
+
+    /** Minimal Jetty 12 WebSocket echo listener. */
+    private static final class JettyEchoListener
+        implements org.eclipse.jetty.websocket.api.Session.Listener.AutoDemanding {
+
+        private org.eclipse.jetty.websocket.api.Session session;
+        private org.eclipse.jetty.util.Callback setSessionCallback;
+
+        void setSessionCallback(org.eclipse.jetty.util.Callback callback) {
+            this.setSessionCallback = callback;
+        }
+
+        @Override
+        public void onWebSocketOpen(org.eclipse.jetty.websocket.api.Session session) {
+            this.session = session;
+            if (setSessionCallback != null) {
+                setSessionCallback.succeeded();
+            }
+            session.demand();
+        }
+
+        @Override
+        public void onWebSocketText(String message) {
+            try {
+                session.sendText(message,
+                    org.eclipse.jetty.websocket.api.Callback.NOOP);
+                session.demand();
+            } catch (Exception ignored) {
+                // ignore send errors in benchmark
+            }
+        }
+
+        @Override
+        public void onWebSocketClose(int statusCode, String reason,
+                                      org.eclipse.jetty.websocket.api.Callback callback) {
+            callback.succeed();
+        }
+
+        @Override
+        public void onWebSocketError(Throwable cause) {
+            // ignore errors in benchmark
+        }
     }
 }

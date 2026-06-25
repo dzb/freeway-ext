@@ -21,32 +21,31 @@ import org.eclipse.jetty.util.Fields;
 
 final class JettyHttpContext extends HttpContext {
 
-    private final Request request;
-    private final Response response;
-    private final Callback callback;
-    private final RequestContext requestContext;
-    private final Map<String, List<String>> queryParams;
+    private Request request;
+    private Response response;
+    private Callback callback;
+    private RequestContext requestContext;
+    private Map<String, List<String>> queryParams;
     private volatile byte[] cachedBody;
     private int responseStatus = 200;
     private volatile boolean responded;
 
-    JettyHttpContext(
-        Request request,
-        Response response,
-        JsonCodec jsonCodec,
-        Coercer coercer,
-        RequestContext requestContext,
-        Callback callback
-    ) {
+    /** Pooled constructor — call {@link #reset} before use. */
+    JettyHttpContext(JsonCodec jsonCodec, Coercer coercer) {
         super(jsonCodec, coercer);
+    }
+
+    /** Reinitializes all per-request state for object reuse. */
+    void reset(Request request, Response response, RequestContext requestContext,
+               Callback callback) {
         this.request = Objects.requireNonNull(request, "request");
         this.response = Objects.requireNonNull(response, "response");
+        this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
         this.callback = Objects.requireNonNull(callback, "callback");
-        this.requestContext = Objects.requireNonNull(
-            requestContext,
-            "requestContext"
-        );
         this.queryParams = parseQueryParams(request);
+        this.cachedBody = null;
+        this.responseStatus = 200;
+        this.responded = false;
     }
 
     @Override

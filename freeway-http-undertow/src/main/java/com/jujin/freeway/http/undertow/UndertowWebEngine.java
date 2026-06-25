@@ -25,12 +25,17 @@ import java.util.*;
 
 public final class UndertowWebEngine implements HttpEngine {
     private static final Logger LOG = LoggerFactory.getLogger(UndertowWebEngine.class);
+    private static final HttpString X_REQUEST_ID = new HttpString("X-Request-Id");
+
     private final JsonCodec jsonCodec;
     private final Coercer coercer;
+    private final ThreadLocal<UndertowHttpContext> contextPool;
 
     public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer) {
         this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
         this.coercer = Objects.requireNonNull(coercer, "coercer");
+        this.contextPool = ThreadLocal.withInitial(() ->
+            new UndertowHttpContext(this.jsonCodec, this.coercer));
     }
 
     @Override
@@ -38,19 +43,13 @@ public final class UndertowWebEngine implements HttpEngine {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(handler, "handler");
 
-        HttpHandler root = exchange -> {
-            if (exchange.isInIoThread()) {
-                exchange.dispatch(() -> handle(exchange, handler));
-                return;
-            }
-            handle(exchange, handler);
-        };
+        HttpHandler root = exchange -> handle(exchange, handler);
         GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
         Undertow server = Undertow.builder()
             .addHttpListener(config.port(), config.host())
             .setHandler(gracefulShutdown)
-            .setIoThreads(1)
-            .setWorkerThreads(Runtime.getRuntime().availableProcessors() * 2)
+            .setIoThreads(Runtime.getRuntime().availableProcessors())
+            .setWorkerThreads(1)
             .build();
         server.start();
         LOG.info("Freeway undertow web engine started on {}:{}", config.host(), listenerPort(server));
@@ -68,8 +67,9 @@ public final class UndertowWebEngine implements HttpEngine {
     }
 
     private void dispatch(HttpServerExchange exchange, HttpRequestHandler handler) throws Exception {
-        RequestContext requestContext = HttpContext.createRequestContext(exchange.getRequestHeaders().getFirst("X-Request-Id"));
-        exchange.getResponseHeaders().put(new HttpString("X-Request-Id"), requestContext.correlationId());
+        RequestContext requestContext = HttpContext.createRequestContext(
+            exchange.getRequestHeaders().getFirst("X-Request-Id"));
+        exchange.getResponseHeaders().put(X_REQUEST_ID, requestContext.correlationId());
         if (isWebSocketRequest(exchange)) {
             String origin = exchange.getRequestHeaders().getFirst(Headers.ORIGIN);
             WebSocketMatch match = handler.websocket(method(exchange), path(exchange), origin);
@@ -81,8 +81,8 @@ public final class UndertowWebEngine implements HttpEngine {
             return;
         }
 
-        exchange.startBlocking();
-        UndertowHttpContext ctx = new UndertowHttpContext(exchange, jsonCodec, coercer, requestContext);
+        UndertowHttpContext ctx = contextPool.get();
+        ctx.reset(exchange, requestContext);
         try {
             handler.handle(ctx);
         } catch (Exception ex) {

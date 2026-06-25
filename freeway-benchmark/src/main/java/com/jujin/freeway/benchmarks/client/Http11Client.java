@@ -35,12 +35,17 @@ public final class Http11Client implements AutoCloseable {
     }
 
     public Http11Client(int port, RequestPattern pattern) throws IOException {
+        this(port, pattern, false);
+    }
+
+    /** @param shortMode use {@code Connection: close} — one request per socket */
+    public Http11Client(int port, RequestPattern pattern, boolean shortMode) throws IOException {
         socket = new Socket("127.0.0.1", port);
         socket.setTcpNoDelay(true);
         socket.setSoTimeout((int) Duration.ofSeconds(10).toMillis());
         in = new BufferedInputStream(socket.getInputStream());
         out = socket.getOutputStream();
-        this.request = buildRequest(pattern.method(), pattern.path());
+        this.request = buildRequest(pattern.method(), pattern.path(), shortMode);
         this.expectedBody = pattern.expectedBody();
     }
 
@@ -90,9 +95,14 @@ public final class Http11Client implements AutoCloseable {
     }
 
     private static byte[] buildRequest(String method, String path) {
+        return buildRequest(method, path, false);
+    }
+
+    private static byte[] buildRequest(String method, String path, boolean shortMode) {
+        String conn = shortMode ? "close" : "keep-alive";
         return (method + " " + path + " HTTP/1.1\r\n"
             + "Host: 127.0.0.1\r\n"
-            + "Connection: keep-alive\r\n\r\n")
+            + "Connection: " + conn + "\r\n\r\n")
             .getBytes(StandardCharsets.ISO_8859_1);
     }
 }

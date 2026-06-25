@@ -66,7 +66,7 @@ public final class BenchRunner {
                         while (true) {
                             int i = next.getAndIncrement();
                             if (i >= requests) break;
-                            try (var client = new Http11Client(port, pattern)) {
+                            try (var client = new Http11Client(port, pattern, true)) {
                                 long ts = System.nanoTime();
                                 if (client.send()) {
                                     latencies[i] = (System.nanoTime() - ts) / 1000L;
@@ -187,7 +187,7 @@ public final class BenchRunner {
                         while (true) {
                             int i = count.getAndIncrement();
                             if (i >= requests) break;
-                            try (var client = new Http11Client(port, pattern)) {
+                            try (var client = new Http11Client(port, pattern, true)) {
                                 client.send();
                             } catch (Exception ignored) {
                             }

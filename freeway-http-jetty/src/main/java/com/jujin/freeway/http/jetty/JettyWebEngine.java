@@ -20,14 +20,17 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 
-final class JettyWebEngine implements HttpEngine {
+public final class JettyWebEngine implements HttpEngine {
     private static final Logger LOG = LoggerFactory.getLogger(JettyWebEngine.class);
     private final JsonCodec jsonCodec;
     private final Coercer coercer;
+    private final ThreadLocal<JettyHttpContext> contextPool;
 
     public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer) {
         this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
         this.coercer = Objects.requireNonNull(coercer, "coercer");
+        this.contextPool = ThreadLocal.withInitial(() ->
+            new JettyHttpContext(this.jsonCodec, this.coercer));
     }
 
     @Override
@@ -53,7 +56,8 @@ final class JettyWebEngine implements HttpEngine {
                 if (isWebSocketRequest(request)) {
                     return handleWebSocket(request, response, callback, handler, requestContext, webSocketContainer);
                 }
-                JettyHttpContext ctx = new JettyHttpContext(request, response, jsonCodec, coercer, requestContext, callback);
+                JettyHttpContext ctx = contextPool.get();
+                ctx.reset(request, response, requestContext, callback);
                 try {
                     handler.handle(ctx);
                 } catch (Exception ex) {

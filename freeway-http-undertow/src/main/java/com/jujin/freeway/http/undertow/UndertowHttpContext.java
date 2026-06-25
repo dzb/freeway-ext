@@ -9,7 +9,7 @@ import io.undertow.server.HttpServerExchange;
 import io.undertow.util.HttpString;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -20,32 +20,34 @@ import java.util.Objects;
 
 final class UndertowHttpContext extends HttpContext {
 
-    private final HttpServerExchange exchange;
-    private final RequestContext requestContext;
-    private final Map<String, List<String>> queryParams;
-    private final String method;  // cached — allocated once per request
-    private final String path;    // cached — allocated once per request
+    private HttpServerExchange exchange;
+    private RequestContext requestContext;
+    private Map<String, List<String>> queryParams;
+    private String method;
+    private String path;
+    private Map<String, List<String>> requestHeaders;
     private byte[] cachedBody;
     private int responseStatus = 200;
     private boolean responded;
 
-    UndertowHttpContext(
-        HttpServerExchange exchange,
-        JsonCodec jsonCodec,
-        Coercer coercer,
-        RequestContext requestContext
-    ) {
+    /** Pooled constructor — call {@link #reset} before use. */
+    UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer) {
         super(jsonCodec, coercer);
+    }
+
+    /** Reinitializes all per-request state for object reuse. */
+    void reset(HttpServerExchange exchange, RequestContext requestContext) {
         this.exchange = Objects.requireNonNull(exchange, "exchange");
-        this.requestContext = Objects.requireNonNull(
-            requestContext,
-            "requestContext"
-        );
-        this.queryParams = snapshotQuery(exchange.getQueryParameters());
+        this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+        this.queryParams = null;       // lazy — PING never accesses
         this.method = exchange.getRequestMethod() != null
             ? exchange.getRequestMethod().toString() : "";
         String rel = exchange.getRelativePath();
         this.path = rel != null ? rel : "/";
+        this.requestHeaders = null;    // lazy — PING never accesses
+        this.cachedBody = null;
+        this.responseStatus = 200;
+        this.responded = false;
     }
 
     @Override
@@ -60,17 +62,26 @@ final class UndertowHttpContext extends HttpContext {
 
     @Override
     public String queryParam(String name) {
+        if (queryParams == null) {
+            queryParams = snapshotQuery(exchange.getQueryParameters());
+        }
         List<String> values = queryParams.get(name);
         return values != null && !values.isEmpty() ? values.getFirst() : null;
     }
 
     @Override
     public List<String> queryParams(String name) {
+        if (queryParams == null) {
+            queryParams = snapshotQuery(exchange.getQueryParameters());
+        }
         return queryParams.getOrDefault(name, List.of());
     }
 
     @Override
     public Map<String, List<String>> queryParams() {
+        if (queryParams == null) {
+            queryParams = snapshotQuery(exchange.getQueryParameters());
+        }
         return queryParams;
     }
 
@@ -92,9 +103,24 @@ final class UndertowHttpContext extends HttpContext {
     }
 
     @Override
+    public Map<String, List<String>> headers() {
+        if (requestHeaders == null) {
+            var headerMap = new LinkedHashMap<String, List<String>>();
+            for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
+                Deque<String> values = exchange.getRequestHeaders().get(name);
+                headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
+            }
+            requestHeaders = Map.copyOf(headerMap);
+        }
+        return requestHeaders;
+    }
+
+    @Override
     public byte[] body() throws IOException {
         if (cachedBody == null) {
-            exchange.startBlocking();
+            if (!exchange.isBlocking()) {
+                exchange.startBlocking();
+            }
             try (InputStream in = exchange.getInputStream()) {
                 cachedBody = readBodyLimited(in);
             }
@@ -106,7 +132,9 @@ final class UndertowHttpContext extends HttpContext {
     public SseEmitter sse() throws IOException {
         exchange.setStatusCode(200);
         setupSseHeaders();
-        exchange.startBlocking();
+        if (!exchange.isBlocking()) {
+            exchange.startBlocking();
+        }
         responded = true;
         return new SseEmitter(exchange.getOutputStream());
     }
@@ -129,6 +157,11 @@ final class UndertowHttpContext extends HttpContext {
     }
 
     @Override
+    protected String responseHeader(String name) {
+        return exchange.getResponseHeaders().getFirst(name);
+    }
+
+    @Override
     public HttpContext headerSet(String name, String value) {
         validateHeaderValue(value);
         exchange.getResponseHeaders().put(
@@ -148,9 +181,9 @@ final class UndertowHttpContext extends HttpContext {
         }
         responded = true;
         if (!noBody && data.length > 0) {
-            try (OutputStream os = exchange.getOutputStream()) {
-                os.write(data);
-            }
+            exchange.getResponseSender().send(ByteBuffer.wrap(data));
+        } else {
+            exchange.endExchange();
         }
         return this;
     }

@@ -69,6 +69,7 @@
     </dependencyManagement>
 
     <modules>
+        <module>freeway-http-jetty</module>
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>
         <module>freeway-db-hikari</module>

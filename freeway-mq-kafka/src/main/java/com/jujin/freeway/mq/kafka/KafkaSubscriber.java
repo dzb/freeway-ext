@@ -1,6 +1,6 @@
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.commons.defer.Defer;
+import com.jujin.freeway.commons.scoped.Defer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.EventBus;

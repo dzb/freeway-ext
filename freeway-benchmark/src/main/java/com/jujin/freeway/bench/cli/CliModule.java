@@ -2,13 +2,13 @@ package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
-import com.jujin.freeway.ioc.Module2;
+import com.jujin.freeway.ioc.ModuleEx;
 
 /**
  * Registers all CLI command implementations as contributions.
  * New commands are added to {@link #bind(Binder)}.
  */
-public final class CliModule implements Module2 {
+public final class CliModule implements ModuleEx {
 
     @Override
     public void bind(Binder binder) {

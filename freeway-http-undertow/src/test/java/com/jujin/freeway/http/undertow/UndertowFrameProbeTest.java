@@ -7,7 +7,7 @@ import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
 import com.jujin.freeway.ioc.Binder;
-import com.jujin.freeway.ioc.Module2;
+import com.jujin.freeway.ioc.ModuleEx;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -72,7 +72,7 @@ class UndertowFrameProbeTest {
         }
     }
 
-    static final class TestAppModule implements Module2 {
+    static final class TestAppModule implements ModuleEx {
         @Override
         public void bind(Binder binder) {
             binder.contribute(WebSocketGroup.class).add(WebSocketGroup.of("/api",

@@ -4,7 +4,6 @@ import com.jujin.freeway.benchmarks.ServerHarness;
 import com.jujin.freeway.benchmarks.client.Http11Client;
 import com.jujin.freeway.benchmarks.client.WsClient;
 import java.util.Arrays;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -35,6 +34,10 @@ public final class BenchRunner {
                                        int warmup, ServerHarness.Scenario scenario,
                                        Mode mode) throws Exception {
         if (mode == Mode.WS) {
+            if (scenario != ServerHarness.Scenario.WS_ECHO) {
+                throw new IllegalArgumentException(
+                    "--mode=ws requires --scenario=ws_echo, got: " + scenario);
+            }
             return runWs(port, concurrency, requests, warmup);
         }
 
@@ -43,7 +46,7 @@ public final class BenchRunner {
             case JSON -> Http11Client.RequestPattern.JSON;
             case ECHO_BODY -> Http11Client.RequestPattern.PING;
             case WS_ECHO -> throw new IllegalArgumentException(
-                "WS_ECHO requires Mode.WS");
+                "Scenario WS_ECHO requires --mode=ws");
         };
 
         // Warmup phase — send requests to let JIT settle
@@ -52,10 +55,13 @@ public final class BenchRunner {
         }
 
         // Measurement phase
-        var latencies = new long[requests];
+        // Only successful requests contribute latency samples. Using a dedicated
+        // success counter avoids zero-filled failure slots skewing percentiles.
+        var okLatencies = new long[requests];
+        var okCount = new AtomicInteger();
         var next = new AtomicInteger();
         var errs = new AtomicInteger();
-        var executor = Executors.newFixedThreadPool(concurrency);
+        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
         long t0 = System.nanoTime();
         try {
             var futures = new java.util.concurrent.Future<?>[concurrency];
@@ -64,12 +70,12 @@ public final class BenchRunner {
                     if (mode == Mode.SHORT) {
                         // New connection per request
                         while (true) {
-                            int i = next.getAndIncrement();
-                            if (i >= requests) break;
+                            if (next.getAndIncrement() >= requests) break;
                             try (var client = new Http11Client(port, pattern, true)) {
                                 long ts = System.nanoTime();
                                 if (client.send()) {
-                                    latencies[i] = (System.nanoTime() - ts) / 1000L;
+                                    okLatencies[okCount.getAndIncrement()] =
+                                        (System.nanoTime() - ts) / 1000L;
                                 } else {
                                     errs.incrementAndGet();
                                 }
@@ -81,11 +87,11 @@ public final class BenchRunner {
                         // Reuse one connection per thread
                         try (var client = new Http11Client(port, pattern)) {
                             while (true) {
-                                int i = next.getAndIncrement();
-                                if (i >= requests) break;
+                                if (next.getAndIncrement() >= requests) break;
                                 long ts = System.nanoTime();
                                 if (client.send()) {
-                                    latencies[i] = (System.nanoTime() - ts) / 1000L;
+                                    okLatencies[okCount.getAndIncrement()] =
+                                        (System.nanoTime() - ts) / 1000L;
                                 } else {
                                     errs.incrementAndGet();
                                 }
@@ -97,13 +103,19 @@ public final class BenchRunner {
                     return null;
                 });
             }
-            for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+            try {
+                for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException ex) {
+                // Requests that missed the deadline never completed; count them
+                // as errors so the reported total stays truthful.
+                errs.addAndGet(Math.max(0, requests - okCount.get() - errs.get()));
+            }
         } finally {
             executor.shutdownNow();
         }
 
-        int ok = requests - errs.get();
-        var sorted = Arrays.copyOf(latencies, ok);
+        int ok = okCount.get();
+        var sorted = Arrays.copyOf(okLatencies, ok);
         Arrays.sort(sorted);
         double rps = ok * 1e9 / (System.nanoTime() - t0);
         long p50 = percentile(sorted, 0.50);
@@ -132,22 +144,22 @@ public final class BenchRunner {
             warmupWs(port, concurrency, warmup);
         }
 
-        var latencies = new long[requests];
+        var okLatencies = new long[requests];
+        var okCount = new AtomicInteger();
         var next = new AtomicInteger();
         var errs = new AtomicInteger();
-        var executor = Executors.newFixedThreadPool(concurrency);
+        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
         long t0 = System.nanoTime();
         try {
             var futures = new java.util.concurrent.Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     while (true) {
-                        int i = next.getAndIncrement();
-                        if (i >= requests) break;
+                        if (next.getAndIncrement() >= requests) break;
                         try (var client = new WsClient(port)) {
                             long nanos = client.echo("hello");
                             if (nanos > 0) {
-                                latencies[i] = nanos / 1000L;
+                                okLatencies[okCount.getAndIncrement()] = nanos / 1000L;
                             } else {
                                 errs.incrementAndGet();
                             }
@@ -158,13 +170,17 @@ public final class BenchRunner {
                     return null;
                 });
             }
-            for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+            try {
+                for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (java.util.concurrent.TimeoutException ex) {
+                errs.addAndGet(Math.max(0, requests - okCount.get() - errs.get()));
+            }
         } finally {
             executor.shutdownNow();
         }
 
-        int ok = requests - errs.get();
-        var sorted = Arrays.copyOf(latencies, ok);
+        int ok = okCount.get();
+        var sorted = Arrays.copyOf(okLatencies, ok);
         Arrays.sort(sorted);
         double rps = ok * 1e9 / (System.nanoTime() - t0);
         long p50 = percentile(sorted, 0.50);
@@ -178,15 +194,14 @@ public final class BenchRunner {
                                     Http11Client.RequestPattern pattern,
                                     Mode mode) throws Exception {
         var count = new AtomicInteger();
-        var executor = Executors.newFixedThreadPool(concurrency);
+        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
         try {
             var futures = new java.util.concurrent.Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     if (mode == Mode.SHORT) {
                         while (true) {
-                            int i = count.getAndIncrement();
-                            if (i >= requests) break;
+                            if (count.getAndIncrement() >= requests) break;
                             try (var client = new Http11Client(port, pattern, true)) {
                                 client.send();
                             } catch (Exception ignored) {
@@ -195,8 +210,7 @@ public final class BenchRunner {
                     } else {
                         try (var client = new Http11Client(port, pattern)) {
                             while (true) {
-                                int i = count.getAndIncrement();
-                                if (i >= requests) break;
+                                if (count.getAndIncrement() >= requests) break;
                                 client.send();
                             }
                         } catch (Exception ignored) {
@@ -214,14 +228,13 @@ public final class BenchRunner {
     /** Warmup for WebSocket: send frames, discard results. */
     private static void warmupWs(int port, int concurrency, int requests) throws Exception {
         var count = new AtomicInteger();
-        var executor = Executors.newFixedThreadPool(concurrency);
+        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
         try {
             var futures = new java.util.concurrent.Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     while (true) {
-                        int i = count.getAndIncrement();
-                        if (i >= requests) break;
+                        if (count.getAndIncrement() >= requests) break;
                         try (var client = new WsClient(port)) {
                             client.echo("warmup");
                         } catch (Exception ignored) {

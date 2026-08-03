@@ -27,18 +27,24 @@ mvn -f freeway-benchmark/pom.xml exec:java \
 ```
 freeway-ext (parent, inherits from freeway-parent)
  ├─ freeway-http-undertow ── freeway-ioc, freeway-http, undertow-core
+ ├─ freeway-http-jetty    ── freeway-ioc, freeway-http, jetty-server,
+ │                           jetty-websocket-jetty-server
  ├─ freeway-mq-kafka      ── freeway-ioc, freeway-commons, kafka-clients
  ├─ freeway-db-hikari     ── freeway-ioc, freeway-db, HikariCP
  └─ freeway-benchmark     ── freeway-http, freeway-boot, freeway-db,
-                              freeway-http-undertow, JMH, robaho-httpserver
+                              freeway-http-undertow, freeway-http-jetty,
+                              JMH, robaho-httpserver
 ```
 
-The three adapter modules are leaf nodes — no cross-dependencies between them.
+The four adapter modules are leaf nodes — no cross-dependencies between them.
 Each depends only on Freeway core modules and its specific third-party library.
 
 `freeway-benchmark` is the exception: it depends on `freeway-http-undertow` (and
-third-party engines) to run comparative benchmarks. It is not published
+`freeway-http-jetty`, plus third-party engines) to run comparative benchmarks. It is not published
 (`maven.deploy.skip=true`).
+
+The benchmark CLI disables SPI auto-discovery (`BenchApp`) because its classpath
+contains both transport adapters, each binding `HttpEngine` as `primary()`.
 
 ## Architecture
 
@@ -51,6 +57,17 @@ third-party engines) to run comparative benchmarks. It is not published
 - `freeway-benchmark` is not an adapter — it is a JMH-based performance test suite
   that compares the Undertow adapter against other engines. It is the only module
   with cross-extension dependencies and is excluded from deployment.
+
+## Operational notes
+
+- **Kafka allowlist (default deny)**: `KafkaSubscriber` refuses any message with
+  an `X-Event-Type` header whose class is not listed in
+  `freeway.kafka.allowed-event-types`. An empty allowlist (the default) accepts
+  only header-less `Map` messages, so existing deployments that consume typed
+  events must configure the allowlist before upgrading.
+- **WebSocket sends are asynchronous**: the Jetty/Undertow sessions never block
+  the calling (often receive/I/O) thread. Send failures are logged, not thrown,
+  and `close()` returns immediately after initiating the close handshake.
 
 ## Naming
 

@@ -5,13 +5,11 @@ import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.benchmarks.ServerHarness;
 import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -45,7 +43,6 @@ public final class SuiteCommand implements Command {
         var coercer = container.get(Coercer.class);
         var orm = new Orm(db, coercer);
         var eventBus = container.get(EventBus.class);
-        var json = new JsonCodecDefault();
 
         // Parse configuration
         var engines = parseList(ctx.get("engines", "freeway"));
@@ -120,8 +117,9 @@ public final class SuiteCommand implements Command {
 
                     // Compute score_error and update median
                     double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-                    var medianId = orm.findAll(BenchmarkResult.class, "id ASC", 0, 0).stream()
-                        .filter(res -> res.runId() == runId)
+                    var medianId = db.query(
+                            "SELECT * FROM bench_results WHERE run_id = ?", runId)
+                        .list(BenchmarkResult.class).stream()
                         .sorted(Comparator.comparingDouble(BenchmarkResult::score))
                         .skip(runs / 2)
                         .findFirst()
@@ -171,7 +169,7 @@ public final class SuiteCommand implements Command {
         for (var r : allResults) {
             System.out.printf("| %-16s | %-10s | %6d | %9s | %6s | %6s | %6s |%n",
                 r.engine(), r.scenario(), r.concurrency(),
-                formatRps(r.rps()), r.p50us() + "μs",
+                BenchFormat.rps(r.rps()), r.p50us() + "μs",
                 r.p95us() + "μs", r.p99us() + "μs");
         }
     }
@@ -186,7 +184,7 @@ public final class SuiteCommand implements Command {
             report.append(String.format(Locale.ROOT,
                 "| %s | %s | %d | %s | %dμs | %dμs | %dμs |\n",
                 r.engine(), r.scenario(), r.concurrency(),
-                formatRps(r.rps()), r.p50us(), r.p95us(), r.p99us()));
+                BenchFormat.rps(r.rps()), r.p50us(), r.p95us(), r.p99us()));
         }
         java.nio.file.Files.writeString(java.nio.file.Path.of(outputPath),
             report.toString(), java.nio.charset.StandardCharsets.UTF_8);
@@ -211,9 +209,4 @@ public final class SuiteCommand implements Command {
         return result;
     }
 
-    private static String formatRps(double rps) {
-        if (rps >= 1_000_000) return String.format(Locale.ROOT, "%.2fM", rps / 1_000_000);
-        if (rps >= 1_000) return String.format(Locale.ROOT, "%.1fk", rps / 1_000);
-        return String.format(Locale.ROOT, "%.0f", rps);
-    }
 }

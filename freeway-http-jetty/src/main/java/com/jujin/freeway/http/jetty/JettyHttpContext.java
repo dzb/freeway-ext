@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
@@ -63,9 +64,11 @@ final class JettyHttpContext extends HttpContext {
     }
 
     @Override
-    public String queryParam(String name) {
+    public Optional<String> queryParam(String name) {
         List<String> values = queryParams.get(name);
-        return values != null && !values.isEmpty() ? values.get(0) : null;
+        return Optional.ofNullable(
+            values != null && !values.isEmpty() ? values.get(0) : null
+        );
     }
 
     @Override
@@ -79,8 +82,8 @@ final class JettyHttpContext extends HttpContext {
     }
 
     @Override
-    public String header(String name) {
-        return request.getHeaders().get(name);
+    public Optional<String> header(String name) {
+        return Optional.ofNullable(request.getHeaders().get(name));
     }
 
     @Override
@@ -140,7 +143,8 @@ final class JettyHttpContext extends HttpContext {
         LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
         for (String name : request.getHeaders().getFieldNamesCollection()) {
             List<String> values = request.getHeaders().getValuesList(name);
-            map.put(name, values != null ? List.copyOf(values) : List.of());
+            map.put(name.toLowerCase(java.util.Locale.ROOT),
+                values != null ? List.copyOf(values) : List.of());
         }
         return Map.copyOf(map);
     }
@@ -184,7 +188,10 @@ final class JettyHttpContext extends HttpContext {
             return this;
         }
         boolean headRequest = "HEAD".equalsIgnoreCase(method());
-        if (!headRequest && responseStatus != 204 && responseStatus != 304) {
+        // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
+        // 204/304 have no body and no Content-Length.
+        boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
+        if (bodyAllowed) {
             response
                 .getHeaders()
                 .put(HttpHeader.CONTENT_LENGTH, String.valueOf(data.length));

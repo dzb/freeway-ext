@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 final class UndertowHttpContext extends HttpContext {
 
@@ -61,12 +62,14 @@ final class UndertowHttpContext extends HttpContext {
     }
 
     @Override
-    public String queryParam(String name) {
+    public Optional<String> queryParam(String name) {
         if (queryParams == null) {
             queryParams = snapshotQuery(exchange.getQueryParameters());
         }
         List<String> values = queryParams.get(name);
-        return values != null && !values.isEmpty() ? values.getFirst() : null;
+        return Optional.ofNullable(
+            values != null && !values.isEmpty() ? values.getFirst() : null
+        );
     }
 
     @Override
@@ -86,8 +89,8 @@ final class UndertowHttpContext extends HttpContext {
     }
 
     @Override
-    public String header(String name) {
-        return exchange.getRequestHeaders().getFirst(name);
+    public Optional<String> header(String name) {
+        return Optional.ofNullable(exchange.getRequestHeaders().getFirst(name));
     }
 
     @Override
@@ -175,12 +178,14 @@ final class UndertowHttpContext extends HttpContext {
             return this;
         }
         boolean head = "HEAD".equalsIgnoreCase(method);
-        boolean noBody = head || responseStatus == 204 || responseStatus == 304;
-        if (!noBody) {
+        // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
+        // 204/304 have no body and no Content-Length.
+        boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
+        if (bodyAllowed) {
             exchange.setResponseContentLength(data.length);
         }
         responded = true;
-        if (!noBody && data.length > 0) {
+        if (bodyAllowed && !head && data.length > 0) {
             exchange.getResponseSender().send(ByteBuffer.wrap(data));
         } else {
             exchange.endExchange();

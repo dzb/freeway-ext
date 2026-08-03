@@ -29,18 +29,28 @@ public final class BenchApp {
         System.setProperty("freeway.db.pool.max-size", "1");
         System.setProperty("freeway.db.pool.min-idle", "0");
 
-        // Use random port so CLI doesn't conflict with anything
-        System.setProperty("freeway.web.server.port", "0");
-
-        AppRuntime app = FreewayApp.run(new BenchDbModule(), new CliModule());
+        // The benchmark CLI is a database-backed command line application, not a web
+        // server. Auto-discovery is disabled because it would additionally load the
+        // SPI modules on the classpath (e.g. DbModule from freeway-db), causing
+        // duplicate contributions and "Multiple primary services" conflicts with
+        // the transport engines bundled in this module.
+        AppRuntime app = FreewayApp.of(new BenchDbModule(), new CliModule())
+            .autoDiscovery(false)
+            .start();
+        int exitCode = 0;
         try {
-            CliModule.dispatch(app.container(), args);
+            if (!CliModule.dispatch(CliModule.container(), args)) {
+                exitCode = 1;
+            }
         } catch (Exception e) {
             System.err.println("Error: " + e.getMessage());
             e.printStackTrace();
-            System.exit(1);
+            exitCode = 1;
         } finally {
             app.close();
+        }
+        if (exitCode != 0) {
+            System.exit(exitCode);
         }
     }
 }

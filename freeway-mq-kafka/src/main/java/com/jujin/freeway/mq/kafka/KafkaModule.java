@@ -6,7 +6,7 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 
-public class KafkaModule implements ModuleEx{
+public class KafkaModule implements ModuleEx {
 
     @Override
     public void bind(Binder binder) {

@@ -24,7 +24,7 @@ import org.openjdk.jmh.annotations.State;
  * {@link RequestTimingFilter} &rarr; {@link CorsFilter} &rarr;
  * {@link HealthFilter} &rarr; no-op route handler.
  *
- * <p>Uses a real {@link FreewayHttpContext} (not a stub) so that filter
+ * <p>Uses a real {@link HttpContextDefault} (not a stub) so that filter
  * overhead includes real header/body/status operations.
  *
  * <p>Three request shapes exercise different filter code paths:
@@ -37,9 +37,9 @@ import org.openjdk.jmh.annotations.State;
 @State(Scope.Benchmark)
 public class FilterChainBenchmark {
 
-    private FreewayHttpContext normalCtx;
-    private FreewayHttpContext healthCtx;
-    private FreewayHttpContext corsCtx;
+    private HttpContextDefault normalCtx;
+    private HttpContextDefault healthCtx;
+    private HttpContextDefault corsCtx;
     private RouteHandler chain;
 
     @Setup
@@ -57,19 +57,19 @@ public class FilterChainBenchmark {
         chain = ctx -> timing.doFilter(ctx, c);
 
         // Normal GET /ping — passes through all filters
-        normalCtx = new FreewayHttpContext(json, coercer);
+        normalCtx = new HttpContextDefault(json, coercer);
         normalCtx.reset("GET", "/ping", null, Map.of("Host", List.of("127.0.0.1")),
             InputStream.nullInputStream(), -1, false,
             OutputStream.nullOutputStream(), null, false, true);
 
         // Health check request — intercepted by HealthFilter
-        healthCtx = new FreewayHttpContext(json, coercer);
+        healthCtx = new HttpContextDefault(json, coercer);
         healthCtx.reset("GET", "/healthz", null, Map.of("Host", List.of("127.0.0.1")),
             InputStream.nullInputStream(), -1, false,
             OutputStream.nullOutputStream(), null, false, true);
 
         // CORS preflight — intercepted by CorsFilter
-        corsCtx = new FreewayHttpContext(json, coercer);
+        corsCtx = new HttpContextDefault(json, coercer);
         corsCtx.reset("OPTIONS", "/api/data", null,
             Map.ofEntries(
                 Map.entry("Host", List.of("127.0.0.1")),

@@ -31,18 +31,43 @@ public record BenchmarkRun(
             warmup, runs, gitSha(), jvm(), os(), cpu(), Instant.now());
     }
 
+    private static volatile String cachedGitSha;
+
     private static String gitSha() {
+        String cached = cachedGitSha;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (BenchmarkRun.class) {
+            cached = cachedGitSha;
+            if (cached != null) {
+                return cached;
+            }
+            String sha = resolveGitSha();
+            if (!sha.isEmpty()) {
+                cachedGitSha = sha;
+            }
+            return sha;
+        }
+    }
+
+    private static String resolveGitSha() {
         try {
             var proc = new ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
                 .redirectErrorStream(true)
                 .start();
+            String line = null;
             try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                var line = reader.readLine();
-                if (line != null && !line.isBlank()) {
-                    return line.trim();
+                line = reader.readLine();
+            }
+            // Only accept the output when git actually succeeded; stderr is
+            // merged into stdout and would otherwise be stored as the SHA.
+            if (proc.waitFor() == 0 && line != null) {
+                String sha = line.trim();
+                if (sha.matches("[0-9a-fA-F]{7,40}")) {
+                    return sha;
                 }
             }
-            proc.waitFor();
         } catch (Exception ignored) {
         }
         return "";

@@ -19,7 +19,7 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Setup;
 
 /**
- * JMH benchmark for {@link FreewayHttpContext} response output paths.
+ * JMH benchmark for {@link HttpContextDefault} response output paths.
  *
  * <p>Covers plain-text, JSON, and not-found responses as well as
  * request-body reading combined with output and the {@code sendJson}
@@ -42,24 +42,24 @@ public class HttpContextOutputBenchmark {
         REQUEST_HEADERS.put("Accept", List.of("*/*"));
     }
 
-    private FreewayHttpContext ctx;
+    private HttpContextDefault ctx;
     private OutputStream sink;
-    private FreewayHttpContext bodyReadCtx;
-    private FreewayHttpContext sendJsonCtx;
+    private HttpContextDefault bodyReadCtx;
+    private HttpContextDefault sendJsonCtx;
 
     @Setup
     public void setup() {
         sink = OutputStream.nullOutputStream();
-        ctx = new FreewayHttpContext(JSON, COERCER);
+        ctx = new HttpContextDefault(JSON, COERCER);
 
         // Context pre-configured for body-read scenario (POST with body)
-        bodyReadCtx = new FreewayHttpContext(JSON, COERCER);
+        bodyReadCtx = new HttpContextDefault(JSON, COERCER);
         bodyReadCtx.reset("POST", "/api/data", null, REQUEST_HEADERS,
             new ByteArrayInputStream(LARGE_BODY), LARGE_BODY.length, false,
             sink, null, false, true);
 
         // Context pre-configured for sendJson convenience shortcut
-        sendJsonCtx = new FreewayHttpContext(JSON, COERCER);
+        sendJsonCtx = new HttpContextDefault(JSON, COERCER);
         sendJsonCtx.reset("GET", "/api/resource", null, REQUEST_HEADERS,
             InputStream.nullInputStream(), -1, false,
             sink, null, false, true);

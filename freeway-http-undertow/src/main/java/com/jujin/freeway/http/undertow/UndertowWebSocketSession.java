@@ -160,28 +160,36 @@ final class UndertowWebSocketSession implements WebSocketSession {
     @Override
     public void sendText(String text) throws IOException {
         synchronized (sendLock) {
-            WebSockets.sendTextBlocking(Objects.requireNonNull(text, "text"), channel);
+            requireOpen();
+            // Async send: receive callbacks run on XNIO I/O threads, where
+            // blocking sends must never be used. Frames are queued per channel.
+            WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, null);
         }
     }
 
     @Override
     public void sendBinary(byte[] data) throws IOException {
         synchronized (sendLock) {
-            WebSockets.sendBinaryBlocking(ByteBuffer.wrap(Objects.requireNonNull(data, "data")), channel);
+            requireOpen();
+            WebSockets.sendBinary(ByteBuffer.wrap(Objects.requireNonNull(data, "data")),
+                channel, null);
         }
     }
 
     @Override
     public void ping(byte[] data) throws IOException {
         synchronized (sendLock) {
-            WebSockets.sendPingBlocking(ByteBuffer.wrap(data != null ? data : new byte[0]), channel);
+            requireOpen();
+            WebSockets.sendPing(ByteBuffer.wrap(data != null ? data : new byte[0]),
+                channel, null);
         }
     }
 
     @Override
     public void close(int code, String reason) throws IOException {
         localCloseRequested = true;
-        WebSockets.sendCloseBlocking(code, reason != null ? reason : "", channel);
+        // "Initiates a graceful close" per the interface contract — no blocking.
+        WebSockets.sendClose(code, reason != null ? reason : "", channel, null);
     }
 
     @Override
@@ -199,6 +207,12 @@ final class UndertowWebSocketSession implements WebSocketSession {
         } catch (IOException ex) {
             IoUtils.safeClose(channel);
             throw ex;
+        }
+    }
+
+    private void requireOpen() throws IOException {
+        if (!channel.isOpen()) {
+            throw new IOException("WebSocket channel is closed");
         }
     }
 

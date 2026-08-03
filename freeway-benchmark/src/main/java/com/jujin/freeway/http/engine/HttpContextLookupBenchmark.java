@@ -6,15 +6,16 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
 /**
- * JMH benchmark for {@link FreewayHttpContext} lookup methods.
+ * JMH benchmark for {@link HttpContextDefault} lookup methods.
  *
- * <p>Uses a real {@link FreewayHttpContext} populated via {@code reset()}
+ * <p>Uses a real {@link HttpContextDefault} populated via {@code reset()}
  * with realistic request headers and query parameters. This replaces the
  * earlier custom {@code BenchContext} stub that did not reflect the real
  * O(1)-then-O(n) header lookup strategy.
@@ -33,11 +34,11 @@ public class HttpContextLookupBenchmark {
         Map.entry("Authorization", List.of("Bearer token"))
     );
 
-    private FreewayHttpContext ctx;
+    private HttpContextDefault ctx;
 
     @Setup
     public void setup() {
-        ctx = new FreewayHttpContext(new JsonCodecDefault(), new CoercerDefault());
+        ctx = new HttpContextDefault(new JsonCodecDefault(), new CoercerDefault());
         ctx.reset("GET", "/users/42", "page=3&q=freeway",
             REQUEST_HEADERS,
             InputStream.nullInputStream(), -1, false,
@@ -47,31 +48,31 @@ public class HttpContextLookupBenchmark {
 
     /** O(1) exact-match query param lookup (LinkedHashMap.get). */
     @Benchmark
-    public String queryParam() {
+    public Optional<String> queryParam() {
         return ctx.queryParam("page");
     }
 
     /** O(1) exact-match header lookup. */
     @Benchmark
-    public String headerExactMatch() {
+    public Optional<String> headerExactMatch() {
         return ctx.header("X-Trace-Id");
     }
 
     /** Exact miss, then O(n) case-insensitive fallback scan. */
     @Benchmark
-    public String headerCaseInsensitive() {
+    public Optional<String> headerCaseInsensitive() {
         return ctx.header("x-trace-id");
     }
 
     /** Full miss: O(1) miss + O(n) case-insensitive scan. */
     @Benchmark
-    public String headerMiss() {
+    public Optional<String> headerMiss() {
         return ctx.header("x-missing-header");
     }
 
     /** queryParam fallback to pathVar via {@link #param(String)}. */
     @Benchmark
-    public String paramLookup() {
+    public Optional<String> paramLookup() {
         return ctx.param("id");
     }
 }

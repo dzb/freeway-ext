@@ -43,13 +43,25 @@ public final class UndertowWebEngine implements HttpEngine {
         Objects.requireNonNull(config, "config");
         Objects.requireNonNull(handler, "handler");
 
-        HttpHandler root = exchange -> handle(exchange, handler);
+        // Freeway handlers are application code that may block (body reads, DB
+        // access, downstream calls). Undertow invokes the root handler on an I/O
+        // thread, so dispatch to the worker pool before running application code.
+        // Trade-off: every request pays one thread hand-off; correctness (no
+        // blocking on I/O threads) is preferred over raw adapter throughput.
+        HttpHandler root = exchange -> {
+            if (exchange.isInIoThread()) {
+                exchange.dispatch(() -> handle(exchange, handler));
+            } else {
+                handle(exchange, handler);
+            }
+        };
         GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
         Undertow server = Undertow.builder()
             .addHttpListener(config.port(), config.host())
             .setHandler(gracefulShutdown)
             .setIoThreads(Runtime.getRuntime().availableProcessors())
-            .setWorkerThreads(1)
+            // Undertow defaults to workerThreads = ioThreads * 8; the old
+            // explicit 1-thread worker pool starved blocking handlers.
             .build();
         server.start();
         LOG.info("Freeway undertow web engine started on {}:{}", config.host(), listenerPort(server));
@@ -59,10 +71,18 @@ public final class UndertowWebEngine implements HttpEngine {
     private void handle(HttpServerExchange exchange, HttpRequestHandler handler) {
         try {
             dispatch(exchange, handler);
-        } catch (IOException ex) {
-            throw new RuntimeException(ex);
         } catch (Exception ex) {
-            throw new RuntimeException("Undertow request dispatch failed", ex);
+            LOG.error("Undertow request failed for {} {}", method(exchange), path(exchange), ex);
+            if (!exchange.isResponseStarted()) {
+                exchange.setStatusCode(500);
+                exchange.getResponseHeaders().put(
+                    Headers.CONTENT_TYPE, "text/plain; charset=utf-8");
+                exchange.getResponseSender().send("Internal Server Error");
+            } else {
+                // Response was already started by the handler before it failed;
+                // writing a 500 now would throw. Just end the exchange.
+                exchange.endExchange();
+            }
         }
     }
 
@@ -172,7 +192,7 @@ public final class UndertowWebEngine implements HttpEngine {
         public void close() {
             try {
                 gracefulShutdown.shutdown();
-                gracefulShutdown.awaitShutdown(Math.max(0, (int) shutdownGrace.toSeconds()) * 1000L);
+                gracefulShutdown.awaitShutdown(Math.max(0, shutdownGrace.toMillis()));
             } catch (InterruptedException ex) {
                 Thread.currentThread().interrupt();
             } finally {

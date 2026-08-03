@@ -61,9 +61,16 @@ public final class JettyWebEngine implements HttpEngine {
                 try {
                     handler.handle(ctx);
                 } catch (Exception ex) {
-                    response.setStatus(500);
-                    response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
-                    response.write(true, ByteBuffer.wrap("Internal Server Error".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+                    LOG.error("Jetty request failed for {} {}", method(request), path(request), ex);
+                    if (!response.isCommitted()) {
+                        response.setStatus(500);
+                        response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
+                        response.write(true, ByteBuffer.wrap("Internal Server Error".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+                    } else {
+                        // Response was already committed by the handler before it
+                        // failed; writing a 500 now would throw. Just end the exchange.
+                        callback.succeeded();
+                    }
                     return true;
                 }
                 if (!ctx.responded()) {
@@ -163,7 +170,7 @@ public final class JettyWebEngine implements HttpEngine {
         LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
         for (String name : request.getHeaders().getFieldNamesCollection()) {
             List<String> values = new ArrayList<>(request.getHeaders().getValuesList(name));
-            headers.put(name, List.copyOf(values));
+            headers.put(name.toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
         }
         return Map.copyOf(headers);
     }
@@ -195,7 +202,7 @@ public final class JettyWebEngine implements HttpEngine {
         @Override
         public void close() {
             try {
-                graceful.shutdown().get(Math.max(0, shutdownGrace.toSeconds()), TimeUnit.SECONDS);
+                graceful.shutdown().get(Math.max(0, shutdownGrace.toMillis()), TimeUnit.MILLISECONDS);
             } catch (Exception ex) {
                 // fall through to stop
             } finally {

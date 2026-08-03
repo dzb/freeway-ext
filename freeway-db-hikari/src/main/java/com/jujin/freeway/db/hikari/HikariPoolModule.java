@@ -5,7 +5,7 @@ import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
 
-public final class HikariPoolModule implements ModuleEx{
+public final class HikariPoolModule implements ModuleEx {
 
     @Override
     public void bind(Binder binder) {

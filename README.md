@@ -23,10 +23,40 @@ For the vast majority of applications, this is all you need.
 
 | Module | When to use | External Dependency |
 |--------|-------------|-------------------|
-| `freeway-http-undertow` | Servlet API, Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.3.24 |
-| `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 3.9 |
-| `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 6.2.1 |
+| `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.2.Final |
+| `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.11 |
+| `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
+| `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH-based micro-benchmarks for HTTP, WebSocket, and DB adapters | [JMH](https://github.com/openjdk/jmh) 1.37 |
+
+## Kafka security note
+
+The Kafka subscriber only deserializes messages whose `X-Event-Type` header is on
+the `freeway.kafka.allowed-event-types` allowlist (comma-separated class names).
+Messages without the header are treated as plain JSON `Map`. If the allowlist is
+empty (the default), **typed messages are rejected** instead of being
+deserialized into arbitrary classes from the classpath.
+
+> ⚠️ This is a breaking change from earlier versions. Existing consumers that
+> rely on typed events must configure the allowlist, for example:
+>
+> ```
+> -Dfreeway.kafka.allowed-event-types=com.acme.OrderCreated,com.acme.PaymentReceived
+> ```
+>
+> Rejected messages follow the poison-message policy: they are retried once,
+> then either logged and skipped (default `freeway.kafka.poison-policy=skip`) or
+> fail the subscriber without committing (`fail`).
+
+## WebSocket adapter note
+
+`UndertowWebSocketSession` and `JettyWebSocketSession` send frames asynchronously
+so application code can safely call `sendText` / `sendBinary` / `ping` from the
+server's receive (I/O) threads without deadlocking. As a trade-off, send
+failures are logged by the adapter instead of being thrown to the caller, and
+`close()` initiates the graceful close handshake and returns immediately. If you
+need to react to send failures, watch the adapter's error logs or the underlying
+server's WebSocket error callbacks.
 
 ## Install
 

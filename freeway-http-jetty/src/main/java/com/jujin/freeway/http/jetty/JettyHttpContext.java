@@ -14,12 +14,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.Fields;
 
+/** Jetty-backed {@link HttpContext} implementation, pooled per thread. */
 final class JettyHttpContext extends HttpContext {
 
     private Request request;
@@ -195,6 +197,9 @@ final class JettyHttpContext extends HttpContext {
             response
                 .getHeaders()
                 .put(HttpHeader.CONTENT_LENGTH, String.valueOf(data.length));
+        } else {
+            // 204/304 must not carry Content-Length even if the handler set it.
+            response.getHeaders().remove(HttpHeader.CONTENT_LENGTH);
         }
         responded = true;
         if (

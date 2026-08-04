@@ -14,6 +14,11 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.util.Properties;
 
+/**
+ * {@link EventBridge} that publishes Freeway events to Kafka topics.
+ * Events are serialized as JSON with an {@code X-Event-Type} header carrying
+ * the concrete class name.
+ */
 public class KafkaEventBridge implements EventBridge, AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaEventBridge.class);
 
@@ -29,6 +34,9 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
         props.put("bootstrap.servers", config.bootstrapServers());
         props.put("key.serializer", StringSerializer.class.getName());
         props.put("value.serializer", ByteArraySerializer.class.getName());
+        if (config.clientId() != null && !config.clientId().isBlank()) {
+            props.put("client.id", config.clientId());
+        }
         this.producer = new KafkaProducer<>(props);
         this.codec = codec;
     }

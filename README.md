@@ -47,6 +47,18 @@ deserialized into arbitrary classes from the classpath.
 > Rejected messages follow the poison-message policy: they are retried once,
 > then either logged and skipped (default `freeway.kafka.poison-policy=skip`) or
 > fail the subscriber without committing (`fail`).
+>
+> With `fail`, the failing offset is not committed, so already-published events
+> from the same batch may be redelivered after a restart (at-least-once
+> semantics).
+
+## SPI module selection
+
+Both `freeway-http-undertow` and `freeway-http-jetty` register their engine as
+`HttpEngine.primary()`. Depend on **one** of them in an application, or disable
+SPI auto-discovery (`FreewayApp.of(...).autoDiscovery(false)`) and install the
+desired module explicitly. `freeway-benchmark` intentionally bundles both for
+comparative runs and therefore always disables auto-discovery.
 
 ## WebSocket adapter note
 

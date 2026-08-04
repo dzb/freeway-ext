@@ -2,6 +2,7 @@ package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -11,7 +12,11 @@ import org.junit.jupiter.api.Test;
 class KafkaConfigTest {
 
     private static KafkaConfig config(String topics, String allowed, String policy) {
-        return new KafkaConfig("localhost:9092", "test-group", topics, allowed, policy);
+        return new KafkaConfig("localhost:9092", "test-group", "", topics, allowed, policy);
+    }
+
+    private static KafkaConfig config(String clientId, String topics, String allowed, String policy) {
+        return new KafkaConfig("localhost:9092", "test-group", clientId, topics, allowed, policy);
     }
 
     @Test
@@ -35,7 +40,22 @@ class KafkaConfigTest {
     void poisonPolicyParsing() {
         assertFalse(config("orders", "", "skip").failOnPoison());
         assertFalse(config("orders", "", "SKIP").failOnPoison());
+        assertFalse(config("orders", "", " skip ").failOnPoison());
         assertTrue(config("orders", "", "fail").failOnPoison());
         assertTrue(config("orders", "", "FAIL").failOnPoison());
+    }
+
+    @Test
+    void unknownPoisonPolicyIsRejected() {
+        assertThrows(IllegalArgumentException.class,
+            () -> config("orders", "", "retry"));
+        assertThrows(IllegalArgumentException.class,
+            () -> config("orders", "", ""));
+    }
+
+    @Test
+    void clientIdDefaultsToEmpty() {
+        assertEquals("", config("orders", "", "skip").clientId());
+        assertEquals("bench-producer", config("bench-producer", "orders", "", "skip").clientId());
     }
 }

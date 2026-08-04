@@ -6,6 +6,7 @@ import com.jujin.freeway.http.HttpContext;
 import com.jujin.freeway.http.RequestContext;
 import com.jujin.freeway.http.sse.SseEmitter;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import java.io.IOException;
 import java.io.InputStream;
@@ -183,6 +184,9 @@ final class UndertowHttpContext extends HttpContext {
         boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
         if (bodyAllowed) {
             exchange.setResponseContentLength(data.length);
+        } else {
+            // 204/304 must not carry Content-Length even if the handler set it.
+            exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
         }
         responded = true;
         if (bodyAllowed && !head && data.length > 0) {

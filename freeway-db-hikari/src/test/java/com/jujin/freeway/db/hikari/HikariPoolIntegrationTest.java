@@ -233,6 +233,10 @@ class HikariPoolIntegrationTest {
         assertEquals(0, pool.stats().active());
         PooledConnection c1 = pool.borrow();
         assertEquals(1, pool.stats().active());
+        assertTrue(pool.stats().borrowCount() >= 1,
+            "borrowCount should track successful borrows");
+        assertTrue(pool.stats().borrowWaitNanos() >= 0,
+            "borrowWaitNanos should be accumulated");
         PooledConnection c2 = pool.borrow();
         assertEquals(2, pool.stats().active());
 

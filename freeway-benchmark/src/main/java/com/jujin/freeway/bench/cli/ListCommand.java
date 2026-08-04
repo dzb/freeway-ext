@@ -4,6 +4,8 @@ import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 /**
@@ -16,6 +18,9 @@ import java.util.List;
  * </pre>
  */
 public final class ListCommand implements Command {
+
+    private static final DateTimeFormatter FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
     public void run(Context ctx) throws Exception {
@@ -54,9 +59,10 @@ public final class ListCommand implements Command {
             System.out.printf("%-4d %-16s %-10s %-6d %-9s %-20s %s%n",
                 r.id(), r.engine(), r.scenario(), r.concurrency(),
                 r.commitSha().isBlank() ? "—" : r.commitSha(),
-                r.jdkInfo().length() > 20
-                    ? r.jdkInfo().substring(0, 20) : r.jdkInfo(),
-                r.createdAt().toString().replace("T", " ").substring(0, 19));
+                r.jdkInfo() != null && r.jdkInfo().length() > 20
+                    ? r.jdkInfo().substring(0, 20)
+                    : r.jdkInfo() == null ? "" : r.jdkInfo(),
+                FMT.format(r.createdAt().atZone(ZoneId.systemDefault())));
         }
     }
 }

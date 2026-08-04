@@ -5,6 +5,7 @@ import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
 
+/** IoC module that installs HikariCP as the primary connection pool. */
 public final class HikariPoolModule implements ModuleEx {
 
     @Override

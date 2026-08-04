@@ -1,8 +1,7 @@
 package com.jujin.freeway.http.jetty;
 
-import com.jujin.freeway.commons.json.JsonCodec;
-
 import com.jujin.freeway.commons.coercion.Coercer;
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.websocket.*;
 import org.eclipse.jetty.server.*;
@@ -16,12 +15,30 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
+/**
+ * Jetty 12 transport adapter for the Freeway HTTP engine.
+ */
 public final class JettyWebEngine implements HttpEngine {
     private static final Logger LOG = LoggerFactory.getLogger(JettyWebEngine.class);
+    private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8";
+    private static final byte[] INTERNAL_ERROR_BODY =
+        "Internal Server Error".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] NOT_FOUND_BODY = "Not Found".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] UPGRADE_REJECTED_BODY =
+        "WebSocket upgrade rejected".getBytes(StandardCharsets.UTF_8);
+    private static final byte[] UPGRADE_FAILED_BODY =
+        "WebSocket upgrade failed".getBytes(StandardCharsets.UTF_8);
+
     private final JsonCodec jsonCodec;
     private final Coercer coercer;
     private final ThreadLocal<JettyHttpContext> contextPool;
@@ -64,8 +81,8 @@ public final class JettyWebEngine implements HttpEngine {
                     LOG.error("Jetty request failed for {} {}", method(request), path(request), ex);
                     if (!response.isCommitted()) {
                         response.setStatus(500);
-                        response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
-                        response.write(true, ByteBuffer.wrap("Internal Server Error".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+                        response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+                        response.write(true, ByteBuffer.wrap(INTERNAL_ERROR_BODY), callback);
                     } else {
                         // Response was already committed by the handler before it
                         // failed; writing a 500 now would throw. Just end the exchange.
@@ -105,8 +122,8 @@ public final class JettyWebEngine implements HttpEngine {
         WebSocketMatch match = handler.websocket(method, path, origin);
         if (match == null) {
             response.setStatus(404);
-            response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
-            response.write(true, ByteBuffer.wrap("Not Found".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+            response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+            response.write(true, ByteBuffer.wrap(NOT_FOUND_BODY), callback);
             return true;
         }
         WebSocketCreator creator = (upgradeRequest, upgradeResponse, upgradeCallback) -> {
@@ -124,14 +141,18 @@ public final class JettyWebEngine implements HttpEngine {
         try {
             if (!webSocketContainer.upgrade(creator, request, response, callback)) {
                 response.setStatus(400);
-                response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
-                response.write(true, ByteBuffer.wrap("WebSocket upgrade rejected".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+                response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+                response.write(true, ByteBuffer.wrap(UPGRADE_REJECTED_BODY), callback);
             }
         } catch (Exception ex) {
             LOG.warn("Jetty websocket upgrade failed for {} {}", method, path, ex);
-            response.setStatus(500);
-            response.getHeaders().put("Content-Type", "text/plain; charset=utf-8");
-            response.write(true, ByteBuffer.wrap("WebSocket upgrade failed".getBytes(java.nio.charset.StandardCharsets.UTF_8)), callback);
+            if (!response.isCommitted()) {
+                response.setStatus(500);
+                response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+                response.write(true, ByteBuffer.wrap(UPGRADE_FAILED_BODY), callback);
+            } else {
+                callback.succeeded();
+            }
         }
         return true;
     }
@@ -140,7 +161,8 @@ public final class JettyWebEngine implements HttpEngine {
         String upgrade = request.getHeaders().get("Upgrade");
         String connection = request.getHeaders().get("Connection");
         return upgrade != null && "websocket".equalsIgnoreCase(upgrade)
-            && connection != null && connection.toLowerCase().contains("upgrade");
+            && connection != null
+            && connection.toLowerCase(Locale.ROOT).contains("upgrade");
     }
 
     private static String method(Request request) {
@@ -216,6 +238,7 @@ public final class JettyWebEngine implements HttpEngine {
         }
     }
 
+    /** WebSocket endpoint bridge between Jetty and the Freeway listener API. */
     public static final class JettyWebSocketBridge implements Session.Listener.AutoDemanding {
         private final WebSocketMatch match;
         private final RequestContext requestContext;

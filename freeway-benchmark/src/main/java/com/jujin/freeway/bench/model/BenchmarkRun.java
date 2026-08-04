@@ -44,9 +44,9 @@ public record BenchmarkRun(
                 return cached;
             }
             String sha = resolveGitSha();
-            if (!sha.isEmpty()) {
-                cachedGitSha = sha;
-            }
+            // Cache failures too: the working directory's git state cannot
+            // change within one JVM, so forking git per run is pure waste.
+            cachedGitSha = sha;
             return sha;
         }
     }

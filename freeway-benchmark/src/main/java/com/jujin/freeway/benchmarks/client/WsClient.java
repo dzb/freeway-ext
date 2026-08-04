@@ -68,5 +68,10 @@ public final class WsClient implements AutoCloseable {
 
     private int readLen() throws IOException { int b = in.readUnsignedByte() & 0x7F; if (b < 126) return b; if (b == 126) return in.readUnsignedShort(); return (int) in.readLong(); }
 
-    private void sendClose() throws IOException { out.write(0x88); out.write(0x00); out.flush(); }
+    private void sendClose() throws IOException {
+        out.write(0x88);
+        out.write(0x80); // masked bit set — RFC 6455 requires all client frames
+        out.write(MASK); // to be masked, even with an empty payload
+        out.flush();
+    }
 }

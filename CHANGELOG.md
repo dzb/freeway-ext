@@ -69,7 +69,19 @@
 - **Benchmark CLI**: command dispatch returns a status code so unknown commands
   exit non-zero *after* the application shuts down cleanly.
 - **Benchmark**: timed-out requests are counted as errors; `gitSha()` cache is
-  synchronized; test clients have connect/request timeouts.
+  synchronized and now also caches failures (no per-run `git` fork outside a
+  repository); history/list show local time; WebSocket close frame is masked.
+- **BenchFork**: WebSocket mode selects the `ws_echo` scenario and works
+  end-to-end; classpath is derived from the code source so forks work from any
+  working directory.
+- **Kafka**: `freeway.kafka.client-id` is configurable for producer/consumer;
+  unknown `poison-policy` values fail fast; null header values are treated as
+  absent.
+- **Jetty/Undertow**: WebSocket upgrade 500 fallback respects committed
+  responses; 204/304 responses drop a stale `Content-Length`; locale-safe
+  header matching in Jetty.
+- **Hikari**: pool construction failures are wrapped in `SqlException`; ignored
+  `PoolConfig` fields are documented; tests cover borrow metrics.
 - **Build**: added missing XML declaration to the Kafka POM, removed the unused
   `kafka_2.13` test dependency, fixed `ModuleEx {` formatting.
 - **Benchmark**: implemented warmup, WebSocket support, score error tracking,

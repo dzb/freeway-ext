@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/** HikariCP-backed {@link Pool} implementation. */
 public final class HikariPool implements Pool {
     private static final Logger LOG = LoggerFactory.getLogger(HikariPool.class);
 
@@ -32,9 +33,19 @@ public final class HikariPool implements Pool {
         hc.setConnectionTimeout(config.connectionTimeout().toMillis());
         hc.setMaxLifetime(config.maxLifetime().toMillis());
         hc.setIdleTimeout(config.maxIdleTime().toMillis());
-        if (config.healthCheckQuery() != null) hc.setConnectionTestQuery(config.healthCheckQuery());
+        if (config.healthCheckQuery() != null) {
+            hc.setConnectionTestQuery(config.healthCheckQuery());
+        }
+        // PoolConfig fields without a HikariCP equivalent are intentionally not
+        // mapped: cleanInterval (Hikari runs its own housekeeping),
+        // healthCheckTimeout (covered by connectionTimeout + test query), and
+        // queryTimeout (JDBC statement level, not pool level).
         this.config = hc;
-        this.ds = new HikariDataSource(hc);
+        try {
+            this.ds = new HikariDataSource(hc);
+        } catch (RuntimeException ex) {
+            throw new SqlException("Failed to initialize HikariCP pool", ex);
+        }
     }
 
     @Override

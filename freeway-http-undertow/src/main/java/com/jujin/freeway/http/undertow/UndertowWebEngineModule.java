@@ -4,6 +4,7 @@ import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
 
+/** IoC module that installs the Undertow HTTP engine as the primary engine. */
 public final class UndertowWebEngineModule implements ModuleEx {
     @Override
     public void bind(Binder binder) {

@@ -1,8 +1,7 @@
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.commons.json.JsonCodec;
-
 import com.jujin.freeway.commons.coercion.Coercer;
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.websocket.*;
 import io.undertow.Handlers;
@@ -21,11 +20,20 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
 
+/** Undertow transport adapter for the Freeway HTTP engine. */
 public final class UndertowWebEngine implements HttpEngine {
     private static final Logger LOG = LoggerFactory.getLogger(UndertowWebEngine.class);
     private static final HttpString X_REQUEST_ID = new HttpString("X-Request-Id");
+    private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8";
+    private static final String INTERNAL_ERROR_BODY = "Internal Server Error";
 
     private final JsonCodec jsonCodec;
     private final Coercer coercer;
@@ -76,8 +84,8 @@ public final class UndertowWebEngine implements HttpEngine {
             if (!exchange.isResponseStarted()) {
                 exchange.setStatusCode(500);
                 exchange.getResponseHeaders().put(
-                    Headers.CONTENT_TYPE, "text/plain; charset=utf-8");
-                exchange.getResponseSender().send("Internal Server Error");
+                    Headers.CONTENT_TYPE, TEXT_PLAIN_UTF8);
+                exchange.getResponseSender().send(INTERNAL_ERROR_BODY);
             } else {
                 // Response was already started by the handler before it failed;
                 // writing a 500 now would throw. Just end the exchange.
@@ -141,7 +149,7 @@ public final class UndertowWebEngine implements HttpEngine {
         String upgrade = exchange.getRequestHeaders().getFirst(Headers.UPGRADE);
         String connection = exchange.getRequestHeaders().getFirst(Headers.CONNECTION);
         return upgrade != null && "websocket".equalsIgnoreCase(upgrade)
-            && connection != null && connection.toLowerCase(java.util.Locale.ROOT).contains("upgrade");
+            && connection != null && connection.toLowerCase(Locale.ROOT).contains("upgrade");
     }
 
     private static String method(HttpServerExchange exchange) {

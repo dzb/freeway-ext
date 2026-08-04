@@ -7,12 +7,13 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import org.eclipse.jetty.websocket.api.Callback;
 import org.eclipse.jetty.websocket.api.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+/** Jetty-backed {@link WebSocketSession} with asynchronous frame sends. */
 final class JettyWebSocketSession implements WebSocketSession {
     private static final Logger LOG = LoggerFactory.getLogger(JettyWebSocketSession.class);
     private static final Callback COMPLETION_CALLBACK = new Callback() {

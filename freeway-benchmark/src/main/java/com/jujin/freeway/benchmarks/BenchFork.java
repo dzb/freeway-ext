@@ -101,8 +101,12 @@ public final class BenchFork {
 
     private static void runServer(String engine, String mode) throws Exception {
         var eng = ServerHarness.Engine.fromString(engine);
-        try (var h = ServerHarness.start(eng, ServerHarness.Scenario.PING)) {
-            System.out.println("READY port=" + h.port() + " engine=" + engine);
+        // mode selects the scenario too: ws requires the WS_ECHO scenario,
+        // which ServerHarness only supports for freeway/undertow-native/jetty-native.
+        var scn = scenarioFor(mode);
+        try (var h = ServerHarness.start(eng, scn)) {
+            System.out.println("READY port=" + h.port() + " engine=" + engine
+                + " scenario=" + scn);
             System.out.flush();
             Thread.sleep(Long.MAX_VALUE);
         }
@@ -113,9 +117,15 @@ public final class BenchFork {
             throws Exception {
         var benchMode = resolveMode(mode);
         var ir = BenchRunner.run(port, concurrency, requests, warmup,
-            ServerHarness.Scenario.PING, benchMode);
+            scenarioFor(mode), benchMode);
         var r = toResult(engine, mode, requests, ir);
         System.out.println("RESULT " + r);
+    }
+
+    private static ServerHarness.Scenario scenarioFor(String mode) {
+        return "ws".equalsIgnoreCase(mode) || "websocket".equalsIgnoreCase(mode)
+            ? ServerHarness.Scenario.WS_ECHO
+            : ServerHarness.Scenario.PING;
     }
 
     // --- helpers ---
@@ -210,6 +220,20 @@ public final class BenchFork {
                     return classes + File.pathSeparator + deps;
                 } catch (IOException ignored) {}
             }
+        }
+        // Fallback: derive the classpath from this class's own code source so
+        // BenchFork also works when launched from an arbitrary working directory.
+        try {
+            var location = Path.of(BenchFork.class
+                .getProtectionDomain().getCodeSource().getLocation().toURI());
+            if (Files.isDirectory(location)) {
+                Path cpFile = location.getParent().resolve("benchmark.classpath");
+                if (Files.isRegularFile(cpFile)) {
+                    String deps = Files.readString(cpFile).trim();
+                    return location + File.pathSeparator + deps;
+                }
+            }
+        } catch (Exception ignored) {
         }
         return System.getProperty("java.class.path");
     }

@@ -5,10 +5,9 @@ import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.stream.Collectors;
 
 /**
@@ -22,6 +21,9 @@ import java.util.stream.Collectors;
  * </pre>
  */
 public final class HistoryCommand implements Command {
+
+    private static final DateTimeFormatter FMT =
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     @Override
     public void run(Context ctx) throws Exception {
@@ -106,23 +108,17 @@ public final class HistoryCommand implements Command {
             for (var r : benchResults) {
                 var run = runIndex.get(r.runId());
                 String created = run != null
-                    ? run.createdAt().toString().replace("T", " ").substring(0, 16)
+                    ? FMT.format(run.createdAt().atZone(ZoneId.systemDefault()))
                     : "—";
                 double delta = (r.score() - bestScore) / bestScore * 100;
 
                 System.out.printf("| %-4d | %-20s | %9s | %6s | %6s | %6s | %+10.1f%% |%n",
-                    r.runId(), created, formatRps(r.score()),
+                    r.runId(), created, BenchFormat.rps(r.score()),
                     r.p50us() + "μs", r.p95us() + "μs", r.p99us() + "μs", delta);
             }
         }
 
         System.out.println();
         System.out.printf("Showing %d run(s) from the last %d day(s).%n", runs.size(), days);
-    }
-
-    private static String formatRps(double rps) {
-        if (rps >= 1_000_000) return String.format(Locale.ROOT, "%.2fM", rps / 1_000_000);
-        if (rps >= 1_000) return String.format(Locale.ROOT, "%.1fk", rps / 1_000);
-        return String.format(Locale.ROOT, "%.0f", rps);
     }
 }

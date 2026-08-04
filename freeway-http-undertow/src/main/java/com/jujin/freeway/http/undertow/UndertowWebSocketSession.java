@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Objects;
 import org.xnio.IoUtils;
 
+/** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
 final class UndertowWebSocketSession implements WebSocketSession {
     private final WebSocketChannel channel;
     private final RequestContext requestContext;

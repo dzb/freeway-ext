@@ -16,6 +16,7 @@ class KafkaModuleContainerTest {
     void clearProperties() {
         System.clearProperty("freeway.kafka.bootstrap-servers");
         System.clearProperty("freeway.kafka.group-id");
+        System.clearProperty("freeway.kafka.client-id");
         System.clearProperty("freeway.kafka.topics");
         System.clearProperty("freeway.kafka.allowed-event-types");
         System.clearProperty("freeway.kafka.poison-policy");
@@ -25,6 +26,7 @@ class KafkaModuleContainerTest {
     void injectsKafkaConfigFromSystemProperties() {
         System.setProperty("freeway.kafka.bootstrap-servers", "kafka-test:9092");
         System.setProperty("freeway.kafka.group-id", "container-test");
+        System.setProperty("freeway.kafka.client-id", "container-client");
         System.setProperty("freeway.kafka.topics", "orders, payments");
         System.setProperty("freeway.kafka.allowed-event-types", "com.acme.OrderCreated");
         System.setProperty("freeway.kafka.poison-policy", "fail");
@@ -33,6 +35,7 @@ class KafkaModuleContainerTest {
             KafkaConfig config = container.get(KafkaConfig.class);
             assertEquals("kafka-test:9092", config.bootstrapServers());
             assertEquals("container-test", config.groupId());
+            assertEquals("container-client", config.clientId());
             assertEquals(List.of("orders", "payments"), config.topics());
             assertEquals(Set.of("com.acme.OrderCreated"), config.allowedEventTypes());
             assertTrue(config.failOnPoison());

@@ -1,8 +1,8 @@
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.commons.scoped.Defer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.commons.scoped.Defer;
 import com.jujin.freeway.ioc.EventBus;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -19,6 +19,11 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 
+/**
+ * Consumes Freeway events from Kafka topics and publishes them on the
+ * {@link EventBus}. Deserialization is restricted to the configured
+ * allowlist; poison messages follow the configured policy.
+ */
 public class KafkaSubscriber implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(KafkaSubscriber.class);
     private static final Duration POLL_TIMEOUT = Duration.ofSeconds(1);
@@ -52,6 +57,9 @@ public class KafkaSubscriber implements AutoCloseable {
         props.put("value.deserializer", ByteArrayDeserializer.class.getName());
         props.put("enable.auto.commit", "false");
         props.put("auto.offset.reset", "earliest");
+        if (config.clientId() != null && !config.clientId().isBlank()) {
+            props.put("client.id", config.clientId());
+        }
         this.consumer = new KafkaConsumer<>(props);
     }
 
@@ -174,7 +182,11 @@ public class KafkaSubscriber implements AutoCloseable {
 
     private String header(ConsumerRecord<String, byte[]> record, String name) {
         var header = record.headers().lastHeader(name);
-        return header != null ? new String(header.value(), StandardCharsets.UTF_8) : null;
+        // Kafka allows null header values; treat them as absent.
+        if (header == null || header.value() == null) {
+            return null;
+        }
+        return new String(header.value(), StandardCharsets.UTF_8);
     }
 
     @Override

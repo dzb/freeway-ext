@@ -6,6 +6,7 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 
+/** IoC module wiring the Kafka event bridge and subscriber into the container. */
 public class KafkaModule implements ModuleEx {
 
     @Override

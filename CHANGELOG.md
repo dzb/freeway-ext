@@ -79,9 +79,22 @@
   absent.
 - **Jetty/Undertow**: WebSocket upgrade 500 fallback respects committed
   responses; 204/304 responses drop a stale `Content-Length`; locale-safe
-  header matching in Jetty.
+  header matching in Jetty; echoed `X-Request-Id` is sanitized so a
+  correlation id cannot inject response headers.
 - **Hikari**: pool construction failures are wrapped in `SqlException`; ignored
   `PoolConfig` fields are documented; tests cover borrow metrics.
+- **Compare**: no matching earlier baseline now fails with a clear message
+  instead of silently comparing a run against itself.
+- **Kafka**: shutdown stops processing an already-polled batch (no publishing
+  into a closing EventBus); producer close is bounded to 10s and the bridge is
+  closed explicitly by the module; MockConsumer test covers the
+  consume/publish/close path.
+- **History**: results are fetched via a JOIN over the same time window,
+  removing SQLite's per-statement parameter limit; `--days` must be positive.
+- **Suite**: `--mode=ws` validates scenarios and engine support up front.
+- **Benchmark**: removed dead code (`Result.percentile`,
+  `Http11Client` unused fields/overload); imports and fully-qualified names
+  cleaned across modules.
 - **Build**: added missing XML declaration to the Kafka POM, removed the unused
   `kafka_2.13` test dependency, fixed `ModuleEx {` formatting.
 - **Benchmark**: implemented warmup, WebSocket support, score error tracking,

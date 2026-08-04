@@ -25,6 +25,7 @@ public class KafkaModule implements ModuleEx {
             @Override
             public void stop(Container container) {
                 container.get(KafkaSubscriber.class).close();
+                container.get(KafkaEventBridge.class).close();
             }
         });
     }

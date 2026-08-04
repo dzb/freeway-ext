@@ -70,6 +70,9 @@ failures are logged by the adapter instead of being thrown to the caller, and
 need to react to send failures, watch the adapter's error logs or the underlying
 server's WebSocket error callbacks.
 
+`HttpContext.sse()` streams are owned by the application: close the returned
+emitter when finished so the underlying connection can be released.
+
 ## Install
 
 Add the Maven Central snapshot repository, then pick the modules you need:

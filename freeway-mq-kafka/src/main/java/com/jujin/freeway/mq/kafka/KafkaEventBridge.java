@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Properties;
 
 /**
@@ -58,6 +59,8 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
 
     @Override
     public void close() {
-        producer.close();
+        // Bound the wait: producer.close() without a timeout can block for a
+        // very long time when the broker is unreachable.
+        producer.close(Duration.ofSeconds(10));
     }
 }

@@ -62,7 +62,12 @@ public final class CompareCommand implements Command {
                 + "AND r.id < ? GROUP BY r.id ORDER BY MAX(res.score) DESC LIMIT 1",
                 toRun.engine(), toRun.scenario(), toRun.concurrency(), toId)
                 .one(Integer.class)
-                .orElse((int) allRuns.getFirst().id());
+                .orElseThrow(() -> new IllegalArgumentException(
+                    "No earlier run matches engine=" + toRun.engine()
+                        + " scenario=" + toRun.scenario()
+                        + " concurrency=" + toRun.concurrency()
+                        + " before run #" + toId
+                        + "; specify --from explicitly"));
         }
 
         var fromRun = orm.findById(BenchmarkRun.class, (long) fromId)

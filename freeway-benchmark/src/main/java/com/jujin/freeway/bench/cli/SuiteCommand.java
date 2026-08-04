@@ -9,6 +9,9 @@ import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -59,6 +62,22 @@ public final class SuiteCommand implements Command {
             case "ws", "websocket" -> BenchRunner.Mode.WS;
             default -> BenchRunner.Mode.KEEPALIVE;
         };
+        if (benchMode == BenchRunner.Mode.WS) {
+            if (scenarios.stream().noneMatch(s -> s.equalsIgnoreCase("ws_echo"))) {
+                throw new IllegalArgumentException(
+                    "--mode=ws requires --scenario=ws_echo");
+            }
+            for (var engine : engines) {
+                var eng = ServerHarness.Engine.fromString(engine);
+                if (eng != ServerHarness.Engine.FREEWAY
+                        && eng != ServerHarness.Engine.UNDERTOW_NATIVE
+                        && eng != ServerHarness.Engine.JETTY_NATIVE) {
+                    throw new IllegalArgumentException(
+                        "--mode=ws is not supported for engine '" + engine
+                            + "'; supported: freeway, undertow-native, jetty-native");
+                }
+            }
+        }
         String outputPath = ctx.get("output", null);
 
         int total = engines.size() * scenarios.size() * concurrencies.length * runs;
@@ -186,8 +205,8 @@ public final class SuiteCommand implements Command {
                 r.engine(), r.scenario(), r.concurrency(),
                 BenchFormat.rps(r.rps()), r.p50us(), r.p95us(), r.p99us()));
         }
-        java.nio.file.Files.writeString(java.nio.file.Path.of(outputPath),
-            report.toString(), java.nio.charset.StandardCharsets.UTF_8);
+        Files.writeString(Path.of(outputPath),
+            report.toString(), StandardCharsets.UTF_8);
         System.out.println("Report written to " + outputPath);
     }
 

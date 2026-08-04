@@ -5,6 +5,7 @@ import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.Orm;
+import java.util.ArrayList;
 import java.util.List;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -35,46 +36,39 @@ public final class HistoryCommand implements Command {
         String benchFilter = ctx.get("bench", null);
         String engineFilter = ctx.get("engine", null);
         int days = ctx.getInt("days", 30);
+        if (days <= 0) {
+            throw new IllegalArgumentException("--days must be a positive integer");
+        }
 
         // Fetch runs within the time window
-        List<BenchmarkRun> runs;
-        if (engineFilter != null) {
-            runs = db.query(
-                "SELECT * FROM bench_runs WHERE engine = ? AND created_at >= datetime('now', ?) ORDER BY created_at ASC",
-                engineFilter, "-" + days + " days")
-                .list(BenchmarkRun.class);
-        } else {
-            runs = db.query(
-                "SELECT * FROM bench_runs WHERE created_at >= datetime('now', ?) ORDER BY created_at ASC",
-                "-" + days + " days")
-                .list(BenchmarkRun.class);
-        }
+        String runSql = "SELECT * FROM bench_runs WHERE created_at >= datetime('now', ?)"
+            + (engineFilter != null ? " AND engine = ?" : "")
+            + " ORDER BY created_at ASC";
+        var runParams = new ArrayList<Object>();
+        runParams.add("-" + days + " days");
+        if (engineFilter != null) runParams.add(engineFilter);
+        List<BenchmarkRun> runs = db.query(runSql, runParams.toArray())
+            .list(BenchmarkRun.class);
 
         if (runs.isEmpty()) {
             System.out.println("No runs found in the last " + days + " days.");
             return;
         }
 
-        // Collect run IDs
-        var runIds = runs.stream().map(BenchmarkRun::id).toList();
-
-        // Fetch results for these runs
-        String placeholders = runIds.stream().map(id -> "?").collect(Collectors.joining(","));
-        String sql = "SELECT * FROM bench_results WHERE run_id IN (" + placeholders + ")";
-        if (benchFilter != null) {
-            sql += " AND benchmark = ?";
-        }
-        sql += " ORDER BY run_id ASC";
-
-        List<BenchmarkResult> results;
-        if (benchFilter != null) {
-            var params = new Object[runIds.size() + 1];
-            for (int i = 0; i < runIds.size(); i++) params[i] = runIds.get(i);
-            params[runIds.size()] = benchFilter;
-            results = db.query(sql, params).list(BenchmarkResult.class);
-        } else {
-            results = db.query(sql, runIds.toArray()).list(BenchmarkResult.class);
-        }
+        // Fetch results via a JOIN with the same window — avoids SQLite's
+        // per-statement parameter limit when the run count is large.
+        String sql = "SELECT res.* FROM bench_results res JOIN bench_runs r"
+            + " ON res.run_id = r.id"
+            + " WHERE r.created_at >= datetime('now', ?)"
+            + (engineFilter != null ? " AND r.engine = ?" : "")
+            + (benchFilter != null ? " AND res.benchmark = ?" : "")
+            + " ORDER BY res.run_id ASC";
+        var params = new ArrayList<Object>();
+        params.add("-" + days + " days");
+        if (engineFilter != null) params.add(engineFilter);
+        if (benchFilter != null) params.add(benchFilter);
+        List<BenchmarkResult> results = db.query(sql, params.toArray())
+            .list(BenchmarkResult.class);
 
         if (results.isEmpty()) {
             System.out.println("No results found for the given filters.");

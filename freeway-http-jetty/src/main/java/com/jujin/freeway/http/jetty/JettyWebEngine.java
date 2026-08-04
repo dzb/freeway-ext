@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -69,7 +70,8 @@ public final class JettyWebEngine implements HttpEngine {
             @Override
             public boolean handle(Request request, Response response, org.eclipse.jetty.util.Callback callback) throws Exception {
                 RequestContext requestContext = HttpContext.createRequestContext(request.getHeaders().get("X-Request-Id"));
-                response.getHeaders().put("X-Request-Id", requestContext.correlationId());
+                response.getHeaders().put("X-Request-Id",
+                    safeCorrelationId(requestContext.correlationId()));
                 if (isWebSocketRequest(request)) {
                     return handleWebSocket(request, response, callback, handler, requestContext, webSocketContainer);
                 }
@@ -127,7 +129,8 @@ public final class JettyWebEngine implements HttpEngine {
             return true;
         }
         WebSocketCreator creator = (upgradeRequest, upgradeResponse, upgradeCallback) -> {
-            upgradeResponse.getHeaders().put("X-Request-Id", requestContext.correlationId());
+            upgradeResponse.getHeaders().put("X-Request-Id",
+                safeCorrelationId(requestContext.correlationId()));
             return new JettyWebSocketBridge(
                 match,
                 requestContext,
@@ -168,6 +171,19 @@ public final class JettyWebEngine implements HttpEngine {
     private static String method(Request request) {
         String method = request.getMethod();
         return method != null ? method : "";
+    }
+
+    /**
+     * Guarantees the echoed correlation id cannot inject response headers
+     * (defense in depth: HTTP/2 header values may legally contain CR/LF).
+     */
+    static String safeCorrelationId(String correlationId) {
+        if (correlationId == null
+                || correlationId.indexOf('\r') >= 0
+                || correlationId.indexOf('\n') >= 0) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+        return correlationId;
     }
 
     private static String path(Request request) {

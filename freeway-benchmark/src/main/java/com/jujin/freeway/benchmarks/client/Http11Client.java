@@ -1,6 +1,9 @@
 package com.jujin.freeway.benchmarks.client;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -13,8 +16,6 @@ import java.util.Arrays;
  * Defaults to GET /ping → 200 "pong" for backward compatibility.
  */
 public final class Http11Client implements AutoCloseable {
-    private static final byte[] DEFAULT_REQUEST = buildRequest("GET", "/ping");
-    private static final byte[] EXPECTED_PONG = "pong".getBytes(StandardCharsets.ISO_8859_1);
 
     /** Describes an HTTP request and its expected response. */
     public record RequestPattern(String method, String path, byte[] expectedBody) {
@@ -92,10 +93,6 @@ public final class Http11Client implements AutoCloseable {
             sb.append((char) c);
             p = c;
         }
-    }
-
-    private static byte[] buildRequest(String method, String path) {
-        return buildRequest(method, path, false);
     }
 
     private static byte[] buildRequest(String method, String path, boolean shortMode) {

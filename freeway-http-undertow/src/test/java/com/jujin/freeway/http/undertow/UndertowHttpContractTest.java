@@ -20,6 +20,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UndertowHttpContractTest {
 
@@ -87,6 +89,19 @@ class UndertowHttpContractTest {
             assertEquals("hello-worker",
                 new String(response.body(), StandardCharsets.UTF_8));
         }
+    }
+
+    @Test
+    void sanitizesCorrelationIdForResponseHeaders() {
+        assertEquals("abc-123", UndertowWebEngine.safeCorrelationId("abc-123"));
+        assertTrue(UndertowWebEngine.safeCorrelationId("a\r\nInjected: yes")
+            .matches("[0-9a-f]{32}"));
+        assertTrue(UndertowWebEngine.safeCorrelationId("a\nb")
+            .matches("[0-9a-f]{32}"));
+        assertTrue(UndertowWebEngine.safeCorrelationId(null)
+            .matches("[0-9a-f]{32}"));
+        assertFalse(UndertowWebEngine.safeCorrelationId("a\r\nb")
+            .contains("\r"));
     }
 
     private static HttpClient httpClient() {

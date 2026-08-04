@@ -19,6 +19,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JettyWebEngineContractTest {
 
@@ -75,6 +77,19 @@ class JettyWebEngineContractTest {
             // RFC 7231 §4.3.2: HEAD must report the same Content-Length as GET.
             assertEquals(4, head.headers().firstValueAsLong("Content-Length").orElse(-1));
         }
+    }
+
+    @Test
+    void sanitizesCorrelationIdForResponseHeaders() {
+        assertEquals("abc-123", JettyWebEngine.safeCorrelationId("abc-123"));
+        assertTrue(JettyWebEngine.safeCorrelationId("a\r\nInjected: yes")
+            .matches("[0-9a-f]{32}"));
+        assertTrue(JettyWebEngine.safeCorrelationId("a\nb")
+            .matches("[0-9a-f]{32}"));
+        assertTrue(JettyWebEngine.safeCorrelationId(null)
+            .matches("[0-9a-f]{32}"));
+        assertFalse(JettyWebEngine.safeCorrelationId("a\r\nb")
+            .contains("\r"));
     }
 
     private static HttpClient httpClient() {

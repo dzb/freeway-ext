@@ -4,6 +4,7 @@ import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.commons.scoped.Defer;
 import com.jujin.freeway.ioc.EventBus;
+import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.apache.kafka.common.errors.WakeupException;
@@ -30,7 +31,7 @@ public class KafkaSubscriber implements AutoCloseable {
     private static final Duration COMMIT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
-    private final KafkaConsumer<String, byte[]> consumer;
+    private final Consumer<String, byte[]> consumer;
     private final EventBus bus;
     private final JsonCodec codec;
     private final KafkaConfig config;
@@ -44,12 +45,22 @@ public class KafkaSubscriber implements AutoCloseable {
     }
 
     public KafkaSubscriber(KafkaConfig config, EventBus bus, JsonCodec codec) {
+        this(config, bus, codec, createConsumer(config));
+    }
+
+    /** Test seam: allows injecting a mock consumer. */
+    KafkaSubscriber(KafkaConfig config, EventBus bus, JsonCodec codec,
+                    Consumer<String, byte[]> consumer) {
         this.config = config;
         this.bus = bus;
         this.codec = codec;
         // Parse once here — this runs per message on the hot path otherwise.
         this.topics = config.topics();
         this.allowedEventTypes = config.allowedEventTypes();
+        this.consumer = consumer;
+    }
+
+    private static KafkaConsumer<String, byte[]> createConsumer(KafkaConfig config) {
         var props = new Properties();
         props.put("bootstrap.servers", config.bootstrapServers());
         props.put("group.id", config.groupId());
@@ -60,7 +71,7 @@ public class KafkaSubscriber implements AutoCloseable {
         if (config.clientId() != null && !config.clientId().isBlank()) {
             props.put("client.id", config.clientId());
         }
-        this.consumer = new KafkaConsumer<>(props);
+        return new KafkaConsumer<>(props);
     }
 
     public void start() {
@@ -77,6 +88,11 @@ public class KafkaSubscriber implements AutoCloseable {
                 try {
                     var records = consumer.poll(POLL_TIMEOUT);
                     for (var record : records) {
+                        if (!running) {
+                            // Shutdown raced with an already-returned batch; do
+                            // not publish into a closing EventBus.
+                            break;
+                        }
                         if (!processWithRetry(record) && running) {
                             // fail policy: stop without committing so the broker
                             // redelivers from this offset on the next start.

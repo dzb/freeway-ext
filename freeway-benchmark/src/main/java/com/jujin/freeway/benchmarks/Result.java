@@ -1,8 +1,11 @@
 package com.jujin.freeway.benchmarks;
 
-import java.util.*;
-import java.util.function.*;
-import java.util.stream.Collectors;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
+import java.util.function.ToDoubleFunction;
+import java.util.function.ToIntFunction;
+import java.util.function.ToLongFunction;
 
 /**
  * One benchmark iteration result, serialized as {@code key=value} pairs for
@@ -23,11 +26,6 @@ public record Result(String engine, String mode, int requests, int ok, int error
             mInt(rs, Result::requests), mInt(rs, Result::ok), mInt(rs, Result::errors),
             mDbl(rs, Result::rps), mLong(rs, Result::p50us),
             mLong(rs, Result::p95us), mLong(rs, Result::p99us));
-    }
-    /** Computes the value at fraction {@code f} of a sorted array. */
-    public static long percentile(long[] s, double f) {
-        if (s.length == 0) return 0;
-        return s[Math.clamp((int)Math.ceil(s.length * f) - 1, 0, s.length - 1)];
     }
     private static int mInt(List<Result> rs, ToIntFunction<Result> g) { return rs.stream().mapToInt(g).sorted().skip(rs.size()/2).findFirst().orElse(0); }
     private static long mLong(List<Result> rs, ToLongFunction<Result> g) { return rs.stream().mapToLong(g).sorted().skip(rs.size()/2).findFirst().orElse(0); }

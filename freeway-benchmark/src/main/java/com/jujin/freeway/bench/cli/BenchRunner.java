@@ -4,6 +4,9 @@ import com.jujin.freeway.benchmarks.ServerHarness;
 import com.jujin.freeway.benchmarks.client.Http11Client;
 import com.jujin.freeway.benchmarks.client.WsClient;
 import java.util.Arrays;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -61,10 +64,10 @@ public final class BenchRunner {
         var okCount = new AtomicInteger();
         var next = new AtomicInteger();
         var errs = new AtomicInteger();
-        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
         long t0 = System.nanoTime();
         try {
-            var futures = new java.util.concurrent.Future<?>[concurrency];
+            var futures = new Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     if (mode == Mode.SHORT) {
@@ -104,7 +107,7 @@ public final class BenchRunner {
                 });
             }
             try {
-                for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+                for (var f : futures) f.get(120, TimeUnit.SECONDS);
             } catch (java.util.concurrent.TimeoutException ex) {
                 // Requests that missed the deadline never completed; count them
                 // as errors so the reported total stays truthful.
@@ -148,10 +151,10 @@ public final class BenchRunner {
         var okCount = new AtomicInteger();
         var next = new AtomicInteger();
         var errs = new AtomicInteger();
-        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
         long t0 = System.nanoTime();
         try {
-            var futures = new java.util.concurrent.Future<?>[concurrency];
+            var futures = new Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     while (true) {
@@ -171,7 +174,7 @@ public final class BenchRunner {
                 });
             }
             try {
-                for (var f : futures) f.get(120, java.util.concurrent.TimeUnit.SECONDS);
+                for (var f : futures) f.get(120, TimeUnit.SECONDS);
             } catch (java.util.concurrent.TimeoutException ex) {
                 errs.addAndGet(Math.max(0, requests - okCount.get() - errs.get()));
             }
@@ -194,9 +197,9 @@ public final class BenchRunner {
                                     Http11Client.RequestPattern pattern,
                                     Mode mode) throws Exception {
         var count = new AtomicInteger();
-        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
-            var futures = new java.util.concurrent.Future<?>[concurrency];
+            var futures = new Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     if (mode == Mode.SHORT) {
@@ -219,7 +222,7 @@ public final class BenchRunner {
                     return null;
                 });
             }
-            for (var f : futures) f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            for (var f : futures) f.get(60, TimeUnit.SECONDS);
         } finally {
             executor.shutdownNow();
         }
@@ -228,9 +231,9 @@ public final class BenchRunner {
     /** Warmup for WebSocket: send frames, discard results. */
     private static void warmupWs(int port, int concurrency, int requests) throws Exception {
         var count = new AtomicInteger();
-        var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        var executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
-            var futures = new java.util.concurrent.Future<?>[concurrency];
+            var futures = new Future<?>[concurrency];
             for (int t = 0; t < concurrency; t++) {
                 futures[t] = executor.submit(() -> {
                     while (true) {
@@ -243,7 +246,7 @@ public final class BenchRunner {
                     return null;
                 });
             }
-            for (var f : futures) f.get(60, java.util.concurrent.TimeUnit.SECONDS);
+            for (var f : futures) f.get(60, TimeUnit.SECONDS);
         } finally {
             executor.shutdownNow();
         }

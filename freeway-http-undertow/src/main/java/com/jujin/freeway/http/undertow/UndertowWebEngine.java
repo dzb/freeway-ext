@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 /** Undertow transport adapter for the Freeway HTTP engine. */
 public final class UndertowWebEngine implements HttpEngine {
@@ -97,7 +99,8 @@ public final class UndertowWebEngine implements HttpEngine {
     private void dispatch(HttpServerExchange exchange, HttpRequestHandler handler) throws Exception {
         RequestContext requestContext = HttpContext.createRequestContext(
             exchange.getRequestHeaders().getFirst("X-Request-Id"));
-        exchange.getResponseHeaders().put(X_REQUEST_ID, requestContext.correlationId());
+        exchange.getResponseHeaders().put(X_REQUEST_ID,
+            safeCorrelationId(requestContext.correlationId()));
         if (isWebSocketRequest(exchange)) {
             String origin = exchange.getRequestHeaders().getFirst(Headers.ORIGIN);
             WebSocketMatch match = handler.websocket(method(exchange), path(exchange), origin);
@@ -156,6 +159,19 @@ public final class UndertowWebEngine implements HttpEngine {
         return exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
     }
 
+    /**
+     * Guarantees the echoed correlation id cannot inject response headers
+     * (defense in depth: HTTP/2 header values may legally contain CR/LF).
+     */
+    static String safeCorrelationId(String correlationId) {
+        if (correlationId == null
+                || correlationId.indexOf('\r') >= 0
+                || correlationId.indexOf('\n') >= 0) {
+            return UUID.randomUUID().toString().replace("-", "");
+        }
+        return correlationId;
+    }
+
     private static String path(HttpServerExchange exchange) {
         String relative = exchange.getRelativePath();
         return relative != null ? relative : "/";
@@ -188,7 +204,7 @@ public final class UndertowWebEngine implements HttpEngine {
     private record UndertowHandle(
         Undertow server,
         GracefulShutdownHandler gracefulShutdown,
-        java.time.Duration shutdownGrace,
+        Duration shutdownGrace,
         String host
     ) implements HttpServerHandle {
         @Override

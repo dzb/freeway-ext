@@ -4,6 +4,8 @@ import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Registers all CLI command implementations as contributions.
@@ -60,9 +62,9 @@ public final class CliModule implements ModuleEx {
         }
 
         String commandName = args[0];
-        var cmdArgs = java.util.Map.<String, String>of();
+        var cmdArgs = Map.<String, String>of();
         if (args.length > 1) {
-            var map = new java.util.LinkedHashMap<String, String>();
+            var map = new LinkedHashMap<String, String>();
             for (int i = 1; i < args.length; i++) {
                 String a = args[i];
                 if (a.startsWith("--")) {
@@ -74,7 +76,7 @@ public final class CliModule implements ModuleEx {
                     }
                 }
             }
-            cmdArgs = java.util.Map.copyOf(map);
+            cmdArgs = Map.copyOf(map);
         }
 
         var ctx = new Command.Context(container, commandName, cmdArgs);

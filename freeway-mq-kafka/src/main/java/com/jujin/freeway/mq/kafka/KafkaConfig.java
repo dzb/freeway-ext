@@ -19,13 +19,20 @@ public record KafkaConfig(
     @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicy
 ) {
     public KafkaConfig {
-        if (poisonPolicy == null || poisonPolicy.isBlank()
-                || !"skip".equalsIgnoreCase(poisonPolicy.trim())
-                && !"fail".equalsIgnoreCase(poisonPolicy.trim())) {
+        if (!isValidPoisonPolicy(poisonPolicy)) {
             throw new IllegalArgumentException(
                 "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '"
                     + poisonPolicy + "'");
         }
+    }
+
+    private static boolean isValidPoisonPolicy(String policy) {
+        if (policy == null || policy.isBlank()) {
+            return false;
+        }
+        String trimmed = policy.trim();
+        return "skip".equalsIgnoreCase(trimmed)
+            || "fail".equalsIgnoreCase(trimmed);
     }
 
     public List<String> topics() {

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.coercion.Coercer;
@@ -15,101 +31,147 @@ import java.util.List;
 import java.util.Map;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.Scope;
-import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Setup;
+import org.openjdk.jmh.annotations.State;
 
 /**
  * JMH benchmark for {@link HttpContextDefault} response output paths.
  *
- * <p>Covers plain-text, JSON, and not-found responses as well as
- * request-body reading combined with output and the {@code sendJson}
- * convenience shortcut.
+ * <p>Covers plain-text, JSON, and not-found responses as well as request-body reading combined with
+ * output and the {@code sendJson} convenience shortcut.
  */
 @State(Scope.Thread)
 public class HttpContextOutputBenchmark {
 
-    private static final JsonCodec JSON = new JsonCodecDefault();
-    private static final Coercer COERCER = new CoercerDefault();
-    private static final byte[] PONG = "pong".getBytes(StandardCharsets.UTF_8);
-    private static final byte[] LARGE_BODY = "large-body-".repeat(2000).getBytes(StandardCharsets.UTF_8);
+  private static final JsonCodec JSON = new JsonCodecDefault();
+  private static final Coercer COERCER = new CoercerDefault();
+  private static final byte[] PONG = "pong".getBytes(StandardCharsets.UTF_8);
+  private static final byte[] LARGE_BODY =
+      "large-body-".repeat(2000).getBytes(StandardCharsets.UTF_8);
 
-    private static final Map<String, List<String>> REQUEST_HEADERS;
-    static {
-        REQUEST_HEADERS = new LinkedHashMap<>();
-        REQUEST_HEADERS.put("Host", List.of("127.0.0.1"));
-        REQUEST_HEADERS.put("Connection", List.of("keep-alive"));
-        REQUEST_HEADERS.put("User-Agent", List.of("freeway-bench"));
-        REQUEST_HEADERS.put("Accept", List.of("*/*"));
-    }
+  private static final Map<String, List<String>> REQUEST_HEADERS;
 
-    private HttpContextDefault ctx;
-    private OutputStream sink;
-    private HttpContextDefault bodyReadCtx;
-    private HttpContextDefault sendJsonCtx;
+  static {
+    REQUEST_HEADERS = new LinkedHashMap<>();
+    REQUEST_HEADERS.put("Host", List.of("127.0.0.1"));
+    REQUEST_HEADERS.put("Connection", List.of("keep-alive"));
+    REQUEST_HEADERS.put("User-Agent", List.of("freeway-bench"));
+    REQUEST_HEADERS.put("Accept", List.of("*/*"));
+  }
 
-    @Setup
-    public void setup() {
-        sink = OutputStream.nullOutputStream();
-        ctx = new HttpContextDefault(JSON, COERCER);
+  private HttpContextDefault ctx;
+  private OutputStream sink;
+  private HttpContextDefault bodyReadCtx;
+  private HttpContextDefault sendJsonCtx;
 
-        // Context pre-configured for body-read scenario (POST with body)
-        bodyReadCtx = new HttpContextDefault(JSON, COERCER);
-        bodyReadCtx.reset("POST", "/api/data", null, REQUEST_HEADERS,
-            new ByteArrayInputStream(LARGE_BODY), LARGE_BODY.length, false,
-            sink, null, false, true);
+  @Setup
+  public void setup() {
+    sink = OutputStream.nullOutputStream();
+    ctx = new HttpContextDefault(JSON, COERCER);
 
-        // Context pre-configured for sendJson convenience shortcut
-        sendJsonCtx = new HttpContextDefault(JSON, COERCER);
-        sendJsonCtx.reset("GET", "/api/resource", null, REQUEST_HEADERS,
-            InputStream.nullInputStream(), -1, false,
-            sink, null, false, true);
-    }
+    // Context pre-configured for body-read scenario (POST with body)
+    bodyReadCtx = new HttpContextDefault(JSON, COERCER);
+    bodyReadCtx.reset(
+        "POST",
+        "/api/data",
+        null,
+        REQUEST_HEADERS,
+        new ByteArrayInputStream(LARGE_BODY),
+        LARGE_BODY.length,
+        false,
+        sink,
+        null,
+        false,
+        true);
 
-    // --- Existing scenarios (preserved) ---
+    // Context pre-configured for sendJson convenience shortcut
+    sendJsonCtx = new HttpContextDefault(JSON, COERCER);
+    sendJsonCtx.reset(
+        "GET",
+        "/api/resource",
+        null,
+        REQUEST_HEADERS,
+        InputStream.nullInputStream(),
+        -1,
+        false,
+        sink,
+        null,
+        false,
+        true);
+  }
 
-    @Benchmark
-    public HttpContext sendPongText() throws IOException {
-        ctx.reset("GET", "/ping", null, REQUEST_HEADERS,
-            InputStream.nullInputStream(), -1, false,
-            sink, null, false, true);
-        ctx.status(200);
-        ctx.headerSet("Content-Type", "text/plain; charset=utf-8");
-        return ctx.output(PONG);
-    }
+  // --- Existing scenarios (preserved) ---
 
-    @Benchmark
-    public HttpContext sendPongJson() throws IOException {
-        ctx.reset("GET", "/ping", null, REQUEST_HEADERS,
-            InputStream.nullInputStream(), -1, false,
-            sink, null, false, true);
-        ctx.status(200);
-        return ctx.outputJson(Map.of("status", "ok"));
-    }
+  @Benchmark
+  public HttpContext sendPongText() throws IOException {
+    ctx.reset(
+        "GET",
+        "/ping",
+        null,
+        REQUEST_HEADERS,
+        InputStream.nullInputStream(),
+        -1,
+        false,
+        sink,
+        null,
+        false,
+        true);
+    ctx.status(200);
+    ctx.headerSet("Content-Type", "text/plain; charset=utf-8");
+    return ctx.output(PONG);
+  }
 
-    @Benchmark
-    public HttpContext sendNotFound() throws IOException {
-        ctx.reset("GET", "/missing", null, REQUEST_HEADERS,
-            InputStream.nullInputStream(), -1, false,
-            sink, null, false, true);
-        ctx.status(404);
-        return ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));
-    }
+  @Benchmark
+  public HttpContext sendPongJson() throws IOException {
+    ctx.reset(
+        "GET",
+        "/ping",
+        null,
+        REQUEST_HEADERS,
+        InputStream.nullInputStream(),
+        -1,
+        false,
+        sink,
+        null,
+        false,
+        true);
+    ctx.status(200);
+    return ctx.outputJson(Map.of("status", "ok"));
+  }
 
-    // --- New scenarios ---
+  @Benchmark
+  public HttpContext sendNotFound() throws IOException {
+    ctx.reset(
+        "GET",
+        "/missing",
+        null,
+        REQUEST_HEADERS,
+        InputStream.nullInputStream(),
+        -1,
+        false,
+        sink,
+        null,
+        false,
+        true);
+    ctx.status(404);
+    return ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));
+  }
 
-    /** Read request body then output response — simulates POST handler. */
-    @Benchmark
-    public HttpContext readBodyThenOutput() throws IOException {
-        bodyReadCtx.body();                 // reads + caches body
-        bodyReadCtx.status(201);
-        bodyReadCtx.headerSet("Content-Type", "application/json");
-        return bodyReadCtx.output(PONG);
-    }
+  // --- New scenarios ---
 
-    /** Convenience shortcut: sendJson(status, value). */
-    @Benchmark
-    public HttpContext sendJsonShortcut() throws IOException {
-        sendJsonCtx.sendJson(200, Map.of("id", 42, "name", "Alice"));
-        return sendJsonCtx;
-    }
+  /** Read request body then output response — simulates POST handler. */
+  @Benchmark
+  public HttpContext readBodyThenOutput() throws IOException {
+    bodyReadCtx.body(); // reads + caches body
+    bodyReadCtx.status(201);
+    bodyReadCtx.headerSet("Content-Type", "application/json");
+    return bodyReadCtx.output(PONG);
+  }
+
+  /** Convenience shortcut: sendJson(status, value). */
+  @Benchmark
+  public HttpContext sendJsonShortcut() throws IOException {
+    sendJsonCtx.sendJson(200, Map.of("id", 42, "name", "Alice"));
+    return sendJsonCtx;
+  }
 }

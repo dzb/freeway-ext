@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.model.BenchmarkRun;
@@ -12,6 +28,7 @@ import java.util.List;
  * {@code bench list} — shows recent benchmark runs from the SQLite database.
  *
  * <p>Arguments:
+ *
  * <pre>
  * --limit=10    max rows to show (default: 10)
  * --engine=     filter by engine (optional)
@@ -19,50 +36,55 @@ import java.util.List;
  */
 public final class ListCommand implements Command {
 
-    private static final DateTimeFormatter FMT =
-        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+  private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    @Override
-    public void run(Context ctx) throws Exception {
-        int limit = ctx.getInt("limit", 10);
-        String engineFilter = ctx.get("engine", null);
+  @Override
+  public void run(Context ctx) throws Exception {
+    int limit = ctx.getInt("limit", 10);
+    String engineFilter = ctx.get("engine", null);
 
-        var container = ctx.container();
-        var db = container.get(Database.class);
-        var coercer = container.get(Coercer.class);
-        var orm = new Orm(db, coercer);
+    var container = ctx.container();
+    var db = container.get(Database.class);
+    var coercer = container.get(Coercer.class);
+    var orm = new Orm(db, coercer);
 
-        String sql = "SELECT id, engine, scenario, concurrency, requests, "
+    String sql =
+        "SELECT id, engine, scenario, concurrency, requests, "
             + "warmup, runs, commit_sha, jdk_info, os_info, cpu_info, created_at "
             + "FROM bench_runs";
-        if (engineFilter != null) {
-            sql += " WHERE engine = ?";
-        }
-        sql += " ORDER BY created_at DESC LIMIT ?";
-
-        List<BenchmarkRun> runs;
-        if (engineFilter != null) {
-            runs = db.query(sql, engineFilter, limit).list(BenchmarkRun.class);
-        } else {
-            runs = db.query(sql, limit).list(BenchmarkRun.class);
-        }
-
-        if (runs.isEmpty()) {
-            System.out.println("No benchmark runs found.");
-            return;
-        }
-
-        System.out.printf("%-4s %-16s %-10s %-6s %-9s %-20s %s%n",
-            "ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created");
-        System.out.println("─".repeat(100));
-        for (var r : runs) {
-            System.out.printf("%-4d %-16s %-10s %-6d %-9s %-20s %s%n",
-                r.id(), r.engine(), r.scenario(), r.concurrency(),
-                r.commitSha().isBlank() ? "—" : r.commitSha(),
-                r.jdkInfo() != null && r.jdkInfo().length() > 20
-                    ? r.jdkInfo().substring(0, 20)
-                    : r.jdkInfo() == null ? "" : r.jdkInfo(),
-                FMT.format(r.createdAt().atZone(ZoneId.systemDefault())));
-        }
+    if (engineFilter != null) {
+      sql += " WHERE engine = ?";
     }
+    sql += " ORDER BY created_at DESC LIMIT ?";
+
+    List<BenchmarkRun> runs;
+    if (engineFilter != null) {
+      runs = db.query(sql, engineFilter, limit).list(BenchmarkRun.class);
+    } else {
+      runs = db.query(sql, limit).list(BenchmarkRun.class);
+    }
+
+    if (runs.isEmpty()) {
+      System.out.println("No benchmark runs found.");
+      return;
+    }
+
+    System.out.printf(
+        "%-4s %-16s %-10s %-6s %-9s %-20s %s%n",
+        "ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created");
+    System.out.println("─".repeat(100));
+    for (var r : runs) {
+      System.out.printf(
+          "%-4d %-16s %-10s %-6d %-9s %-20s %s%n",
+          r.id(),
+          r.engine(),
+          r.scenario(),
+          r.concurrency(),
+          r.commitSha().isBlank() ? "—" : r.commitSha(),
+          r.jdkInfo() != null && r.jdkInfo().length() > 20
+              ? r.jdkInfo().substring(0, 20)
+              : r.jdkInfo() == null ? "" : r.jdkInfo(),
+          r.createdAt() != null ? FMT.format(r.createdAt().atZone(ZoneId.systemDefault())) : "—");
+    }
+  }
 }

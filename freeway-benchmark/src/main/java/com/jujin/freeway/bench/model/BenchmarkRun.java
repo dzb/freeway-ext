@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.bench.model;
 
 import com.jujin.freeway.db.schema.Column;
@@ -22,72 +38,86 @@ public record BenchmarkRun(
     @Column("jdk_info") String jdkInfo,
     @Column("os_info") String osInfo,
     @Column("cpu_info") String cpuInfo,
-    @Column("created_at") Instant createdAt
-) {
-    public static BenchmarkRun create(String engine, String scenario,
-                                       int concurrency, int requests,
-                                       int warmup, int runs) {
-        return new BenchmarkRun(0, engine, scenario, concurrency, requests,
-            warmup, runs, gitSha(), jvm(), os(), cpu(), Instant.now());
+    @Column("created_at") Instant createdAt) {
+  public static BenchmarkRun create(
+      String engine, String scenario, int concurrency, int requests, int warmup, int runs) {
+    return new BenchmarkRun(
+        0,
+        engine,
+        scenario,
+        concurrency,
+        requests,
+        warmup,
+        runs,
+        gitSha(),
+        jvm(),
+        os(),
+        cpu(),
+        Instant.now());
+  }
+
+  private static volatile String cachedGitSha;
+
+  private static String gitSha() {
+    String cached = cachedGitSha;
+    if (cached != null) {
+      return cached;
     }
+    synchronized (BenchmarkRun.class) {
+      cached = cachedGitSha;
+      if (cached != null) {
+        return cached;
+      }
+      String sha = resolveGitSha();
+      // Cache failures too: the working directory's git state cannot
+      // change within one JVM, so forking git per run is pure waste.
+      cachedGitSha = sha;
+      return sha;
+    }
+  }
 
-    private static volatile String cachedGitSha;
-
-    private static String gitSha() {
-        String cached = cachedGitSha;
-        if (cached != null) {
-            return cached;
+  private static String resolveGitSha() {
+    try {
+      var proc =
+          new ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
+              .redirectErrorStream(true)
+              .start();
+      String line = null;
+      try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+        line = reader.readLine();
+      }
+      // Only accept the output when git actually succeeded; stderr is
+      // merged into stdout and would otherwise be stored as the SHA.
+      if (proc.waitFor() == 0 && line != null) {
+        String sha = line.trim();
+        if (sha.matches("[0-9a-fA-F]{7,40}")) {
+          return sha;
         }
-        synchronized (BenchmarkRun.class) {
-            cached = cachedGitSha;
-            if (cached != null) {
-                return cached;
-            }
-            String sha = resolveGitSha();
-            // Cache failures too: the working directory's git state cannot
-            // change within one JVM, so forking git per run is pure waste.
-            cachedGitSha = sha;
-            return sha;
-        }
+      }
+    } catch (Exception ignored) {
     }
+    return "";
+  }
 
-    private static String resolveGitSha() {
-        try {
-            var proc = new ProcessBuilder("git", "rev-parse", "--short=8", "HEAD")
-                .redirectErrorStream(true)
-                .start();
-            String line = null;
-            try (var reader = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                line = reader.readLine();
-            }
-            // Only accept the output when git actually succeeded; stderr is
-            // merged into stdout and would otherwise be stored as the SHA.
-            if (proc.waitFor() == 0 && line != null) {
-                String sha = line.trim();
-                if (sha.matches("[0-9a-fA-F]{7,40}")) {
-                    return sha;
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return "";
-    }
+  private static String jvm() {
+    return System.getProperty("java.vm.name")
+        + " "
+        + System.getProperty("java.vm.version")
+        + " "
+        + System.getProperty("java.vm.vendor");
+  }
 
-    private static String jvm() {
-        return System.getProperty("java.vm.name") + " "
-            + System.getProperty("java.vm.version") + " "
-            + System.getProperty("java.vm.vendor");
-    }
+  private static String os() {
+    return System.getProperty("os.name")
+        + " "
+        + System.getProperty("os.version")
+        + " "
+        + System.getProperty("os.arch");
+  }
 
-    private static String os() {
-        return System.getProperty("os.name") + " "
-            + System.getProperty("os.version") + " "
-            + System.getProperty("os.arch");
-    }
-
-    private static String cpu() {
-        int cpus = Runtime.getRuntime().availableProcessors();
-        String model = System.getProperty("os.arch");
-        return model + " " + cpus + " threads";
-    }
+  private static String cpu() {
+    int cpus = Runtime.getRuntime().availableProcessors();
+    String model = System.getProperty("os.arch");
+    return model + " " + cpus + " threads";
+  }
 }

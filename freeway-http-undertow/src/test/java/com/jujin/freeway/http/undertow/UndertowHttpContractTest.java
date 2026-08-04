@@ -1,4 +1,24 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.undertow;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -19,94 +39,92 @@ import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 class UndertowHttpContractTest {
 
-    private static RequestPipeline pipeline() {
-        var routes = new RouteIndex(
+  private static RequestPipeline pipeline() {
+    var routes =
+        new RouteIndex(
             List.of(
                 Route.get("/ping", ctx -> ctx.send(200, "pong")),
-                Route.post("/echo", ctx -> {
-                    ctx.status(200);
-                    ctx.output(ctx.body());
-                })),
+                Route.post(
+                    "/echo",
+                    ctx -> {
+                      ctx.status(200);
+                      ctx.output(ctx.body());
+                    })),
             List.of());
-        return new RequestPipeline(
-            routes, new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(), List.of(), List.of());
+    return new RequestPipeline(
+        routes,
+        new WebSocketIndex(List.of(), List.of()),
+        new CorsFilter(false, null, null, null, null, null, false),
+        new HealthFilter(false, "/no-health", null),
+        List.of(),
+        List.of(),
+        List.of());
+  }
+
+  @Test
+  void servesGetAndHead() throws Exception {
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var client = httpClient();
+
+    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+      server.start();
+      var get =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/ping"))
+                  .GET()
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, get.statusCode());
+      assertEquals("pong", get.body());
+      assertEquals(4, get.headers().firstValueAsLong("Content-Length").orElse(-1));
+
+      var head =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/ping"))
+                  .method("HEAD", HttpRequest.BodyPublishers.noBody())
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.discarding());
+      assertEquals(200, head.statusCode());
+      // RFC 7231 §4.3.2: HEAD must report the same Content-Length as GET.
+      assertEquals(4, head.headers().firstValueAsLong("Content-Length").orElse(-1));
     }
+  }
 
-    @Test
-    void servesGetAndHead() throws Exception {
-        var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-        var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
-        var client = httpClient();
+  @Test
+  void echoBodyWorksWhenDispatchedToWorker() throws Exception {
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var client = httpClient();
 
-        try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
-            server.start();
-            var get = client.send(
-                HttpRequest.newBuilder(
-                        URI.create("http://127.0.0.1:" + server.port() + "/ping"))
-                    .GET().timeout(Duration.ofSeconds(10)).build(),
-                HttpResponse.BodyHandlers.ofString());
-            assertEquals(200, get.statusCode());
-            assertEquals("pong", get.body());
-            assertEquals(4, get.headers().firstValueAsLong("Content-Length").orElse(-1));
-
-            var head = client.send(
-                HttpRequest.newBuilder(
-                        URI.create("http://127.0.0.1:" + server.port() + "/ping"))
-                    .method("HEAD", HttpRequest.BodyPublishers.noBody())
-                    .timeout(Duration.ofSeconds(10)).build(),
-                HttpResponse.BodyHandlers.discarding());
-            assertEquals(200, head.statusCode());
-            // RFC 7231 §4.3.2: HEAD must report the same Content-Length as GET.
-            assertEquals(4, head.headers().firstValueAsLong("Content-Length").orElse(-1));
-        }
+    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+      server.start();
+      var response =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/echo"))
+                  .POST(HttpRequest.BodyPublishers.ofString("hello-worker"))
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.ofByteArray());
+      assertEquals(200, response.statusCode());
+      assertEquals("hello-worker", new String(response.body(), StandardCharsets.UTF_8));
     }
+  }
 
-    @Test
-    void echoBodyWorksWhenDispatchedToWorker() throws Exception {
-        var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-        var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
-        var client = httpClient();
+  @Test
+  void sanitizesCorrelationIdForResponseHeaders() {
+    assertEquals("abc-123", UndertowWebEngine.safeCorrelationId("abc-123"));
+    assertTrue(UndertowWebEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
+    assertTrue(UndertowWebEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
+    assertTrue(UndertowWebEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
+    assertFalse(UndertowWebEngine.safeCorrelationId("a\r\nb").contains("\r"));
+  }
 
-        try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
-            server.start();
-            var response = client.send(
-                HttpRequest.newBuilder(
-                        URI.create("http://127.0.0.1:" + server.port() + "/echo"))
-                    .POST(HttpRequest.BodyPublishers.ofString("hello-worker"))
-                    .timeout(Duration.ofSeconds(10))
-                    .build(),
-                HttpResponse.BodyHandlers.ofByteArray());
-            assertEquals(200, response.statusCode());
-            assertEquals("hello-worker",
-                new String(response.body(), StandardCharsets.UTF_8));
-        }
-    }
-
-    @Test
-    void sanitizesCorrelationIdForResponseHeaders() {
-        assertEquals("abc-123", UndertowWebEngine.safeCorrelationId("abc-123"));
-        assertTrue(UndertowWebEngine.safeCorrelationId("a\r\nInjected: yes")
-            .matches("[0-9a-f]{32}"));
-        assertTrue(UndertowWebEngine.safeCorrelationId("a\nb")
-            .matches("[0-9a-f]{32}"));
-        assertTrue(UndertowWebEngine.safeCorrelationId(null)
-            .matches("[0-9a-f]{32}"));
-        assertFalse(UndertowWebEngine.safeCorrelationId("a\r\nb")
-            .contains("\r"));
-    }
-
-    private static HttpClient httpClient() {
-        return HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
-    }
+  private static HttpClient httpClient() {
+    return HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+  }
 }

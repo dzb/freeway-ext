@@ -92,6 +92,30 @@
 - **History**: results are fetched via a JOIN over the same time window,
   removing SQLite's per-statement parameter limit; `--days` must be positive.
 - **Suite**: `--mode=ws` validates scenarios and engine support up front.
+- **Kafka**: `freeway.kafka.properties` passes arbitrary client options
+  (TLS/SASL etc.) through to producer and consumer.
+- **Kafka**: `freeway.kafka.max-retries` / `retry-backoff-ms` add exponential
+  backoff retries; `freeway.kafka.dlq-topic` moves poison messages to a
+  dead-letter topic (preserving `X-DLQ-Original-Topic` / `-Offset` / `-Reason`
+  headers); `freeway.kafka.concurrency` fans processing out by key while
+  preserving per-key ordering.
+- **HTTP adapters**: Jetty and Undertow serve HTTPS when
+  `freeway.http.ssl.enabled` is set (`key-store` / `key-store-password`, JKS or
+  PKCS12); Jetty additionally supports HTTP/2 (`freeway.http.http2`: h2 via
+  ALPN under TLS, h2c otherwise) and a configurable WebSocket frame limit
+  (`freeway.http.websocket.max-frame-size`); Undertow's I/O-thread dispatch can
+  be disabled with `freeway.http.undertow.dispatch-io=false`.
+- **HTTP adapters**: `ctx.maxBodySize` is enforced from
+  `HttpServerConfig.maxBodySize()` on both Jetty and Undertow.
+- **Hikari**: `freeway.db.pool.leak-detection` enables Hikari's leak detection.
+- **Build**: GitHub Actions CI (`mvn verify -Dgpg.skip=true` on JDK 25) and
+  Dependabot keep the build green and dependencies current; Apache-2.0 license
+  headers added to all sources; Spotless (google-java-format) enforces a
+  consistent style at `verify`.
+- **Docs**: `docs/RELEASE.md` documents the snapshot release flow (verify →
+  changelog → tag → deploy → benchmark archive).
+- **Benchmark**: `compare`/`list`/`history` render local time and tolerate null
+  `created_at` rows.
 - **Benchmark**: removed dead code (`Result.percentile`,
   `Http11Client` unused fields/overload); imports and fully-qualified names
   cleaned across modules.

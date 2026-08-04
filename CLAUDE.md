@@ -45,6 +45,7 @@ Each depends only on Freeway core modules and its specific third-party library.
 
 The benchmark CLI disables SPI auto-discovery (`BenchApp`) because its classpath
 contains both transport adapters, each binding `HttpEngine` as `primary()`.
+Ordinary applications depend on exactly one adapter and never hit this.
 
 ## Architecture
 

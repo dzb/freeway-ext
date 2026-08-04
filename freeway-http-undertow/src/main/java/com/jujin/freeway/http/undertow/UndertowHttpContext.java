@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.undertow;
 
 import com.jujin.freeway.commons.coercion.Coercer;
@@ -22,191 +38,187 @@ import java.util.Optional;
 
 final class UndertowHttpContext extends HttpContext {
 
-    private HttpServerExchange exchange;
-    private RequestContext requestContext;
-    private Map<String, List<String>> queryParams;
-    private String method;
-    private String path;
-    private Map<String, List<String>> requestHeaders;
-    private byte[] cachedBody;
-    private int responseStatus = 200;
-    private boolean responded;
+  private HttpServerExchange exchange;
+  private RequestContext requestContext;
+  private Map<String, List<String>> queryParams;
+  private String method;
+  private String path;
+  private Map<String, List<String>> requestHeaders;
+  private byte[] cachedBody;
+  private int responseStatus = 200;
+  private boolean responded;
 
-    /** Pooled constructor — call {@link #reset} before use. */
-    UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer) {
-        super(jsonCodec, coercer);
+  /** Pooled constructor — call {@link #reset} before use. */
+  UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer) {
+    super(jsonCodec, coercer);
+  }
+
+  /** Reinitializes all per-request state for object reuse. */
+  void reset(HttpServerExchange exchange, RequestContext requestContext) {
+    this.exchange = Objects.requireNonNull(exchange, "exchange");
+    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+    this.queryParams = null; // lazy — PING never accesses
+    this.method = exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
+    String rel = exchange.getRelativePath();
+    this.path = rel != null ? rel : "/";
+    this.requestHeaders = null; // lazy — PING never accesses
+    this.cachedBody = null;
+    this.responseStatus = 200;
+    this.responded = false;
+  }
+
+  @Override
+  public String method() {
+    return method;
+  }
+
+  @Override
+  public String path() {
+    return path;
+  }
+
+  @Override
+  public Optional<String> queryParam(String name) {
+    if (queryParams == null) {
+      queryParams = snapshotQuery(exchange.getQueryParameters());
     }
+    List<String> values = queryParams.get(name);
+    return Optional.ofNullable(values != null && !values.isEmpty() ? values.getFirst() : null);
+  }
 
-    /** Reinitializes all per-request state for object reuse. */
-    void reset(HttpServerExchange exchange, RequestContext requestContext) {
-        this.exchange = Objects.requireNonNull(exchange, "exchange");
-        this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
-        this.queryParams = null;       // lazy — PING never accesses
-        this.method = exchange.getRequestMethod() != null
-            ? exchange.getRequestMethod().toString() : "";
-        String rel = exchange.getRelativePath();
-        this.path = rel != null ? rel : "/";
-        this.requestHeaders = null;    // lazy — PING never accesses
-        this.cachedBody = null;
-        this.responseStatus = 200;
-        this.responded = false;
+  @Override
+  public List<String> queryParams(String name) {
+    if (queryParams == null) {
+      queryParams = snapshotQuery(exchange.getQueryParameters());
     }
+    return queryParams.getOrDefault(name, List.of());
+  }
 
-    @Override
-    public String method() {
-        return method;
+  @Override
+  public Map<String, List<String>> queryParams() {
+    if (queryParams == null) {
+      queryParams = snapshotQuery(exchange.getQueryParameters());
     }
+    return queryParams;
+  }
 
-    @Override
-    public String path() {
-        return path;
+  @Override
+  public Optional<String> header(String name) {
+    return Optional.ofNullable(exchange.getRequestHeaders().getFirst(name));
+  }
+
+  @Override
+  public List<String> headers(String name) {
+    Deque<String> values = exchange.getRequestHeaders().get(name);
+    if (values == null || values.isEmpty()) {
+      return List.of();
     }
-
-    @Override
-    public Optional<String> queryParam(String name) {
-        if (queryParams == null) {
-            queryParams = snapshotQuery(exchange.getQueryParameters());
-        }
-        List<String> values = queryParams.get(name);
-        return Optional.ofNullable(
-            values != null && !values.isEmpty() ? values.getFirst() : null
-        );
+    if (values.size() == 1) {
+      return List.of(values.getFirst());
     }
+    return new ArrayList<>(values);
+  }
 
-    @Override
-    public List<String> queryParams(String name) {
-        if (queryParams == null) {
-            queryParams = snapshotQuery(exchange.getQueryParameters());
-        }
-        return queryParams.getOrDefault(name, List.of());
-    }
-
-    @Override
-    public Map<String, List<String>> queryParams() {
-        if (queryParams == null) {
-            queryParams = snapshotQuery(exchange.getQueryParameters());
-        }
-        return queryParams;
-    }
-
-    @Override
-    public Optional<String> header(String name) {
-        return Optional.ofNullable(exchange.getRequestHeaders().getFirst(name));
-    }
-
-    @Override
-    public List<String> headers(String name) {
+  @Override
+  public Map<String, List<String>> headers() {
+    if (requestHeaders == null) {
+      var headerMap = new LinkedHashMap<String, List<String>>();
+      for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
         Deque<String> values = exchange.getRequestHeaders().get(name);
-        if (values == null || values.isEmpty()) {
-            return List.of();
-        }
-        if (values.size() == 1) {
-            return List.of(values.getFirst());
-        }
-        return new ArrayList<>(values);
+        headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
+      }
+      requestHeaders = Map.copyOf(headerMap);
     }
+    return requestHeaders;
+  }
 
-    @Override
-    public Map<String, List<String>> headers() {
-        if (requestHeaders == null) {
-            var headerMap = new LinkedHashMap<String, List<String>>();
-            for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
-                Deque<String> values = exchange.getRequestHeaders().get(name);
-                headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
-            }
-            requestHeaders = Map.copyOf(headerMap);
-        }
-        return requestHeaders;
+  @Override
+  public byte[] body() throws IOException {
+    if (cachedBody == null) {
+      if (!exchange.isBlocking()) {
+        exchange.startBlocking();
+      }
+      try (InputStream in = exchange.getInputStream()) {
+        cachedBody = readBodyLimited(in);
+      }
     }
+    return cachedBody;
+  }
 
-    @Override
-    public byte[] body() throws IOException {
-        if (cachedBody == null) {
-            if (!exchange.isBlocking()) {
-                exchange.startBlocking();
-            }
-            try (InputStream in = exchange.getInputStream()) {
-                cachedBody = readBodyLimited(in);
-            }
-        }
-        return cachedBody;
+  @Override
+  public SseEmitter sse() throws IOException {
+    exchange.setStatusCode(200);
+    setupSseHeaders();
+    if (!exchange.isBlocking()) {
+      exchange.startBlocking();
     }
+    responded = true;
+    return new SseEmitter(exchange.getOutputStream());
+  }
 
-    @Override
-    public SseEmitter sse() throws IOException {
-        exchange.setStatusCode(200);
-        setupSseHeaders();
-        if (!exchange.isBlocking()) {
-            exchange.startBlocking();
-        }
-        responded = true;
-        return new SseEmitter(exchange.getOutputStream());
-    }
+  @Override
+  public RequestContext requestContext() {
+    return requestContext;
+  }
 
-    @Override
-    public RequestContext requestContext() {
-        return requestContext;
-    }
+  @Override
+  public HttpContext status(int status) {
+    this.responseStatus = status;
+    exchange.setStatusCode(status);
+    return this;
+  }
 
-    @Override
-    public HttpContext status(int status) {
-        this.responseStatus = status;
-        exchange.setStatusCode(status);
-        return this;
-    }
+  @Override
+  public int status() {
+    return responseStatus;
+  }
 
-    @Override
-    public int status() {
-        return responseStatus;
-    }
+  @Override
+  protected String responseHeader(String name) {
+    return exchange.getResponseHeaders().getFirst(name);
+  }
 
-    @Override
-    protected String responseHeader(String name) {
-        return exchange.getResponseHeaders().getFirst(name);
-    }
+  @Override
+  public HttpContext headerSet(String name, String value) {
+    validateHeaderValue(value);
+    exchange
+        .getResponseHeaders()
+        .put(HttpString.tryFromString(name.toLowerCase(Locale.ROOT)), value);
+    return this;
+  }
 
-    @Override
-    public HttpContext headerSet(String name, String value) {
-        validateHeaderValue(value);
-        exchange.getResponseHeaders().put(
-            HttpString.tryFromString(name.toLowerCase(Locale.ROOT)), value);
-        return this;
+  @Override
+  public HttpContext output(byte[] data) throws IOException {
+    if (responded) {
+      return this;
     }
+    boolean head = "HEAD".equalsIgnoreCase(method);
+    // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
+    // 204/304 have no body and no Content-Length.
+    boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
+    if (bodyAllowed) {
+      exchange.setResponseContentLength(data.length);
+    } else {
+      // 204/304 must not carry Content-Length even if the handler set it.
+      exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
+    }
+    responded = true;
+    if (bodyAllowed && !head && data.length > 0) {
+      exchange.getResponseSender().send(ByteBuffer.wrap(data));
+    } else {
+      exchange.endExchange();
+    }
+    return this;
+  }
 
-    @Override
-    public HttpContext output(byte[] data) throws IOException {
-        if (responded) {
-            return this;
-        }
-        boolean head = "HEAD".equalsIgnoreCase(method);
-        // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
-        // 204/304 have no body and no Content-Length.
-        boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
-        if (bodyAllowed) {
-            exchange.setResponseContentLength(data.length);
-        } else {
-            // 204/304 must not carry Content-Length even if the handler set it.
-            exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
-        }
-        responded = true;
-        if (bodyAllowed && !head && data.length > 0) {
-            exchange.getResponseSender().send(ByteBuffer.wrap(data));
-        } else {
-            exchange.endExchange();
-        }
-        return this;
+  private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {
+    if (source.isEmpty()) {
+      return Map.of();
     }
-
-    private static Map<String, List<String>> snapshotQuery(
-        Map<String, Deque<String>> source
-    ) {
-        if (source.isEmpty()) {
-            return Map.of();
-        }
-        var params = new LinkedHashMap<String, List<String>>(source.size());
-        for (var entry : source.entrySet()) {
-            params.put(entry.getKey(), List.copyOf(entry.getValue()));
-        }
-        return Map.copyOf(params);
+    var params = new LinkedHashMap<String, List<String>>(source.size());
+    for (var entry : source.entrySet()) {
+      params.put(entry.getKey(), List.copyOf(entry.getValue()));
     }
+    return Map.copyOf(params);
+  }
 }

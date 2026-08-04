@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.undertow;
 
 import com.jujin.freeway.http.RequestContext;
@@ -18,203 +34,205 @@ import org.xnio.IoUtils;
 
 /** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
 final class UndertowWebSocketSession implements WebSocketSession {
-    private final WebSocketChannel channel;
-    private final RequestContext requestContext;
-    private final String method;
-    private final String path;
-    private final Map<String, String> pathVariables;
-    private final Map<String, List<String>> queryParams;
-    private final Map<String, List<String>> headers;
-    private final Object sendLock = new Object();
-    private volatile boolean localCloseRequested;
-    private volatile WebSocketListener listener = WebSocketListener.NOOP;
+  private final WebSocketChannel channel;
+  private final RequestContext requestContext;
+  private final String method;
+  private final String path;
+  private final Map<String, String> pathVariables;
+  private final Map<String, List<String>> queryParams;
+  private final Map<String, List<String>> headers;
+  private final Object sendLock = new Object();
+  private volatile boolean localCloseRequested;
+  private volatile WebSocketListener listener = WebSocketListener.NOOP;
 
-    UndertowWebSocketSession(
-        WebSocketChannel channel,
-        RequestContext requestContext,
-        String method,
-        String path,
-        Map<String, String> pathVariables,
-        Map<String, List<String>> queryParams,
-        Map<String, List<String>> headers
-    ) {
-        this.channel = Objects.requireNonNull(channel, "channel");
-        this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
-        this.method = Objects.requireNonNull(method, "method");
-        this.path = Objects.requireNonNull(path, "path");
-        this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
-        this.queryParams = queryParams == null ? Map.of() : Map.copyOf(queryParams);
-        this.headers = headers == null ? Map.of() : Map.copyOf(headers);
-    }
+  UndertowWebSocketSession(
+      WebSocketChannel channel,
+      RequestContext requestContext,
+      String method,
+      String path,
+      Map<String, String> pathVariables,
+      Map<String, List<String>> queryParams,
+      Map<String, List<String>> headers) {
+    this.channel = Objects.requireNonNull(channel, "channel");
+    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+    this.method = Objects.requireNonNull(method, "method");
+    this.path = Objects.requireNonNull(path, "path");
+    this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
+    this.queryParams = queryParams == null ? Map.of() : Map.copyOf(queryParams);
+    this.headers = headers == null ? Map.of() : Map.copyOf(headers);
+  }
 
-    void open(WebSocketListener listener) throws Exception {
-        this.listener = listener != null ? listener : WebSocketListener.NOOP;
-        this.listener.onOpen(this);
-        channel.getReceiveSetter().set(new AbstractReceiveListener() {
-            @Override
-            protected void onFullTextMessage(WebSocketChannel channel, BufferedTextMessage message) throws IOException {
+  void open(WebSocketListener listener) throws Exception {
+    this.listener = listener != null ? listener : WebSocketListener.NOOP;
+    this.listener.onOpen(this);
+    channel
+        .getReceiveSetter()
+        .set(
+            new AbstractReceiveListener() {
+              @Override
+              protected void onFullTextMessage(
+                  WebSocketChannel channel, BufferedTextMessage message) throws IOException {
                 String text = message.getData();
                 try {
-                    UndertowWebSocketSession.this.listener.onText(text);
+                  UndertowWebSocketSession.this.listener.onText(text);
                 } catch (Exception ex) {
-                    fail(channel, ex);
+                  fail(channel, ex);
                 }
-            }
+              }
 
-            @Override
-            protected void onFullBinaryMessage(WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
+              @Override
+              protected void onFullBinaryMessage(
+                  WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
                 ByteBuffer merged = WebSockets.mergeBuffers(message.getData().getResource());
                 byte[] data = new byte[merged.remaining()];
                 merged.get(data);
                 try {
-                    UndertowWebSocketSession.this.listener.onBinary(data);
+                  UndertowWebSocketSession.this.listener.onBinary(data);
                 } catch (Exception ex) {
-                    fail(channel, ex);
+                  fail(channel, ex);
                 }
-            }
+              }
 
-            @Override
-            protected void onFullCloseMessage(WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
-                CloseMessage closeMessage = new CloseMessage(WebSockets.mergeBuffers(message.getData().getResource()));
+              @Override
+              protected void onFullCloseMessage(
+                  WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
+                CloseMessage closeMessage =
+                    new CloseMessage(WebSockets.mergeBuffers(message.getData().getResource()));
                 try {
-                    UndertowWebSocketSession.this.listener.onClose(
-                        closeMessage.getCode(),
-                        closeMessage.getReason(),
-                        !localCloseRequested
-                    );
-                    if (!channel.isCloseFrameSent()) {
-                        WebSockets.sendClose(closeMessage, channel, null);
-                    }
+                  UndertowWebSocketSession.this.listener.onClose(
+                      closeMessage.getCode(), closeMessage.getReason(), !localCloseRequested);
+                  if (!channel.isCloseFrameSent()) {
+                    WebSockets.sendClose(closeMessage, channel, null);
+                  }
                 } catch (Exception ex) {
-                    fail(channel, ex);
+                  fail(channel, ex);
                 }
-            }
+              }
 
-            @Override
-            protected void onError(WebSocketChannel channel, Throwable error) {
+              @Override
+              protected void onError(WebSocketChannel channel, Throwable error) {
                 try {
-                    UndertowWebSocketSession.this.listener.onError(error);
+                  UndertowWebSocketSession.this.listener.onError(error);
                 } catch (Exception ignored) {
                 }
-            }
-        });
-        channel.resumeReceives();
-    }
+              }
+            });
+    channel.resumeReceives();
+  }
 
-    @Override
-    public String method() {
-        return method;
-    }
+  @Override
+  public String method() {
+    return method;
+  }
 
-    @Override
-    public String path() {
-        return path;
-    }
+  @Override
+  public String path() {
+    return path;
+  }
 
-    @Override
-    public String pathVar(String name) {
-        return pathVariables.get(name);
-    }
+  @Override
+  public String pathVar(String name) {
+    return pathVariables.get(name);
+  }
 
-    @Override
-    public Map<String, String> pathVars() {
-        return pathVariables;
-    }
+  @Override
+  public Map<String, String> pathVars() {
+    return pathVariables;
+  }
 
-    @Override
-    public String queryParam(String name) {
-        List<String> values = queryParams.get(name);
-        return values != null && !values.isEmpty() ? values.get(0) : null;
-    }
+  @Override
+  public String queryParam(String name) {
+    List<String> values = queryParams.get(name);
+    return values != null && !values.isEmpty() ? values.get(0) : null;
+  }
 
-    @Override
-    public List<String> queryParams(String name) {
-        return queryParams.getOrDefault(name, List.of());
-    }
+  @Override
+  public List<String> queryParams(String name) {
+    return queryParams.getOrDefault(name, List.of());
+  }
 
-    @Override
-    public Map<String, List<String>> queryParams() {
-        return queryParams;
-    }
+  @Override
+  public Map<String, List<String>> queryParams() {
+    return queryParams;
+  }
 
-    @Override
-    public String header(String name) {
-        List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
-        return values != null && !values.isEmpty() ? values.get(0) : null;
-    }
+  @Override
+  public String header(String name) {
+    List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
+    return values != null && !values.isEmpty() ? values.get(0) : null;
+  }
 
-    @Override
-    public List<String> headers(String name) {
-        return headers.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), List.of());
-    }
+  @Override
+  public List<String> headers(String name) {
+    return headers.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), List.of());
+  }
 
-    @Override
-    public RequestContext requestContext() {
-        return requestContext;
-    }
+  @Override
+  public RequestContext requestContext() {
+    return requestContext;
+  }
 
-    @Override
-    public boolean isOpen() {
-        return channel.isOpen();
-    }
+  @Override
+  public boolean isOpen() {
+    return channel.isOpen();
+  }
 
-    @Override
-    public void sendText(String text) throws IOException {
-        synchronized (sendLock) {
-            requireOpen();
-            // Async send: receive callbacks run on XNIO I/O threads, where
-            // blocking sends must never be used. Frames are queued per channel.
-            WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, null);
-        }
+  @Override
+  public void sendText(String text) throws IOException {
+    synchronized (sendLock) {
+      requireOpen();
+      // Async send: receive callbacks run on XNIO I/O threads, where
+      // blocking sends must never be used. Frames are queued per channel.
+      WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, null);
     }
+  }
 
-    @Override
-    public void sendBinary(byte[] data) throws IOException {
-        synchronized (sendLock) {
-            requireOpen();
-            WebSockets.sendBinary(ByteBuffer.wrap(Objects.requireNonNull(data, "data")),
-                channel, null);
-        }
+  @Override
+  public void sendBinary(byte[] data) throws IOException {
+    synchronized (sendLock) {
+      requireOpen();
+      WebSockets.sendBinary(ByteBuffer.wrap(Objects.requireNonNull(data, "data")), channel, null);
     }
+  }
 
-    @Override
-    public void ping(byte[] data) throws IOException {
-        synchronized (sendLock) {
-            requireOpen();
-            WebSockets.sendPing(ByteBuffer.wrap(data != null ? data : new byte[0]),
-                channel, null);
-        }
+  @Override
+  public void ping(byte[] data) throws IOException {
+    synchronized (sendLock) {
+      requireOpen();
+      WebSockets.sendPing(ByteBuffer.wrap(data != null ? data : new byte[0]), channel, null);
     }
+  }
 
-    @Override
-    public void close(int code, String reason) throws IOException {
-        localCloseRequested = true;
-        // "Initiates a graceful close" per the interface contract — no blocking.
-        WebSockets.sendClose(code, reason != null ? reason : "", channel, null);
+  @Override
+  public void close(int code, String reason) throws IOException {
+    localCloseRequested = true;
+    // "Initiates a graceful close" per the interface contract — no blocking.
+    WebSockets.sendClose(code, reason != null ? reason : "", channel, null);
+  }
+
+  @Override
+  public void flush() throws IOException {
+    // Undertow's WebSocket sends frames immediately, no buffering needed
+  }
+
+  private void fail(WebSocketChannel channel, Throwable cause) throws IOException {
+    try {
+      listener.onError(cause);
+    } catch (Exception ignored) {
     }
-
-    @Override
-    public void flush() throws IOException {
-        // Undertow's WebSocket sends frames immediately, no buffering needed
+    try {
+      close(
+          1011,
+          cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
+    } catch (IOException ex) {
+      IoUtils.safeClose(channel);
+      throw ex;
     }
+  }
 
-    private void fail(WebSocketChannel channel, Throwable cause) throws IOException {
-        try {
-            listener.onError(cause);
-        } catch (Exception ignored) {
-        }
-        try {
-            close(1011, cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
-        } catch (IOException ex) {
-            IoUtils.safeClose(channel);
-            throw ex;
-        }
+  private void requireOpen() throws IOException {
+    if (!channel.isOpen()) {
+      throw new IOException("WebSocket channel is closed");
     }
-
-    private void requireOpen() throws IOException {
-        if (!channel.isOpen()) {
-            throw new IOException("WebSocket channel is closed");
-        }
-    }
-
+  }
 }

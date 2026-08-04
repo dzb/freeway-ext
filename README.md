@@ -52,13 +52,60 @@ deserialized into arbitrary classes from the classpath.
 > from the same batch may be redelivered after a restart (at-least-once
 > semantics).
 
-## SPI module selection
+Additional Kafka client options (TLS, SASL, etc.) can be passed through with
+`freeway.kafka.properties` as semicolon-separated `key=value` pairs, e.g.
+`-Dfreeway.kafka.properties=security.protocol=SASL_SSL;sasl.mechanism=PLAIN`.
+These are applied last and override adapter defaults.
 
-Both `freeway-http-undertow` and `freeway-http-jetty` register their engine as
-`HttpEngine.primary()`. Depend on **one** of them in an application, or disable
-SPI auto-discovery (`FreewayApp.of(...).autoDiscovery(false)`) and install the
-desired module explicitly. `freeway-benchmark` intentionally bundles both for
-comparative runs and therefore always disables auto-discovery.
+### Kafka delivery settings
+
+| Property | Default | Meaning |
+|----------|---------|---------|
+| `freeway.kafka.max-retries` | `1` | Number of delivery/processing retries before a message is treated as poison. |
+| `freeway.kafka.retry-backoff-ms` | `1000` | Base backoff between retries; each attempt doubles it (exponential). |
+| `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
+| `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
+
+Without a DLQ topic, poison messages follow `freeway.kafka.poison-policy` as
+described above. With a DLQ topic, they are moved to the DLQ first and the
+policy then decides whether processing continues (`skip`) or stops (`fail`).
+
+## HTTP adapter configuration
+
+The Jetty and Undertow adapters read the following system properties:
+
+| Property | Default | Applies to | Meaning |
+|----------|---------|------------|---------|
+| `freeway.http.ssl.enabled` | `false` | Jetty, Undertow | Serve HTTPS instead of plain HTTP. |
+| `freeway.http.ssl.key-store` | — | Jetty, Undertow | Path to the key store (JKS or PKCS12; Undertow infers the type from the `.jks` extension). |
+| `freeway.http.ssl.key-store-password` | `` | Jetty, Undertow | Key store password. |
+| `freeway.http.ssl.key-password` | (same as store) | Jetty | Key manager password. |
+| `freeway.http.ssl.key-alias` | (first entry) | Jetty | Alias of the server certificate. |
+| `freeway.http.http2` | `false` | Jetty | Enable HTTP/2: h2 via ALPN when TLS is enabled, otherwise h2c (cleartext). |
+| `freeway.http.websocket.max-frame-size` | `65536` | Jetty | Maximum WebSocket text/binary message size in bytes; `0` disables the limit. |
+| `freeway.http.undertow.dispatch-io` | `true` | Undertow | Dispatch handler execution from I/O threads to the worker pool. Keep enabled when handlers can block (body reads, DB calls); set `false` only for fully non-blocking handlers. |
+
+Example (Jetty, TLS + HTTP/2):
+
+```bash
+-Dfreeway.http.ssl.enabled=true \
+-Dfreeway.http.ssl.key-store=/etc/freeway/keystore.p12 \
+-Dfreeway.http.ssl.key-store-password=changeit \
+-Dfreeway.http.http2=true
+```
+
+## Engine modules are independent
+
+`freeway-http-undertow` and `freeway-http-jetty` are independent adapters: an
+application depends on exactly **one** of them, so the other's `HttpEngine`
+binding is not on the classpath at all. No conflict occurs, even with SPI
+auto-discovery enabled.
+
+Both adapters register their engine as `HttpEngine.primary()`. This only
+matters when both artifacts end up on the same classpath (for example
+`freeway-benchmark`, which bundles them for comparative runs). In that case,
+either disable auto-discovery (`FreewayApp.of(...).autoDiscovery(false)`) and
+install the desired module explicitly, or resolve the engine by id.
 
 ## WebSocket adapter note
 

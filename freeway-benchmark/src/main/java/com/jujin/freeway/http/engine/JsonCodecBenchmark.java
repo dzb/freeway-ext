@@ -1,3 +1,19 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -14,105 +30,118 @@ import org.openjdk.jmh.annotations.State;
  * JMH benchmark for {@link JsonCodecDefault} serialization and deserialization.
  *
  * <p>Covers three payload sizes that map to common Freeway response shapes:
+ *
  * <ul>
- *   <li><b>Small</b> — simple status response ({@code {"status":"ok"}})</li>
- *   <li><b>Medium</b> — single resource object (~6 fields)</li>
- *   <li><b>Large</b> — paginated list of 100 resources</li>
+ *   <li><b>Small</b> — simple status response ({@code {"status":"ok"}})
+ *   <li><b>Medium</b> — single resource object (~6 fields)
+ *   <li><b>Large</b> — paginated list of 100 resources
  * </ul>
  *
- * <p>All payloads are constructed once at {@link Setup} time so that
- * benchmark measurements reflect only the codec cost.
+ * <p>All payloads are constructed once at {@link Setup} time so that benchmark measurements reflect
+ * only the codec cost.
  */
 @State(Scope.Thread)
 public class JsonCodecBenchmark {
 
-    private JsonCodecDefault codec;
+  private JsonCodecDefault codec;
 
-    private String smallJson;
-    private String mediumJson;
-    private String largeJson;
+  private String smallJson;
+  private String mediumJson;
+  private String largeJson;
 
-    private Map<String, Object> smallObject;
-    private Map<String, Object> mediumObject;
-    private List<Map<String, Object>> largeObject;
+  private Map<String, Object> smallObject;
+  private Map<String, Object> mediumObject;
+  private List<Map<String, Object>> largeObject;
 
-    @Setup
-    public void setup() {
-        codec = new JsonCodecDefault();
+  @Setup
+  public void setup() {
+    codec = new JsonCodecDefault();
 
-        // --- Small: health-check / ping response ---
-        smallObject = Map.of("status", "ok");
-        smallJson = "{\"status\":\"ok\"}";
+    // --- Small: health-check / ping response ---
+    smallObject = Map.of("status", "ok");
+    smallJson = "{\"status\":\"ok\"}";
 
-        // --- Medium: single resource with ~6 fields ---
-        mediumObject = new LinkedHashMap<>();
-        mediumObject.put("id", 42);
-        mediumObject.put("name", "Alice");
-        mediumObject.put("email", "alice@example.com");
-        mediumObject.put("role", "admin");
-        mediumObject.put("active", true);
-        mediumObject.put("score", 98.5);
-        mediumJson = "{\"id\":42,\"name\":\"Alice\",\"email\":\"alice@example.com\","
+    // --- Medium: single resource with ~6 fields ---
+    mediumObject = new LinkedHashMap<>();
+    mediumObject.put("id", 42);
+    mediumObject.put("name", "Alice");
+    mediumObject.put("email", "alice@example.com");
+    mediumObject.put("role", "admin");
+    mediumObject.put("active", true);
+    mediumObject.put("score", 98.5);
+    mediumJson =
+        "{\"id\":42,\"name\":\"Alice\",\"email\":\"alice@example.com\","
             + "\"role\":\"admin\",\"active\":true,\"score\":98.5}";
 
-        // --- Large: paginated list of 100 users ---
-        var users = new ArrayList<Map<String, Object>>(100);
-        var jsonParts = new ArrayList<String>(100);
-        for (int i = 0; i < 100; i++) {
-            var u = new LinkedHashMap<String, Object>();
-            u.put("id", i);
-            u.put("name", "User-" + i);
-            u.put("email", "user" + i + "@example.com");
-            u.put("role", i % 3 == 0 ? "admin" : "user");
-            u.put("active", i % 2 == 0);
-            u.put("score", i * 1.5);
-            users.add(u);
+    // --- Large: paginated list of 100 users ---
+    var users = new ArrayList<Map<String, Object>>(100);
+    var jsonParts = new ArrayList<String>(100);
+    for (int i = 0; i < 100; i++) {
+      var u = new LinkedHashMap<String, Object>();
+      u.put("id", i);
+      u.put("name", "User-" + i);
+      u.put("email", "user" + i + "@example.com");
+      u.put("role", i % 3 == 0 ? "admin" : "user");
+      u.put("active", i % 2 == 0);
+      u.put("score", i * 1.5);
+      users.add(u);
 
-            jsonParts.add("{\"id\":" + i
-                + ",\"name\":\"User-" + i + "\""
-                + ",\"email\":\"user" + i + "@example.com\""
-                + ",\"role\":\"" + (i % 3 == 0 ? "admin" : "user") + "\""
-                + ",\"active\":" + (i % 2 == 0)
-                + ",\"score\":" + (i * 1.5) + "}");
-        }
-        largeObject = users;
-        largeJson = "[" + String.join(",", jsonParts) + "]";
+      jsonParts.add(
+          "{\"id\":"
+              + i
+              + ",\"name\":\"User-"
+              + i
+              + "\""
+              + ",\"email\":\"user"
+              + i
+              + "@example.com\""
+              + ",\"role\":\""
+              + (i % 3 == 0 ? "admin" : "user")
+              + "\""
+              + ",\"active\":"
+              + (i % 2 == 0)
+              + ",\"score\":"
+              + (i * 1.5)
+              + "}");
     }
+    largeObject = users;
+    largeJson = "[" + String.join(",", jsonParts) + "]";
+  }
 
-    // --- toJson (serialization) ---
+  // --- toJson (serialization) ---
 
-    @Benchmark
-    public String toJsonSmall() {
-        return codec.toJson(smallObject);
-    }
+  @Benchmark
+  public String toJsonSmall() {
+    return codec.toJson(smallObject);
+  }
 
-    @Benchmark
-    public String toJsonMedium() {
-        return codec.toJson(mediumObject);
-    }
+  @Benchmark
+  public String toJsonMedium() {
+    return codec.toJson(mediumObject);
+  }
 
-    @Benchmark
-    public String toJsonLarge() {
-        return codec.toJson(largeObject);
-    }
+  @Benchmark
+  public String toJsonLarge() {
+    return codec.toJson(largeObject);
+  }
 
-    // --- fromJson (deserialization) ---
+  // --- fromJson (deserialization) ---
 
-    @Benchmark
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> fromJsonSmall() {
-        return codec.fromJson(smallJson, Map.class);
-    }
+  @Benchmark
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> fromJsonSmall() {
+    return codec.fromJson(smallJson, Map.class);
+  }
 
-    @Benchmark
-    @SuppressWarnings("unchecked")
-    public Map<String, Object> fromJsonMedium() {
-        return codec.fromJson(mediumJson, Map.class);
-    }
+  @Benchmark
+  @SuppressWarnings("unchecked")
+  public Map<String, Object> fromJsonMedium() {
+    return codec.fromJson(mediumJson, Map.class);
+  }
 
-    @Benchmark
-    @SuppressWarnings("unchecked")
-    public List<Map<String, Object>> fromJsonLarge() {
-        return codec.fromJson(largeJson, List.class);
-    }
+  @Benchmark
+  @SuppressWarnings("unchecked")
+  public List<Map<String, Object>> fromJsonLarge() {
+    return codec.fromJson(largeJson, List.class);
+  }
 }

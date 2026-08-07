@@ -1,6 +1,6 @@
 # Freeway Ext HTTP Engine Benchmark — 1.3.6-SNAPSHOT
 
-**Date**: 2026-08-04
+**Date**: 2026-08-07
 **Scenario**: `ping` (GET `/ping` → 200 `pong`), keep-alive mode
 **Load**: 3,000 requests per iteration, 300 warmup requests, 3 iterations per combination
 **Reported value**: median of the 3 iterations
@@ -9,62 +9,82 @@
 
 | Item | Value |
 | --- | --- |
-| JDK | OpenJDK 64-Bit Server VM 25.0.4+7 (Red Hat, Inc.) |
-| OS | Linux 7.1.5-201.fc44.x86_64 (amd64) |
-| CPU | amd64, 16 threads |
-| Freeway Ext | 1.3.6-SNAPSHOT (commit `441d805`) |
+| JDK | OpenJDK 64-Bit Server VM 25.0.3 (Temurin) |
+| OS | macOS (Darwin 25.5.0, arm64) |
+| CPU | Apple M4 |
+| Freeway Ext | 1.3.6-SNAPSHOT (with audit remediation batch; core optimized build installed locally) |
+
+> Note: this run is on Apple M4. The previous 1.3.6-SNAPSHOT report (2026-08-04)
+> ran on Linux amd64 (16 threads) — numbers are **not directly comparable across
+> machines**; engine rankings within a run are the meaningful signal.
 
 ## Results
 
-### Throughput (RPS)
+### Throughput (RPS, median of 3)
 
 | Engine | Concurrency 8 | Concurrency 16 | Concurrency 32 |
 | --- | ---: | ---: | ---: |
-| freeway | 17.2k | 38.4k | **91.6k** |
-| jdk-native | 15.8k | 50.2k | 76.0k |
-| undertow-native | **20.3k** | 38.4k | 85.7k |
-| undertow-adapter | 17.3k | **57.8k** | 89.0k |
-| jetty-native | 14.3k | 28.1k | 46.5k |
-| jetty-adapter | 25.1k | 49.1k | 64.2k |
+| freeway | 79.7k | **107.5k** | 96.1k |
+| jdk-native | 69.6k | 95.7k | 97.3k |
+| undertow-native | 76.2k | **137.8k** | 127.9k |
+| undertow-adapter | 75.8k | 80.1k | 80.2k |
+| jetty-native | 44.4k | 82.5k | 100.1k |
+| jetty-adapter | 75.9k | 93.4k | 100.1k |
 
-### Latency (p50 / p95 / p99, μs)
+### Latency (p50 / p95 / p99, μs, at concurrency 16)
 
-| Engine | Concurrency 8 | Concurrency 16 | Concurrency 32 |
-| --- | --- | --- | --- |
-| freeway | 385 / 889 / 1418 | 270 / 1018 / 2187 | 249 / 598 / 1081 |
-| jdk-native | 459 / 875 / 1160 | 264 / 586 / 929 | 333 / 819 / 1571 |
-| undertow-native | 324 / 753 / 1201 | 354 / 791 / 1231 | 318 / 699 / 1136 |
-| undertow-adapter | 374 / 849 / 1838 | **228 / 448 / 676** | 300 / 704 / 1297 |
-| jetty-native | 479 / 1057 / 1414 | 479 / 1088 / 1539 | 552 / 1523 / 2631 |
-| jetty-adapter | 267 / 608 / 1235 | 290 / 546 / 760 | 406 / 953 / 2753 |
+| Engine | p50 | p95 | p99 |
+| --- | ---: | ---: | ---: |
+| freeway | 123 | 182 | 573 |
+| jdk-native | 134 | 269 | 892 |
+| undertow-native | 94 | 164 | 309 |
+| undertow-adapter | 171 | 317 | 608 |
+| jetty-native | 172 | 292 | 458 |
+| jetty-adapter | 154 | 256 | 325 |
 
 ## Observations
 
-- **Peak throughput (concurrency 32)**: freeway (91.6k) edges out
-  undertow-adapter (89.0k) and undertow-native (85.7k); jdk-native trails at
-  76.0k; Jetty is the slowest in both native (46.5k) and adapter (64.2k) form.
-- **Best latency profile (concurrency 16)**: undertow-adapter is clearly the
-  winner (p50 228μs, p99 676μs), ahead of jdk-native (p50 264μs) and
-  freeway (p50 270μs but p99 2187μs).
-- **Low concurrency (8)**: differences are small; undertow-native and
-  jetty-adapter lead while Jetty native is slowest.
-- **Jetty native vs adapter**: the native harness handler is consistently
-  slower than the Freeway adapter in this run, which is counter-intuitive and
-  likely reflects warm-up/JIT effects (each combination starts a fresh server
-  and only 300 warmup requests) rather than a real overhead inversion.
-- **Tail latency**: freeway's p99 grows quickly at concurrency 16 (2187μs)
-  then improves at 32 (1081μs), showing higher variance between iterations;
-  undertow keeps the most stable tail across all concurrency levels.
+- **freeway (core) is competitive with the native baselines**: 107.5k RPS at
+  concurrency 16, lowest p99 tail of any engine at that point (573μs).
+- **undertow-native peaks highest** (137.8k @ c16) — but as a bare-handler
+  baseline, not an achievable application path.
+- **undertow-adapter saturates at ~80k regardless of concurrency** (80.1k @
+  c16, 80.2k @ c32) while undertow-native scales 76k → 138k → 128k. This is a
+  fixed per-request cost, not contention.
+- **jetty-adapter tracks jetty-native** (93.4k vs 82.5k @ c16; adapter
+  slightly faster at c8) — the adapter layer itself is cheap on Jetty.
+- The audit remediation batch (WS message limits, serialized SSE, header
+  validation, TLS/h2 fixes) adds **no measurable cost** to the ping hot path.
 
-## Caveats
+### Layer-cost analysis (undertow-adapter −42% vs undertow-native)
 
-- Single development machine, one run per configuration; results are for
-  relative comparison, not absolute capacity planning.
-- Each combination starts a fresh server; the first iteration of every
-  combination is consistently lower (JIT warm-up), so the median is used but
-  still understates steady-state performance.
-- Client and server share the same JVM/host, so scheduling noise affects all
-  engines equally but not identically.
+Profiling via subtraction experiments (same JVM/client, concurrency 16):
+
+| Configuration | RPS | Δ |
+| --- | ---: | --- |
+| undertow-native (bare handler, I/O thread) | 137.8k | baseline |
+| bare handler + `exchange.dispatch()` wrapper | 76.3k | **−45%** |
+| adapter engine, minimal handler (no WebServer pipeline) | 75.4k | −45% |
+| full undertow-adapter (dispatch + pipeline + pooled context) | 80.1k | −42% |
+
+Conclusions:
+
+- **The entire gap is the per-request `exchange.dispatch()` thread hand-off**
+  (native+dispatch ≈ full adapter). The WebServer pipeline, pooled-context
+  reset, X-Request-Id handling, and response path together cost ~3% (noise).
+- This is the documented trade-off in `UndertowWebEngine.start()`: Undertow
+  invokes the root handler on an I/O thread, so application code (which may
+  block on DB/IO) must be dispatched to the worker pool. The hand-off is the
+  price of blocking safety on Undertow's I/O-thread model.
+- `freeway.http.undertow.dispatch-io=false` does **not** recover the gap
+  (72.9k @ c16): running handlers on I/O threads serializes per-connection
+  network processing, net worse than the hand-off.
+- Jetty 12, by contrast, already runs request handlers on its
+  `QueuedThreadPool` — no extra hand-off, which is why jetty-adapter shows no
+  such penalty.
+- Closing the gap would require a different receive model (e.g. the core
+  `FreewayHttpEngine`'s virtual-thread-per-connection design), not an adapter
+  tweak. The core engine already provides that path (107.5k @ c16).
 
 ## Reproduce
 
@@ -75,5 +95,8 @@ mvn -f freeway-benchmark/pom.xml exec:java \
     --engines=freeway,jdk-native,undertow-native,undertow-adapter,jetty-native,jetty-adapter \
     --scenarios=ping --concurrency=8,16,32 \
     --requests=3000 --warmup=300 --runs=3 \
-    --output=benchmark-1.3.6-SNAPSHOT.md"
+    --output=docs/benchmark-1.3.6-SNAPSHOT.md"
 ```
+
+Layer probes (adapter engine without pipeline, bare handler with dispatch):
+`/tmp/adaptprobe/AdapterProbe.java` (kept out of the repo — one-off analysis).

@@ -50,7 +50,9 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
     props.put("key.serializer", StringSerializer.class.getName());
     props.put("value.serializer", ByteArraySerializer.class.getName());
     if (config.clientId() != null && !config.clientId().isBlank()) {
-      props.put("client.id", config.clientId());
+      // Distinct from the consumer's id so producer/consumer are separable in
+      // broker metrics (the DLQ producer already uses a -dlq suffix).
+      props.put("client.id", config.clientId() + "-producer");
     }
     props.putAll(config.extraProperties());
     this.producer = new KafkaProducer<>(props);

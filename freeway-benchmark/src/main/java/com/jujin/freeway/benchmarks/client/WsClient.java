@@ -43,11 +43,19 @@ public final class WsClient implements AutoCloseable {
     handshake();
   }
 
-  /** Send text frame, wait for echo, return round-trip nanos. */
+  /** Send text frame, wait for the echoed payload, return round-trip nanos. */
   public long echo(String text) throws IOException {
     long t0 = System.nanoTime();
     sendFrame(text);
-    readFrame();
+    byte[] payload = readFrame();
+    if (!java.util.Arrays.equals(payload, text.getBytes(StandardCharsets.UTF_8))) {
+      throw new IOException(
+          "WebSocket echo mismatch: expected '"
+              + text
+              + "', got '"
+              + new String(payload, StandardCharsets.UTF_8)
+              + "'");
+    }
     return System.nanoTime() - t0;
   }
 
@@ -109,18 +117,22 @@ public final class WsClient implements AutoCloseable {
     out.flush();
   }
 
-  private void readFrame() throws IOException {
+  private byte[] readFrame() throws IOException {
     int b0 = in.readUnsignedByte(), op = b0 & 0x0F;
-    if (op == 0x8) return;
+    if (op == 0x8) {
+      // A server close frame is an error: counting it as a successful echo
+      // would inflate the benchmark with near-zero-latency samples.
+      throw new IOException("WebSocket server closed the connection");
+    }
     if (op == 0x9) {
       int rl = readLen();
       in.skipBytes(rl);
-      readFrame();
-      return;
+      return readFrame();
     }
     int rl = readLen();
     byte[] p = new byte[rl];
     in.readFully(p);
+    return p;
   }
 
   private int readLen() throws IOException {

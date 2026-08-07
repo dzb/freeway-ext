@@ -73,7 +73,12 @@ public final class BenchRunner {
         switch (scenario) {
           case PING -> Http11Client.RequestPattern.PING;
           case JSON -> Http11Client.RequestPattern.JSON;
-          case ECHO_BODY -> Http11Client.RequestPattern.PING;
+          // Http11Client cannot send a request body, so the POST /echo
+          // scenario cannot be measured; fail fast instead of silently
+          // benchmarking GET /ping under the echo_body label.
+          case ECHO_BODY ->
+              throw new IllegalArgumentException(
+                  "Scenario ECHO_BODY is not supported (client cannot send a request body)");
           case WS_ECHO -> throw new IllegalArgumentException("Scenario WS_ECHO requires --mode=ws");
         };
 

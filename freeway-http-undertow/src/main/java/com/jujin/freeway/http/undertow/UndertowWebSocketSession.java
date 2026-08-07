@@ -23,17 +23,36 @@ import io.undertow.websockets.core.AbstractReceiveListener;
 import io.undertow.websockets.core.BufferedBinaryMessage;
 import io.undertow.websockets.core.BufferedTextMessage;
 import io.undertow.websockets.core.CloseMessage;
+import io.undertow.websockets.core.WebSocketCallback;
 import io.undertow.websockets.core.WebSocketChannel;
 import io.undertow.websockets.core.WebSockets;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.xnio.IoUtils;
+import org.xnio.Pooled;
 
 /** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
 final class UndertowWebSocketSession implements WebSocketSession {
+  private static final Logger LOG = LoggerFactory.getLogger(UndertowWebSocketSession.class);
+  private static final WebSocketCallback<Void> SEND_CALLBACK =
+      new WebSocketCallback<>() {
+        @Override
+        public void complete(WebSocketChannel channel, Void context) {
+          // Sent; nothing to do.
+        }
+
+        @Override
+        public void onError(WebSocketChannel channel, Void context, Throwable throwable) {
+          LOG.warn("Undertow WebSocket send failed", throwable);
+        }
+      };
+
   private final WebSocketChannel channel;
   private final RequestContext requestContext;
   private final String method;
@@ -41,6 +60,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
   private final Map<String, String> pathVariables;
   private final Map<String, List<String>> queryParams;
   private final Map<String, List<String>> headers;
+  private final long maxMessageSize;
   private final Object sendLock = new Object();
   private volatile boolean localCloseRequested;
   private volatile WebSocketListener listener = WebSocketListener.NOOP;
@@ -52,7 +72,8 @@ final class UndertowWebSocketSession implements WebSocketSession {
       String path,
       Map<String, String> pathVariables,
       Map<String, List<String>> queryParams,
-      Map<String, List<String>> headers) {
+      Map<String, List<String>> headers,
+      long maxMessageSize) {
     this.channel = Objects.requireNonNull(channel, "channel");
     this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
     this.method = Objects.requireNonNull(method, "method");
@@ -60,6 +81,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
     this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
     this.queryParams = queryParams == null ? Map.of() : Map.copyOf(queryParams);
     this.headers = headers == null ? Map.of() : Map.copyOf(headers);
+    this.maxMessageSize = maxMessageSize;
   }
 
   void open(WebSocketListener listener) throws Exception {
@@ -70,9 +92,27 @@ final class UndertowWebSocketSession implements WebSocketSession {
         .set(
             new AbstractReceiveListener() {
               @Override
+              protected long getMaxTextBufferSize() {
+                // Undertow's default is -1 (unlimited); enforce the configured
+                // cap, and pass -1 through when the limit is disabled.
+                return maxMessageSize > 0 ? maxMessageSize : -1;
+              }
+
+              @Override
+              protected long getMaxBinaryBufferSize() {
+                return maxMessageSize > 0 ? maxMessageSize : -1;
+              }
+
+              @Override
               protected void onFullTextMessage(
                   WebSocketChannel channel, BufferedTextMessage message) throws IOException {
                 String text = message.getData();
+                if (maxMessageSize > 0) {
+                  int bytes = text.getBytes(StandardCharsets.UTF_8).length;
+                  if (bytes > maxMessageSize) {
+                    rejectOversized(channel, bytes);
+                  }
+                }
                 try {
                   UndertowWebSocketSession.this.listener.onText(text);
                 } catch (Exception ex) {
@@ -83,9 +123,25 @@ final class UndertowWebSocketSession implements WebSocketSession {
               @Override
               protected void onFullBinaryMessage(
                   WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
-                ByteBuffer merged = WebSockets.mergeBuffers(message.getData().getResource());
-                byte[] data = new byte[merged.remaining()];
-                merged.get(data);
+                // getData() transfers ownership of the pooled buffers; the
+                // default listener frees them in a finally, and so must we.
+                Pooled<ByteBuffer[]> pooled = message.getData();
+                byte[] data;
+                try {
+                  ByteBuffer[] buffers = pooled.getResource();
+                  long total = 0;
+                  for (ByteBuffer buffer : buffers) {
+                    total += buffer.remaining();
+                  }
+                  if (maxMessageSize > 0 && total > maxMessageSize) {
+                    rejectOversized(channel, total);
+                  }
+                  ByteBuffer merged = WebSockets.mergeBuffers(buffers);
+                  data = new byte[merged.remaining()];
+                  merged.get(data);
+                } finally {
+                  pooled.free();
+                }
                 try {
                   UndertowWebSocketSession.this.listener.onBinary(data);
                 } catch (Exception ex) {
@@ -96,13 +152,18 @@ final class UndertowWebSocketSession implements WebSocketSession {
               @Override
               protected void onFullCloseMessage(
                   WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
-                CloseMessage closeMessage =
-                    new CloseMessage(WebSockets.mergeBuffers(message.getData().getResource()));
+                Pooled<ByteBuffer[]> pooled = message.getData();
+                CloseMessage closeMessage;
+                try {
+                  closeMessage = new CloseMessage(WebSockets.mergeBuffers(pooled.getResource()));
+                } finally {
+                  pooled.free();
+                }
                 try {
                   UndertowWebSocketSession.this.listener.onClose(
                       closeMessage.getCode(), closeMessage.getReason(), !localCloseRequested);
                   if (!channel.isCloseFrameSent()) {
-                    WebSockets.sendClose(closeMessage, channel, null);
+                    WebSockets.sendClose(closeMessage, channel, SEND_CALLBACK);
                   }
                 } catch (Exception ex) {
                   fail(channel, ex);
@@ -115,6 +176,10 @@ final class UndertowWebSocketSession implements WebSocketSession {
                   UndertowWebSocketSession.this.listener.onError(error);
                 } catch (Exception ignored) {
                 }
+                // Undertow's default onError closes the channel; without it a
+                // read-level error leaves the connection hanging with onClose
+                // never delivered to the application.
+                IoUtils.safeClose(channel);
               }
             });
     channel.resumeReceives();
@@ -182,8 +247,9 @@ final class UndertowWebSocketSession implements WebSocketSession {
     synchronized (sendLock) {
       requireOpen();
       // Async send: receive callbacks run on XNIO I/O threads, where
-      // blocking sends must never be used. Frames are queued per channel.
-      WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, null);
+      // blocking sends must never be used. Frames are queued per channel;
+      // failures are logged via SEND_CALLBACK (never thrown to the caller).
+      WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, SEND_CALLBACK);
     }
   }
 
@@ -191,7 +257,8 @@ final class UndertowWebSocketSession implements WebSocketSession {
   public void sendBinary(byte[] data) throws IOException {
     synchronized (sendLock) {
       requireOpen();
-      WebSockets.sendBinary(ByteBuffer.wrap(Objects.requireNonNull(data, "data")), channel, null);
+      WebSockets.sendBinary(
+          ByteBuffer.wrap(Objects.requireNonNull(data, "data")), channel, SEND_CALLBACK);
     }
   }
 
@@ -199,7 +266,8 @@ final class UndertowWebSocketSession implements WebSocketSession {
   public void ping(byte[] data) throws IOException {
     synchronized (sendLock) {
       requireOpen();
-      WebSockets.sendPing(ByteBuffer.wrap(data != null ? data : new byte[0]), channel, null);
+      WebSockets.sendPing(
+          ByteBuffer.wrap(data != null ? data : new byte[0]), channel, SEND_CALLBACK);
     }
   }
 
@@ -207,7 +275,17 @@ final class UndertowWebSocketSession implements WebSocketSession {
   public void close(int code, String reason) throws IOException {
     localCloseRequested = true;
     // "Initiates a graceful close" per the interface contract — no blocking.
-    WebSockets.sendClose(code, reason != null ? reason : "", channel, null);
+    WebSockets.sendClose(code, closeReason(reason), channel, SEND_CALLBACK);
+  }
+
+  /** RFC 6455 caps close-frame payloads at 125 bytes (reason <= 123 bytes). */
+  static String closeReason(String reason) {
+    if (reason == null) return "";
+    byte[] bytes = reason.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length <= 123) return reason;
+    // May split a multi-byte character; a replacement char in the reason is
+    // acceptable for an informational payload.
+    return new String(bytes, 0, 123, StandardCharsets.UTF_8);
   }
 
   @Override
@@ -234,5 +312,20 @@ final class UndertowWebSocketSession implements WebSocketSession {
     if (!channel.isOpen()) {
       throw new IOException("WebSocket channel is closed");
     }
+  }
+
+  /**
+   * Rejects a message that exceeds the configured limit: sends a 1009 close frame (matching the
+   * Jetty adapter) and fails the receive so the channel breaks. Note: Undertow 2.4 buffers the full
+   * message before the receive listeners run, so the cap cannot bound the transient buffering
+   * itself; it guarantees the message never reaches application code.
+   */
+  private void rejectOversized(WebSocketChannel channel, long actual) throws IOException {
+    WebSockets.sendClose(
+        new CloseMessage(1009, "Message size exceeds limit " + maxMessageSize),
+        channel,
+        SEND_CALLBACK);
+    throw new IOException(
+        "Message of " + actual + " bytes exceeds WebSocket limit " + maxMessageSize);
   }
 }

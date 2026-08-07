@@ -44,6 +44,13 @@
             <groupId>org.eclipse.jetty</groupId>
             <artifactId>jetty-alpn-server</artifactId>
         </dependency>
+        <!-- ALPN implementation for JDK 9+ (SSLEngine); without it the
+             h2-over-TLS listener fails at startup with
+             "No Server ALPNProcessors!". -->
+        <dependency>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-alpn-java-server</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>

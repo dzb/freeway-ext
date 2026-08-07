@@ -53,7 +53,15 @@ public final class HikariPool implements Pool {
     }
     String leakDetection = System.getProperty("freeway.db.pool.leak-detection");
     if (leakDetection != null && !leakDetection.isBlank()) {
-      hc.setLeakDetectionThreshold(Long.parseLong(leakDetection.trim()));
+      try {
+        hc.setLeakDetectionThreshold(Long.parseLong(leakDetection.trim()));
+      } catch (NumberFormatException ex) {
+        throw new SqlException(
+            "freeway.db.pool.leak-detection must be a millisecond threshold, got: '"
+                + leakDetection
+                + "'",
+            ex);
+      }
     }
     // PoolConfig fields without a HikariCP equivalent are intentionally not
     // mapped: cleanInterval (Hikari runs its own housekeeping),

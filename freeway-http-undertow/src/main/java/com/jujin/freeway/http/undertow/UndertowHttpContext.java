@@ -20,13 +20,19 @@ import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.HttpContext;
 import com.jujin.freeway.http.RequestContext;
+import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.sse.SseEmitter;
+import io.undertow.io.IoCallback;
+import io.undertow.io.Sender;
 import io.undertow.server.HttpServerExchange;
+import io.undertow.server.RequestTooBigException;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
@@ -35,6 +41,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 final class UndertowHttpContext extends HttpContext {
 
@@ -140,6 +148,12 @@ final class UndertowHttpContext extends HttpContext {
       }
       try (InputStream in = exchange.getInputStream()) {
         cachedBody = readBodyLimited(in);
+      } catch (RequestTooBigException ex) {
+        // Undertow's parser-level MAX_ENTITY_SIZE (propagated from
+        // maxBodySize) rejects the body before readBodyLimited's own check
+        // fires. Normalize to the Freeway contract so the core ExceptionMapper
+        // answers 413 instead of an unhandled 500.
+        throw new BodyTooLargeException(maxBodySize);
       }
     }
     return cachedBody;
@@ -149,11 +163,100 @@ final class UndertowHttpContext extends HttpContext {
   public SseEmitter sse() throws IOException {
     exchange.setStatusCode(200);
     setupSseHeaders();
-    if (!exchange.isBlocking()) {
-      exchange.startBlocking();
-    }
     responded = true;
-    return new SseEmitter(exchange.getOutputStream());
+    return new SseEmitter(new SseOutputStream(exchange.getResponseSender()));
+  }
+
+  /**
+   * Serializes non-blocking SSE writes. Undertow's {@link Sender} accepts one in-flight send at a
+   * time, so writes are queued and drained from the send callback; a slow client never pins an
+   * Undertow worker thread (the blocking-stream path could exhaust the worker pool).
+   */
+  private static final class SseOutputStream extends OutputStream {
+    private static final Logger LOG = LoggerFactory.getLogger(SseOutputStream.class);
+
+    /** High-water mark for queued writes before backpressure is surfaced. */
+    private static final int MAX_QUEUED_WRITES = 1024;
+
+    private final Sender sender;
+    private final Deque<ByteBuffer> queue = new ArrayDeque<>();
+    private boolean sending;
+    private boolean closed;
+
+    SseOutputStream(Sender sender) {
+      this.sender = Objects.requireNonNull(sender, "sender");
+    }
+
+    @Override
+    public synchronized void write(int b) throws IOException {
+      write(new byte[] {(byte) b}, 0, 1);
+    }
+
+    @Override
+    public synchronized void write(byte[] b, int off, int len) throws IOException {
+      if (closed || len == 0) {
+        return;
+      }
+      if (queue.size() >= MAX_QUEUED_WRITES) {
+        // The queue only drains via the send callback; a client that stops
+        // reading would otherwise buffer without bound. Surface the
+        // backpressure to the emitter (the application can close the SSE
+        // stream or drop the client).
+        throw new IOException(
+            "SSE write queue full (" + queue.size() + " queued): client is not keeping up");
+      }
+      queue.addLast(ByteBuffer.wrap(b, off, len));
+      drain();
+    }
+
+    @Override
+    public synchronized void flush() {
+      // Content drains asynchronously via the send callback.
+    }
+
+    @Override
+    public synchronized void close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      drain();
+    }
+
+    private void drain() {
+      if (sending) {
+        return;
+      }
+      ByteBuffer next = queue.pollFirst();
+      if (next == null) {
+        if (closed) {
+          sender.close();
+        }
+        return;
+      }
+      sending = true;
+      sender.send(
+          next,
+          new IoCallback() {
+            @Override
+            public void onComplete(HttpServerExchange exchange, Sender sender) {
+              synchronized (SseOutputStream.this) {
+                sending = false;
+                drain();
+              }
+            }
+
+            @Override
+            public void onException(HttpServerExchange exchange, Sender sender, IOException ex) {
+              LOG.warn("SSE write failed", ex);
+              synchronized (SseOutputStream.this) {
+                sending = false;
+                closed = true;
+                queue.clear();
+              }
+            }
+          });
+    }
   }
 
   @Override
@@ -180,10 +283,15 @@ final class UndertowHttpContext extends HttpContext {
 
   @Override
   public HttpContext headerSet(String name, String value) {
+    validateHeaderName(name);
     validateHeaderValue(value);
-    exchange
-        .getResponseHeaders()
-        .put(HttpString.tryFromString(name.toLowerCase(Locale.ROOT)), value);
+    HttpString headerName = HttpString.tryFromString(name.toLowerCase(Locale.ROOT));
+    if (headerName == null) {
+      // tryFromString rejects characters above 255; fail fast with a clear
+      // message instead of letting HeaderMap.put NPE.
+      throw new IllegalArgumentException("Invalid header name: " + name);
+    }
+    exchange.getResponseHeaders().put(headerName, value);
     return this;
   }
 
@@ -194,12 +302,12 @@ final class UndertowHttpContext extends HttpContext {
     }
     boolean head = "HEAD".equalsIgnoreCase(method);
     // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
-    // 204/304 have no body and no Content-Length.
-    boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
+    // 204/205/304 have no body and no Content-Length.
+    boolean bodyAllowed = responseStatus != 204 && responseStatus != 205 && responseStatus != 304;
     if (bodyAllowed) {
       exchange.setResponseContentLength(data.length);
     } else {
-      // 204/304 must not carry Content-Length even if the handler set it.
+      // 204/205/304 must not carry Content-Length even if the handler set it.
       exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
     }
     responded = true;

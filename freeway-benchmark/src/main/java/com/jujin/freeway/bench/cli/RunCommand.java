@@ -29,6 +29,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -128,14 +129,21 @@ public final class RunCommand implements Command {
     for (double s : scores) avgRps += s;
     avgRps /= runs;
     double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-    // Update the median result record with computed error
-    var medianI =
-        results.stream()
-            .sorted(java.util.Comparator.comparingDouble(BenchmarkResult::score))
+    // Locate the median row by DB id: orm.insert does not write generated
+    // keys back into record entities, so the in-memory id is always 0.
+    var medianId =
+        db
+            .query("SELECT * FROM bench_results WHERE run_id = ?", runId)
+            .list(BenchmarkResult.class)
+            .stream()
+            .sorted(Comparator.comparingDouble(BenchmarkResult::score))
             .skip(runs / 2)
             .findFirst()
-            .orElseThrow();
-    db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?", error, medianI.id());
+            .map(BenchmarkResult::id)
+            .orElse(0L);
+    if (medianId > 0) {
+      db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?", error, medianId);
+    }
 
     eventBus.publish(new BenchEvent.RunCompleted(runId));
     System.out.printf("Done. Run #%d saved. avg=%.0f ± %.0f req/s%n", runId, avgRps, error);
@@ -151,7 +159,12 @@ public final class RunCommand implements Command {
           i + 1, r.score(), r.p50us(), r.p95us(), r.p99us(), r.errors());
     }
     if (results.size() > 1) {
-      var median = medianI;
+      var median =
+          results.stream()
+              .sorted(Comparator.comparingDouble(BenchmarkResult::score))
+              .skip(results.size() / 2)
+              .findFirst()
+              .orElseThrow();
       System.out.printf(
           "| **Median** | **%.0f** | **%dμs** | **%dμs** | **%dμs** | **%d** |%n",
           median.score(), median.p50us(), median.p95us(), median.p99us(), median.errors());

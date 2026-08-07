@@ -16,7 +16,11 @@
     <description>Performance benchmarks for freeway-http</description>
 
     <properties>
+        <!-- skipPublishing is read by central-publishing-maven-plugin (its
+             ${skipPublishing} parameter); maven.deploy.skip covers the plain
+             deploy lifecycle. Both keep this module off Maven Central. -->
         <skipPublishing>true</skipPublishing>
+        <maven.deploy.skip>true</maven.deploy.skip>
     </properties>
 
     <dependencies>

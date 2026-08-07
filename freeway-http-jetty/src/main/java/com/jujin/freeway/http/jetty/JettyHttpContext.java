@@ -35,9 +35,12 @@ import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.Fields;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Jetty-backed {@link HttpContext} implementation, pooled per thread. */
 final class JettyHttpContext extends HttpContext {
+  private static final Logger LOG = LoggerFactory.getLogger(JettyHttpContext.class);
 
   private Request request;
   private Response response;
@@ -120,6 +123,13 @@ final class JettyHttpContext extends HttpContext {
     responded = true;
     return new SseEmitter(
         new OutputStream() {
+          private final Callback writeCallback =
+              Callback.from(
+                  () -> {
+                    // Write handed to the Jetty channel; nothing to do.
+                  },
+                  ex -> LOG.warn("SSE write failed", ex));
+
           @Override
           public void write(int b) throws IOException {
             write(new byte[] {(byte) b}, 0, 1);
@@ -128,17 +138,22 @@ final class JettyHttpContext extends HttpContext {
           @Override
           public void write(byte[] b, int off, int len) throws IOException {
             if (len == 0) return;
-            response.write(true, ByteBuffer.wrap(b, off, len), Callback.NOOP);
+            // last=false keeps the response stream open so further events can
+            // be written; the response completes on close().
+            response.write(false, ByteBuffer.wrap(b, off, len), writeCallback);
           }
 
           @Override
           public void flush() {
-            // Jetty flushes internally via write(true, ...)
+            // Jetty hands each write to the channel immediately.
           }
 
           @Override
           public void close() {
-            callback.succeeded();
+            // last=true ends the content stream; completing the request
+            // callback releases the request so graceful shutdown can proceed
+            // (same pattern as the one-shot output() path).
+            response.write(true, ByteBuffer.allocate(0), callback);
           }
         });
   }
@@ -183,6 +198,7 @@ final class JettyHttpContext extends HttpContext {
 
   @Override
   public HttpContext headerSet(String name, String value) {
+    validateHeaderName(name);
     validateHeaderValue(value);
     response.getHeaders().put(name, value);
     return this;
@@ -195,16 +211,20 @@ final class JettyHttpContext extends HttpContext {
     }
     boolean headRequest = "HEAD".equalsIgnoreCase(method());
     // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
-    // 204/304 have no body and no Content-Length.
-    boolean bodyAllowed = responseStatus != 204 && responseStatus != 304;
+    // 204/205/304 have no body and no Content-Length.
+    boolean bodyAllowed = responseStatus != 204 && responseStatus != 205 && responseStatus != 304;
     if (bodyAllowed) {
       response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(data.length));
     } else {
-      // 204/304 must not carry Content-Length even if the handler set it.
+      // 204/205/304 must not carry Content-Length even if the handler set it.
       response.getHeaders().remove(HttpHeader.CONTENT_LENGTH);
     }
     responded = true;
-    if (headRequest || responseStatus == 204 || responseStatus == 304 || data.length == 0) {
+    if (headRequest
+        || responseStatus == 204
+        || responseStatus == 205
+        || responseStatus == 304
+        || data.length == 0) {
       callback.succeeded();
       return this;
     }

@@ -87,6 +87,11 @@ public final class JettyWebEngine implements HttpEngine {
     if (maxFrameSize > 0) {
       webSocketContainer.setMaxTextMessageSize(maxFrameSize);
       webSocketContainer.setMaxBinaryMessageSize(maxFrameSize);
+    } else {
+      // 0 (or negative) disables the message-size limit per the documented
+      // property semantics; otherwise Jetty's 64 KiB default would remain.
+      webSocketContainer.setMaxTextMessageSize(Long.MAX_VALUE);
+      webSocketContainer.setMaxBinaryMessageSize(Long.MAX_VALUE);
     }
     GracefulHandler graceful = new GracefulHandler();
     graceful.setHandler(
@@ -168,10 +173,13 @@ public final class JettyWebEngine implements HttpEngine {
       HttpConnectionFactory http11 = new HttpConnectionFactory(https);
       if (http2) {
         HTTP2ServerConnectionFactory h2 = new HTTP2ServerConnectionFactory(https);
-        ALPNServerConnectionFactory alpn = new ALPNServerConnectionFactory();
+        // Route the SSL connection through the ALPN factory (its "alpn"
+        // protocol name), otherwise the TLS handshake skips ALPN entirely
+        // and clients silently fall back to HTTP/1.1.
+        ALPNServerConnectionFactory alpn = new ALPNServerConnectionFactory("h2", "http/1.1");
         alpn.setDefaultProtocol(http11.getProtocol());
         return new ServerConnector(
-            server, new SslConnectionFactory(ssl, http11.getProtocol()), alpn, h2, http11);
+            server, new SslConnectionFactory(ssl, alpn.getProtocol()), alpn, h2, http11);
       }
       return new ServerConnector(
           server, new SslConnectionFactory(ssl, http11.getProtocol()), http11);

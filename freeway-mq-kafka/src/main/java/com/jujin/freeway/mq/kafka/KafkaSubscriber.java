@@ -56,6 +56,9 @@ public class KafkaSubscriber implements AutoCloseable {
   private static final Duration COMMIT_TIMEOUT = Duration.ofSeconds(10);
   private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(5);
 
+  /** Upper bound for a single retry backoff, guarding against shift overflow. */
+  private static final long MAX_RETRY_BACKOFF_MS = 60_000L;
+
   private final Consumer<String, byte[]> consumer;
   private final EventBus bus;
   private final JsonCodec codec;
@@ -148,7 +151,17 @@ public class KafkaSubscriber implements AutoCloseable {
           // Normal wakeup triggered by close().
           if (running) LOG.debug("Kafka poll loop woken up", ex);
         } catch (Exception e) {
-          if (running) LOG.warn("Kafka poll or commit failed; will retry", e);
+          if (running) {
+            LOG.warn("Kafka poll or commit failed; will retry", e);
+            // Bounded pause so a persistently failing batch (or transient
+            // poll errors) does not busy-spin on the same uncommitted records.
+            try {
+              Thread.sleep(POLL_TIMEOUT.toMillis());
+            } catch (InterruptedException ie) {
+              Thread.currentThread().interrupt();
+              running = false;
+            }
+          }
         }
       }
     } finally {
@@ -240,7 +253,13 @@ public class KafkaSubscriber implements AutoCloseable {
       } catch (Exception ex) {
         lastFailure = ex;
         if (attempt + 1 < attempts) {
-          long backoff = config.retryBackoffMs() * (1L << attempt);
+          // Cap the exponential backoff: an uncapped shift overflows long for
+          // large max-retries (negative sleep -> IllegalArgumentException that
+          // escapes the retry loop) and long cumulative sleeps exceed
+          // max.poll.interval.ms, kicking the consumer from the group.
+          long backoff =
+              Math.min(
+                  config.retryBackoffMs() * (1L << Math.min(attempt, 20)), MAX_RETRY_BACKOFF_MS);
           LOG.warn(
               "Attempt {} of {} failed for '{}' at offset {}; retrying in {} ms",
               attempt + 1,
@@ -273,25 +292,16 @@ public class KafkaSubscriber implements AutoCloseable {
             cause);
         return true;
       } catch (Exception dlqFailure) {
+        // The message was neither processed nor moved to the DLQ; committing
+        // would lose it permanently. Stop without committing so the offset is
+        // redelivered until the DLQ accepts the record (at-least-once).
         LOG.error(
-            "DLQ send failed for poison message at '{}' offset {}",
+            "DLQ send failed for poison message at '{}' offset {}; not committing so "
+                + "it can be redelivered",
             record.topic(),
             record.offset(),
             dlqFailure);
-        if (config.failOnPoison()) {
-          LOG.error(
-              "Stopping subscriber per policy (poison message at '{}' offset {})",
-              record.topic(),
-              record.offset(),
-              cause);
-          return false;
-        }
-        LOG.error(
-            "Skipping poison message at '{}' offset {} per policy",
-            record.topic(),
-            record.offset(),
-            cause);
-        return true;
+        return false;
       }
     }
     if (config.failOnPoison()) {
@@ -387,11 +397,19 @@ public class KafkaSubscriber implements AutoCloseable {
     running = false;
     consumer.wakeup();
     Thread thread = pollThread;
+    if (thread != null) {
+      // Interrupt the poll loop so it cannot linger in a bounded backoff
+      // sleep (up to 60 s), commitSync (10 s), or DLQ send (10 s) after
+      // close(); both interrupt handlers terminate cleanly without
+      // committing. Without this, close() would return after the join
+      // timeout while the loop still publishes into a closing EventBus
+      // and may hit the already-closed DLQ producer.
+      thread.interrupt();
+    }
     if (thread == null) {
       // Never started (e.g. no topics configured) — safe to close here.
       consumer.close(CLOSE_TIMEOUT);
-      closeDlqProducer();
-      closeExecutor();
+      closeResources();
       LOG.info("Kafka subscriber stopped");
       return;
     }
@@ -402,15 +420,24 @@ public class KafkaSubscriber implements AutoCloseable {
     }
     if (thread.isAlive()) {
       // The poll loop still owns the consumer; it closes it in its finally
-      // block once it exits. Closing here would race with poll().
+      // block once it exits (closing here would race with poll()). Release
+      // the producer and executor anyway: the poll thread can legitimately
+      // outlive the join window (bounded commitSync/consumer close), and
+      // leaked non-daemon executor or producer threads would keep the JVM
+      // alive at shutdown.
       LOG.warn(
           "Kafka poll thread did not stop in time; consumer will be "
               + "closed when the poll loop exits");
+      closeResources();
       return;
     }
+    closeResources();
+    LOG.info("Kafka subscriber stopped");
+  }
+
+  private void closeResources() {
     closeDlqProducer();
     closeExecutor();
-    LOG.info("Kafka subscriber stopped");
   }
 
   private void closeDlqProducer() {

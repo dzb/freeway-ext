@@ -20,6 +20,7 @@ import com.jujin.freeway.http.RequestContext;
 import com.jujin.freeway.http.websocket.WebSocketSession;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -164,7 +165,17 @@ final class JettyWebSocketSession implements WebSocketSession {
   public void close(int code, String reason) throws IOException {
     localCloseRequested = true;
     // "Initiates a graceful close" per the interface contract — no join.
-    session.close(code, reason != null ? reason : "", completionCallback());
+    session.close(code, closeReason(reason), completionCallback());
+  }
+
+  /** RFC 6455 caps close-frame payloads at 125 bytes (reason <= 123 bytes). */
+  static String closeReason(String reason) {
+    if (reason == null) return "";
+    byte[] bytes = reason.getBytes(StandardCharsets.UTF_8);
+    if (bytes.length <= 123) return reason;
+    // May split a multi-byte character; a replacement char in the reason is
+    // acceptable for an informational payload.
+    return new String(bytes, 0, 123, StandardCharsets.UTF_8);
   }
 
   boolean localCloseRequested() {

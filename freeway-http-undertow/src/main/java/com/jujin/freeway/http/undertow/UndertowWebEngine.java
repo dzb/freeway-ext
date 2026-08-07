@@ -22,6 +22,7 @@ import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.websocket.*;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
+import io.undertow.UndertowOptions;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.GracefulShutdownHandler;
@@ -60,6 +61,7 @@ public final class UndertowWebEngine implements HttpEngine {
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
   private final ThreadLocal<UndertowHttpContext> contextPool;
+  private volatile long wsMaxMessageSize = -1;
 
   public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer) {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
@@ -83,6 +85,10 @@ public final class UndertowWebEngine implements HttpEngine {
     // block).
     boolean dispatchIo =
         !"false".equalsIgnoreCase(System.getProperty("freeway.http.undertow.dispatch-io", "true"));
+    // Same knob as the Jetty adapter: maximum WebSocket text/binary message
+    // size in bytes; 0 or negative disables the limit. Undertow's default is
+    // unlimited, which lets a remote client buffer unbounded messages (OOM).
+    this.wsMaxMessageSize = Long.getLong("freeway.http.websocket.max-frame-size", 65_536L);
     HttpHandler root =
         exchange -> {
           if (dispatchIo && exchange.isInIoThread()) {
@@ -95,7 +101,18 @@ public final class UndertowWebEngine implements HttpEngine {
     Undertow.Builder builder =
         Undertow.builder()
             .setHandler(gracefulShutdown)
-            .setIoThreads(Runtime.getRuntime().availableProcessors());
+            .setIoThreads(Runtime.getRuntime().availableProcessors())
+            // Undertow's defaults leave connections without idle/parse
+            // deadlines and allow a 1 MiB header budget, exposing slow-loris
+            // and per-connection memory abuse. Set explicit bounds mirroring
+            // Jetty's defaults, and propagate maxBodySize to the parser so
+            // Freeway's limit is not silently capped at Undertow's 2 MiB
+            // entity default.
+            .setServerOption(UndertowOptions.IDLE_TIMEOUT, 60_000)
+            .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, 30_000)
+            .setServerOption(UndertowOptions.MAX_HEADER_SIZE, 64 * 1024)
+            .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, config.maxBodySize())
+            .setServerOption(UndertowOptions.MULTIPART_MAX_ENTITY_SIZE, config.maxBodySize());
     // Undertow defaults to workerThreads = ioThreads * 8; the old explicit
     // 1-thread worker pool starved blocking handlers.
     if (Boolean.getBoolean("freeway.http.ssl.enabled")) {
@@ -124,9 +141,13 @@ public final class UndertowWebEngine implements HttpEngine {
       try (var in = Files.newInputStream(Path.of(keyStorePath))) {
         KeyStore keyStore = KeyStore.getInstance(type);
         keyStore.load(in, password);
+        // JKS keystores may protect the key with a separate password; honor
+        // freeway.http.ssl.key-password like the Jetty adapter does.
+        String keyPasswordProp = System.getProperty("freeway.http.ssl.key-password");
+        char[] keyPassword = keyPasswordProp != null ? keyPasswordProp.toCharArray() : password;
         KeyManagerFactory kmf =
             KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(keyStore, password);
+        kmf.init(keyStore, keyPassword);
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(kmf.getKeyManagers(), null, null);
         return context;
@@ -169,7 +190,7 @@ public final class UndertowWebEngine implements HttpEngine {
         ResponseCodeHandler.HANDLE_404.handleRequest(exchange);
         return;
       }
-      handleWebSocket(exchange, requestContext, match);
+      handleWebSocket(exchange, requestContext, match, wsMaxMessageSize);
       return;
     }
 
@@ -184,7 +205,10 @@ public final class UndertowWebEngine implements HttpEngine {
   }
 
   private void handleWebSocket(
-      HttpServerExchange exchange, RequestContext requestContext, WebSocketMatch match)
+      HttpServerExchange exchange,
+      RequestContext requestContext,
+      WebSocketMatch match,
+      long maxMessageSize)
       throws Exception {
     WebSocketConnectionCallback callback =
         (wsExchange, channel) -> {
@@ -196,7 +220,8 @@ public final class UndertowWebEngine implements HttpEngine {
                   path(exchange),
                   snapshotPathVariables(match.pathVariables()),
                   snapshotQueryParameters(exchange),
-                  snapshotHeaders(exchange));
+                  snapshotHeaders(exchange),
+                  maxMessageSize);
           WebSocketListener listener;
           try {
             listener = match.endpoint().open(session);

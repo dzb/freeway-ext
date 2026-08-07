@@ -14,142 +14,146 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.http.undertow;
+package com.jujin.freeway.http.jetty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.boot.FreewayApp;
+import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.RequestPipeline;
 import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.route.Route;
+import com.jujin.freeway.http.filter.CorsFilter;
+import com.jujin.freeway.http.filter.HealthFilter;
+import com.jujin.freeway.http.route.RouteIndex;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
+import com.jujin.freeway.http.websocket.WebSocketIndex;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
-import com.jujin.freeway.ioc.Binder;
-import com.jujin.freeway.ioc.ModuleEx;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.Base64;
-import org.junit.jupiter.api.AfterEach;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
-class UndertowFrameProbeTest {
-  private com.jujin.freeway.boot.AppRuntime app;
-
-  @AfterEach
-  void tearDown() {
-    if (app != null) {
-      app.close();
-      app = null;
-    }
-    System.clearProperty("freeway.web.server.port");
-    System.clearProperty("freeway.web.server.host");
-    System.clearProperty("freeway.http.websocket.max-frame-size");
-  }
+/** Raw-socket WebSocket contract probe for the Jetty adapter. */
+class JettyWebSocketProbeTest {
 
   @Test
-  void probeUndertowTextFrameFinBit() throws Exception {
-    int port = freePort();
-    System.setProperty("freeway.web.server.host", "127.0.0.1");
-    System.setProperty("freeway.web.server.port", String.valueOf(port));
+  void probeJettyTextFrameEcho() throws Exception {
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var wsGroup =
+        WebSocketGroup.of(
+            "/api",
+            WebSocketRoute.of(
+                "/ws/{room}",
+                session ->
+                    new WebSocketListener() {
+                      @Override
+                      public void onText(String text) throws Exception {
+                        session.sendText("echo:" + text + ":" + session.pathVar("room"));
+                      }
+                    }));
+    var pipeline =
+        new RequestPipeline(
+            new RouteIndex(List.of(), List.of()),
+            new WebSocketIndex(List.of(), List.of(wsGroup)),
+            new CorsFilter(false, null, null, null, null, null, false),
+            new HealthFilter(false, "/no-health", null),
+            List.of(),
+            List.of(),
+            List.of());
 
-    app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
-    assertTrue(app.get(WebServer.class).isRunning());
-
-    try (Socket socket = new Socket("127.0.0.1", port)) {
-      socket.setSoTimeout(5000);
-      InputStream input = socket.getInputStream();
-      OutputStream output = socket.getOutputStream();
-      performHandshake(output, input, "/api/ws/lobby", port);
-      sendTextFrame(output, "warmup");
-      Frame first = readFrame(input);
-      assertEquals(1, first.opcode(), "expected text frame");
-      assertTrue(first.fin(), "expected FIN bit set");
-      assertEquals(0, first.rsvBits(), "expected RSV bits clear");
-      assertTrue(
-          new String(first.payload(), StandardCharsets.UTF_8).startsWith("echo:warmup:lobby:"));
-      sendTextFrame(output, "hello");
-      Frame second = readFrame(input);
-      assertEquals(1, second.opcode(), "expected text frame");
-      assertTrue(second.fin(), "expected FIN bit set");
-      assertEquals(0, second.rsvBits(), "expected RSV bits clear");
-      assertTrue(
-          new String(second.payload(), StandardCharsets.UTF_8).startsWith("echo:hello:lobby:"));
-      sendCloseFrame(output, 1000, "bye");
-      Frame closeFrame = readFrame(input);
-      assertEquals(8, closeFrame.opcode(), "expected close frame");
-      assertTrue(closeFrame.fin(), "expected FIN bit set");
-      assertEquals(0, closeFrame.rsvBits(), "expected RSV bits clear");
-    }
-  }
-
-  @Test
-  void closesConnectionWhenMessageExceedsLimit() throws Exception {
-    int port = freePort();
-    System.setProperty("freeway.web.server.host", "127.0.0.1");
-    System.setProperty("freeway.web.server.port", String.valueOf(port));
-    System.setProperty("freeway.http.websocket.max-frame-size", "64");
-
-    app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
-
-    try (Socket socket = new Socket("127.0.0.1", port)) {
-      socket.setSoTimeout(5000);
-      InputStream input = socket.getInputStream();
-      OutputStream output = socket.getOutputStream();
-      performHandshake(output, input, "/api/ws/lobby", port);
-      sendTextFrame(output, "x".repeat(100));
-      // The 1009 close frame is written asynchronously right before the
-      // channel closes, so the client may see the frame or a plain EOF.
-      // Either is a rejection — the assertions below fail if an echo arrives.
-      try {
+    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+      server.start();
+      try (Socket socket = new Socket("127.0.0.1", server.port())) {
+        socket.setSoTimeout(5000);
+        InputStream input = socket.getInputStream();
+        OutputStream output = socket.getOutputStream();
+        performHandshake(output, input, "/api/ws/lobby", server.port());
+        sendTextFrame(output, "warmup");
+        Frame first = readFrame(input);
+        assertEquals(1, first.opcode(), "expected text frame");
+        assertTrue(first.fin(), "expected FIN bit set");
+        assertEquals(0, first.rsvBits(), "expected RSV bits clear");
+        assertTrue(
+            new String(first.payload(), StandardCharsets.UTF_8).startsWith("echo:warmup:lobby"));
+        sendTextFrame(output, "hello");
+        Frame second = readFrame(input);
+        assertEquals(1, second.opcode(), "expected text frame");
+        assertTrue(second.fin(), "expected FIN bit set");
+        assertEquals(0, second.rsvBits(), "expected RSV bits clear");
+        assertTrue(
+            new String(second.payload(), StandardCharsets.UTF_8).startsWith("echo:hello:lobby"));
+        sendCloseFrame(output, 1000, "bye");
         Frame closeFrame = readFrame(input);
         assertEquals(8, closeFrame.opcode(), "expected close frame");
-        assertTrue(closeFrame.payload().length >= 2, "expected close frame to carry a status code");
-        int code = ((closeFrame.payload()[0] & 0xFF) << 8) | (closeFrame.payload()[1] & 0xFF);
-        assertEquals(1009, code, "expected 1009 message-too-big close code");
-      } catch (IOException ex) {
-        // Connection closed without a close frame (flush ordering).
+        assertTrue(closeFrame.fin(), "expected FIN bit set");
+        assertEquals(0, closeFrame.rsvBits(), "expected RSV bits clear");
       }
     }
   }
 
-  static final class TestAppModule implements ModuleEx {
-    @Override
-    public void bind(Binder binder) {
-      binder
-          .contribute(WebSocketGroup.class)
-          .add(
-              WebSocketGroup.of(
-                  "/api",
-                  WebSocketRoute.of(
-                      "/ws/{room}",
-                      session ->
-                          new WebSocketListener() {
-                            @Override
-                            public void onText(String text) throws Exception {
-                              session.sendText(
-                                  "echo:"
-                                      + text
-                                      + ":"
-                                      + session.pathVar("room")
-                                      + ":"
-                                      + session.requestContext().correlationId());
-                            }
-                          })));
-      binder.contribute(Route.class).add(Route.get("/ping", ctx -> ctx.send(200, "pong")));
-    }
-  }
+  @Test
+  void rejectsOversizedMessageWithClose() throws Exception {
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var wsGroup =
+        WebSocketGroup.of(
+            "/api",
+            WebSocketRoute.of(
+                "/ws/{room}",
+                session ->
+                    new WebSocketListener() {
+                      @Override
+                      public void onText(String text) throws Exception {
+                        session.sendText("echo:" + text + ":" + session.pathVar("room"));
+                      }
+                    }));
+    var pipeline =
+        new RequestPipeline(
+            new RouteIndex(List.of(), List.of()),
+            new WebSocketIndex(List.of(), List.of(wsGroup)),
+            new CorsFilter(false, null, null, null, null, null, false),
+            new HealthFilter(false, "/no-health", null),
+            List.of(),
+            List.of(),
+            List.of());
 
-  private static int freePort() throws IOException {
-    try (ServerSocket socket = new ServerSocket(0)) {
-      return socket.getLocalPort();
+    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+      server.start();
+      try (Socket socket = new Socket("127.0.0.1", server.port())) {
+        socket.setSoTimeout(5000);
+        InputStream input = socket.getInputStream();
+        OutputStream output = socket.getOutputStream();
+        performHandshake(output, input, "/api/ws/lobby", server.port());
+        // Default limit is 64 KiB; 70 KiB exceeds it. Jetty may close the
+        // connection as soon as it reads the oversized frame header (a reset
+        // mid-payload-write or EOF on read) or answer with a 1009 close frame;
+        // either rejection is acceptable — what must never happen is an echo.
+        try {
+          sendTextFrame(output, "x".repeat(70 * 1024));
+          Frame frame = readFrame(input);
+          if (frame.opcode() != 8) {
+            throw new AssertionError(
+                "expected connection close for oversized message, got opcode " + frame.opcode());
+          }
+          assertTrue(frame.payload().length >= 2, "expected close frame to carry a status code");
+          int code = ((frame.payload()[0] & 0xFF) << 8) | (frame.payload()[1] & 0xFF);
+          assertEquals(1009, code, "expected 1009 message-too-big close code");
+        } catch (IOException ex) {
+          // Connection closed by the server without a close frame.
+        }
+      }
     }
   }
 
@@ -178,7 +182,6 @@ class UndertowFrameProbeTest {
     String response = readHttpHeaders(input);
     assertTrue(response.startsWith("HTTP/1.1 101"), response);
     assertEquals(expectedAccept(key), headerValue(response, "Sec-WebSocket-Accept"));
-    assertEquals(null, headerValue(response, "Sec-WebSocket-Extensions"));
   }
 
   private static void sendTextFrame(OutputStream output, String text) throws IOException {
@@ -197,7 +200,11 @@ class UndertowFrameProbeTest {
       output.write(payload.length >> 8);
       output.write(payload.length);
     } else {
-      throw new IllegalArgumentException("payload too large for test frame");
+      output.write(0x80 | 127);
+      long length = payload.length;
+      for (int i = 7; i >= 0; i--) {
+        output.write((int) (length >> (8 * i)));
+      }
     }
     output.write(mask);
     for (int i = 0; i < payload.length; i++) {

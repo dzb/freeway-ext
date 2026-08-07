@@ -86,6 +86,41 @@ Conclusions:
   `FreewayHttpEngine`'s virtual-thread-per-connection design), not an adapter
   tweak. The core engine already provides that path (107.5k @ c16).
 
+### freeway core vs undertow-native: model cost, not implementation defect
+
+| Engine | c8 | c16 | c32 | c8→c16 | c16→c32 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| freeway | 79.7k | 107.5k | 96.1k | +35% | **−11%** |
+| undertow-native | 76.2k | 137.8k | 127.9k | +81% | −7% |
+
+- freeway is a virtual-thread-per-connection engine with blocking socket I/O;
+  undertow-native is XNIO event-driven (10 I/O threads, selector). At
+  concurrency ≤ cores (c8) freeway matches or beats the event loop — each
+  virtual thread gets a private carrier, and there is no selector batching
+  latency. Above the core count (c16/c32) virtual-thread scheduling
+  (park/unpark + carrier mount/unmount per blocking I/O) dominates: −22%/−33%
+  vs the native baseline, and freeway's own throughput turns negative
+  c16→c32.
+- This is the price of the engine's design choice, not a defect: blocking
+  safety is free (handlers may call DB/IO without dispatch), which the
+  event-driven baseline does not offer — the fair comparison is freeway
+  (107.5k) vs undertow-adapter (80.1k), both blocking-safe, where the core
+  engine leads by 34%.
+- A hybrid model (per-connection virtual threads below the core count,
+  shared event loops above it) is the theoretical fix for the high-concurrency
+  gap, but would require reworking the blocking I/O layer of the core and is
+  not planned.
+
+### Sustained-load behavior
+
+Under BenchFork sustained load (50,000 requests × 5 runs per process, c16)
+freeway settles at 55–60k RPS (vs 107.5k in the short suite) — the core
+engine's long-run throughput roughly halves, pointing at GC/allocation or
+scheduling pressure under sustained load rather than a warm-up artifact.
+undertow-native holds ~85k under the same protocol; undertow-adapter ~52k.
+Long-run profiles are the next candidate investigation if sustained throughput
+matters.
+
 ## Reproduce
 
 ```bash

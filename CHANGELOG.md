@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (1.3.6-SNAPSHOT)
+## 1.3.6 (2026-08-07)
 
 ### Added
 

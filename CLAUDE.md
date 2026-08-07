@@ -41,7 +41,8 @@ Each depends only on Freeway core modules and its specific third-party library.
 
 `freeway-benchmark` is the exception: it depends on `freeway-http-undertow` (and
 `freeway-http-jetty`, plus third-party engines) to run comparative benchmarks. It is not published
-(`maven.deploy.skip=true`).
+(`skipPublishing` is read by the central-publishing plugin and
+`maven.deploy.skip` covers the plain deploy lifecycle).
 
 The benchmark CLI disables SPI auto-discovery (`BenchApp`) because its classpath
 contains both transport adapters, each binding `HttpEngine` as `primary()`.

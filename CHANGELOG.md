@@ -17,6 +17,12 @@
   any class name from the classpath was deserialized.
 - **HTTP adapters**: real contract tests for Jetty and Undertow (GET, HEAD
   Content-Length, blocking body echo on a dispatched worker thread).
+- **Undertow**: WebSocket receives now enforce
+  `freeway.http.websocket.max-frame-size` (default 64 KiB, `0` disables the
+  limit); oversized messages are rejected with a 1009 close frame and never
+  reach application code. Note: Undertow 2.4 buffers the full message before
+  the receive listener runs, so the cap cannot bound the transient buffering
+  itself — it bounds message processing and closes the connection.
 
 ### Changed
 
@@ -51,6 +57,72 @@
 
 ### Fixed
 
+- **Jetty**: SSE now streams events on the open response (`last=false` per
+  write) and completes on emitter close; previously every write was sent with
+  last-content semantics so only the first write reached the client and later
+  events were silently dropped.
+- **Jetty**: `freeway.http.websocket.max-frame-size=0` now actually disables
+  the message-size limit (previously Jetty's 64 KiB default remained).
+- **Jetty/Undertow**: `headerSet` rejects invalid response header names
+  (CR/LF/colon/non-ASCII) with `IllegalArgumentException`, closing the
+  CR/LF header-name injection path on Undertow and matching core's
+  `validateHeaderName`.
+- **Tests**: Undertow 1009 oversized-frame probe; Jetty multi-event SSE
+  streaming test; response header-name validation tests on both adapters.
+- **Kafka**: `close()` now releases the DLQ producer and worker executor even
+  when the poll thread outlives the join window (previously leaked non-daemon
+  threads hung JVM shutdown); retry backoff is capped at 60 s (an uncapped
+  shift overflowed to a negative sleep that livelocked the poll loop); a
+  failed DLQ write no longer commits the poison offset — the message is
+  redelivered instead of silently lost; poll-loop failures pause briefly
+  instead of busy-spinning on the same uncommitted batch.
+- **Benchmark**: `bench run` now persists `score_error` (the median row is
+  located by DB query instead of an in-memory id that is always 0);
+  `--scenario=echo_body` fails fast instead of silently benchmarking GET
+  /ping; the WS client counts close frames and payload mismatches as errors;
+  the benchmark module's deploy exclusion is corrected (`maven.deploy.skip`
+  plus the central-publishing `skipPublishing` property).
+- **Undertow**: server options set explicit bounds — 60 s idle, 30 s request
+  parse, 64 KiB header budget, and `maxBodySize` propagated to parser-level
+  entity/multipart limits (previously Undertow's 2 MiB default silently
+  overrode larger configured limits); the parser's `RequestTooBigException` is
+  normalized to `BodyTooLargeException` so oversized bodies map to 413 through
+  the core exception mapper instead of an unhandled 500; SSE writes are
+  non-blocking (a slow SSE client no longer pins a worker thread); WebSocket
+  receive errors close the channel; `freeway.http.ssl.key-password` is honored
+  (JKS keystores with a separate key password now load).
+- **Jetty/Undertow**: WebSocket close reasons are truncated to 123 UTF-8
+  bytes (RFC 6455); 205 responses carry no body or Content-Length (matching
+  core's 204/205/304 handling).
+- **Undertow**: WebSocket send failures are now logged (previously the null
+  send callback made failures invisible — the connection silently broke).
+- **Kafka**: the producer's `client.id` gets a `-producer` suffix so it is
+  distinguishable from the consumer in broker metrics.
+- **Tests**: Jetty WebSocket frame probe (handshake, text echo, close,
+  oversized-message rejection); 413 payload-too-large boundary tests on
+  both adapters; TLS/h2 startup tests on both adapters (self-signed PKCS12
+  fixture in test resources).
+- **Jetty**: h2 over TLS is fixed — the missing `jetty-alpn-java-server`
+  dependency crashed the listener at startup ("No Server ALPNProcessors!")
+  and the SSL connector routed to HTTP/1.1 instead of through the ALPN
+  factory, so h2 was silently never negotiated. New TLS/h2 tests cover
+  HTTPS, h2 via ALPN, and h2c.
+- **Build**: CI pins `actions/checkout` and `actions/setup-java` to commit
+  SHAs with read-only job permissions.
+- **Docs**: README documents the lack of WebSocket send backpressure and that
+  `KafkaEventBridge` events carry a null key (keyed fan-out does not apply to
+  them).
+- **Jetty**: 205 responses now also drop a non-empty body on write (the
+  body-allowed guard missed the write-eligibility condition, emitting a
+  chunked 205 body; Undertow already dropped it).
+- **Undertow**: pooled ByteBuffers are freed after binary and close messages
+  (previously leaked one pooled allocation per binary message/close frame);
+  the SSE write queue is bounded (a slow client surfaces backpressure as an
+  `IOException` from the emitter instead of buffering without bound); the
+  oversized-message probe test tolerates close-frame-or-EOF flush ordering.
+- **Kafka**: `close()` interrupts the poll thread so it cannot linger in a
+  bounded backoff/commit/DLQ send after shutdown, publishing into a closing
+  EventBus or hitting the already-closed DLQ producer.
 - **Benchmark CLI**: startup crash (`Duplicate contribution id
   freeway.db.migration` caused by double-installed `DbModule`).
 - **Benchmark**: percentiles were computed from zero-filled failure slots,

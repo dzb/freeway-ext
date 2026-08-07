@@ -66,9 +66,16 @@ These are applied last and override adapter defaults.
 | `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
 | `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
 
+Messages published by `KafkaEventBridge` carry a null key, so keyed fan-out
+does not apply to them: self-produced events are always processed by the same
+worker (in order). Keys set by other producers are honored.
+
 Without a DLQ topic, poison messages follow `freeway.kafka.poison-policy` as
 described above. With a DLQ topic, they are moved to the DLQ first and the
 policy then decides whether processing continues (`skip`) or stops (`fail`).
+If the DLQ write itself fails, the subscriber stops without committing so the
+message is redelivered until the DLQ accepts it — a poison message is never
+silently dropped.
 
 ## HTTP adapter configuration
 
@@ -82,7 +89,7 @@ The Jetty and Undertow adapters read the following system properties:
 | `freeway.http.ssl.key-password` | (same as store) | Jetty | Key manager password. |
 | `freeway.http.ssl.key-alias` | (first entry) | Jetty | Alias of the server certificate. |
 | `freeway.http.http2` | `false` | Jetty | Enable HTTP/2: h2 via ALPN when TLS is enabled, otherwise h2c (cleartext). |
-| `freeway.http.websocket.max-frame-size` | `65536` | Jetty | Maximum WebSocket text/binary message size in bytes; `0` disables the limit. |
+| `freeway.http.websocket.max-frame-size` | `65536` | Jetty, Undertow | Maximum WebSocket text/binary message size in bytes; `0` disables the limit. |
 | `freeway.http.undertow.dispatch-io` | `true` | Undertow | Dispatch handler execution from I/O threads to the worker pool. Keep enabled when handlers can block (body reads, DB calls); set `false` only for fully non-blocking handlers. |
 
 Example (Jetty, TLS + HTTP/2):
@@ -119,6 +126,25 @@ server's WebSocket error callbacks.
 
 `HttpContext.sse()` streams are owned by the application: close the returned
 emitter when finished so the underlying connection can be released.
+
+WebSocket sends have no backpressure: a slow or disconnected client accumulates
+outbound frames until the server's buffers are exhausted, so applications that
+broadcast to many clients should bound their own fan-out (e.g. drop or throttle
+sessions that fall behind). Send failures are logged by the adapters.
+
+On the Undertow adapter, WebSocket messages over
+`freeway.http.websocket.max-frame-size` are rejected with a 1009 close frame
+after Undertow buffers them; the cap prevents the message from reaching
+application code and closes the connection. Jetty rejects oversized messages
+during assembly. Note: on Undertow an oversized message surfaces to the
+application as `onError` only (no `onClose` callback); on Jetty the listener
+also receives `onClose(1009)`.
+
+The Undertow adapter sets a 60-second connection idle timeout (and a 30-second
+request-parse timeout) — connections with no traffic are dropped. Long-lived
+SSE streams should therefore emit periodic heartbeat comments, and WebSocket
+peers should stay within the idle window or expect the connection to be
+closed.
 
 ## Install
 

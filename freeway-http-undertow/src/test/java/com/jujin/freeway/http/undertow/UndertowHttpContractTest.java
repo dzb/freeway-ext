@@ -137,7 +137,7 @@ class UndertowHttpContractTest {
     var captured = new AtomicReference<Throwable>();
     var routes =
         new RouteIndex(
-            List.of(Route.get("/bad", ctx -> ctx.headerSet("X-Bad\r\nX-Injected: 1", "v"))),
+            List.of(Route.get("/bad", ctx -> ctx.setHeader("X-Bad\r\nX-Injected: 1", "v"))),
             List.of());
     var pipeline =
         new RequestPipeline(

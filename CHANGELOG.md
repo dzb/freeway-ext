@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.7-SNAPSHOT
+
+### Changed
+
+- **Build**: upgraded to Freeway core `1.3.7-SNAPSHOT` and adapted to its
+  breaking rename of `HttpContext.headerSet(...)` to `setHeader(...)` in the
+  Jetty/Undertow adapters, contract tests, and benchmark harness.
+- **Build**: third-party versions upgraded to latest stable: Jetty 12.1.12,
+  JUnit 6.1.3, spotless-maven-plugin 3.9.0 (google-java-format 1.36.1 kept);
+  benchmark build plugins: maven-compiler-plugin 3.15.0,
+  exec-maven-plugin 3.6.3, maven-dependency-plugin 3.11.0.
+
 ## 1.3.6 (2026-08-07)
 
 ### Added

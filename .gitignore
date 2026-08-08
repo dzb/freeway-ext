@@ -38,3 +38,6 @@ _script_*.bat
 _script_*.sh
 freeway-benchmark/bench.db
 freeway-benchmark/target/
+
+# Reasonix agent workspace
+.reasonix/

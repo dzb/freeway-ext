@@ -197,7 +197,7 @@ final class JettyHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext headerSet(String name, String value) {
+  public HttpContext setHeader(String name, String value) {
     validateHeaderName(name);
     validateHeaderValue(value);
     response.getHeaders().put(name, value);

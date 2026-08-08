@@ -117,7 +117,7 @@ public class HttpContextOutputBenchmark {
         false,
         true);
     ctx.status(200);
-    ctx.headerSet("Content-Type", "text/plain; charset=utf-8");
+    ctx.setHeader("Content-Type", "text/plain; charset=utf-8");
     return ctx.output(PONG);
   }
 
@@ -164,7 +164,7 @@ public class HttpContextOutputBenchmark {
   public HttpContext readBodyThenOutput() throws IOException {
     bodyReadCtx.body(); // reads + caches body
     bodyReadCtx.status(201);
-    bodyReadCtx.headerSet("Content-Type", "application/json");
+    bodyReadCtx.setHeader("Content-Type", "application/json");
     return bodyReadCtx.output(PONG);
   }
 

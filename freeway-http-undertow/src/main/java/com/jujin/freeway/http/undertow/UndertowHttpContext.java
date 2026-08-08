@@ -282,7 +282,7 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext headerSet(String name, String value) {
+  public HttpContext setHeader(String name, String value) {
     validateHeaderName(name);
     validateHeaderValue(value);
     HttpString headerName = HttpString.tryFromString(name.toLowerCase(Locale.ROOT));

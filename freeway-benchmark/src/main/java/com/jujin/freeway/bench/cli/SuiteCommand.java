@@ -28,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -103,13 +104,7 @@ public final class SuiteCommand implements Command {
     System.out.printf(
         "Engines: %s | Scenarios: %s | Concurrency: %s | "
             + "Requests: %d | Warmup: %d | Runs: %d | Mode: %s%n",
-        engines,
-        scenarios,
-        java.util.Arrays.toString(concurrencies),
-        requests,
-        warmup,
-        runs,
-        modeLabel);
+        engines, scenarios, Arrays.toString(concurrencies), requests, warmup, runs, modeLabel);
     System.out.printf("Total iterations: %d%n", total);
     System.out.println();
 

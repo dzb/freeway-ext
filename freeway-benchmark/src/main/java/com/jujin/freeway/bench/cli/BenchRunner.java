@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** Shared benchmark execution logic used by {@link RunCommand} and {@link SuiteCommand}. */
@@ -138,7 +139,7 @@ public final class BenchRunner {
       }
       try {
         for (var f : futures) f.get(120, TimeUnit.SECONDS);
-      } catch (java.util.concurrent.TimeoutException ex) {
+      } catch (TimeoutException ex) {
         // Requests that missed the deadline never completed; count them
         // as errors so the reported total stays truthful.
         errs.addAndGet(Math.max(0, requests - okCount.get() - errs.get()));
@@ -205,7 +206,7 @@ public final class BenchRunner {
       }
       try {
         for (var f : futures) f.get(120, TimeUnit.SECONDS);
-      } catch (java.util.concurrent.TimeoutException ex) {
+      } catch (TimeoutException ex) {
         errs.addAndGet(Math.max(0, requests - okCount.get() - errs.get()));
       }
     } finally {

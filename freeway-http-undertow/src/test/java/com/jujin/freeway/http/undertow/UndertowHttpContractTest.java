@@ -39,6 +39,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -248,7 +249,7 @@ class UndertowHttpContractTest {
             List.of(
                 (ctx, ex) -> {
                   if (ex instanceof BodyTooLargeException) {
-                    ctx.sendJson(413, java.util.Map.of("error", "Payload Too Large"));
+                    ctx.sendJson(413, Map.of("error", "Payload Too Large"));
                     return true;
                   }
                   return false;

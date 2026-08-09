@@ -33,17 +33,23 @@ import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketIndex;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
+import com.sun.net.httpserver.HttpServer;
 import io.undertow.Undertow;
 import io.undertow.server.HttpHandler;
 import io.undertow.util.Headers;
 import io.undertow.websockets.WebSocketConnectionCallback;
 import io.undertow.websockets.WebSocketProtocolHandshakeHandler;
+import io.undertow.websockets.core.AbstractReceiveListener;
+import io.undertow.websockets.core.BufferedTextMessage;
+import io.undertow.websockets.core.WebSocketChannel;
+import io.undertow.websockets.core.WebSockets;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.Executors;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.Request;
@@ -51,6 +57,7 @@ import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.Callback;
+import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
 import org.eclipse.jetty.websocket.server.WebSocketCreator;
 
@@ -315,9 +322,8 @@ public final class ServerHarness implements AutoCloseable {
 
   private static ServerHarness bare(String providerClass, Scenario scenario) throws Exception {
     System.setProperty("com.sun.net.httpserver.HttpServerProvider", providerClass);
-    var server =
-        com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
-    server.setExecutor(java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
+    server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
     server.createContext("/", bareHandler(scenario));
     server.start();
     return new ServerHarness(() -> server.stop(0), server.getAddress().getPort());
@@ -432,12 +438,10 @@ public final class ServerHarness implements AutoCloseable {
           channel
               .getReceiveSetter()
               .set(
-                  new io.undertow.websockets.core.AbstractReceiveListener() {
+                  new AbstractReceiveListener() {
                     @Override
-                    protected void onFullTextMessage(
-                        io.undertow.websockets.core.WebSocketChannel ch,
-                        io.undertow.websockets.core.BufferedTextMessage msg) {
-                      io.undertow.websockets.core.WebSockets.sendText(msg.getData(), ch, null);
+                    protected void onFullTextMessage(WebSocketChannel ch, BufferedTextMessage msg) {
+                      WebSockets.sendText(msg.getData(), ch, null);
                     }
                   });
           channel.resumeReceives();
@@ -522,18 +526,17 @@ public final class ServerHarness implements AutoCloseable {
   }
 
   /** Minimal Jetty 12 WebSocket echo listener. */
-  private static final class JettyEchoListener
-      implements org.eclipse.jetty.websocket.api.Session.Listener.AutoDemanding {
+  private static final class JettyEchoListener implements Session.Listener.AutoDemanding {
 
-    private org.eclipse.jetty.websocket.api.Session session;
-    private org.eclipse.jetty.util.Callback setSessionCallback;
+    private Session session;
+    private Callback setSessionCallback;
 
-    void setSessionCallback(org.eclipse.jetty.util.Callback callback) {
+    void setSessionCallback(Callback callback) {
       this.setSessionCallback = callback;
     }
 
     @Override
-    public void onWebSocketOpen(org.eclipse.jetty.websocket.api.Session session) {
+    public void onWebSocketOpen(Session session) {
       this.session = session;
       if (setSessionCallback != null) {
         setSessionCallback.succeeded();

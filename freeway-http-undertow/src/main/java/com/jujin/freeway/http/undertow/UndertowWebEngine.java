@@ -288,7 +288,7 @@ public final class UndertowWebEngine implements HttpEngine {
       for (String value : exchange.getRequestHeaders().get(name)) {
         values.add(value);
       }
-      headers.put(name.toString().toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
+      headers.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
     }
     return Map.copyOf(headers);
   }

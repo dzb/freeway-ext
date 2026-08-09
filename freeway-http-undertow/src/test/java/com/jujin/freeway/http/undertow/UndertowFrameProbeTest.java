@@ -19,6 +19,7 @@ package com.jujin.freeway.http.undertow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.route.Route;
@@ -41,7 +42,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 class UndertowFrameProbeTest {
-  private com.jujin.freeway.boot.AppRuntime app;
+  private AppRuntime app;
 
   @AfterEach
   void tearDown() {

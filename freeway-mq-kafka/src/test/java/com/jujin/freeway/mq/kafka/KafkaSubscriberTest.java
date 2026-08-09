@@ -34,6 +34,7 @@ import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.MockConsumer;
 import org.apache.kafka.clients.consumer.OffsetResetStrategy;
 import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -99,7 +100,7 @@ class KafkaSubscriberTest {
       record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
-      List<org.apache.kafka.clients.producer.ProducerRecord<String, byte[]>> dlq;
+      List<ProducerRecord<String, byte[]>> dlq;
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
       do {
         dlq = dlqProducer.history();

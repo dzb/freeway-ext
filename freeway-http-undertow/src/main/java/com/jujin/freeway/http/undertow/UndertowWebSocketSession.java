@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
@@ -223,13 +224,13 @@ final class UndertowWebSocketSession implements WebSocketSession {
 
   @Override
   public String header(String name) {
-    List<String> values = headers.get(name.toLowerCase(java.util.Locale.ROOT));
+    List<String> values = headers.get(name.toLowerCase(Locale.ROOT));
     return values != null && !values.isEmpty() ? values.get(0) : null;
   }
 
   @Override
   public List<String> headers(String name) {
-    return headers.getOrDefault(name.toLowerCase(java.util.Locale.ROOT), List.of());
+    return headers.getOrDefault(name.toLowerCase(Locale.ROOT), List.of());
   }
 
   @Override

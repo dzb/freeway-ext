@@ -24,6 +24,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
 
 /** Raw-socket WebSocket echo client. */
@@ -48,7 +49,7 @@ public final class WsClient implements AutoCloseable {
     long t0 = System.nanoTime();
     sendFrame(text);
     byte[] payload = readFrame();
-    if (!java.util.Arrays.equals(payload, text.getBytes(StandardCharsets.UTF_8))) {
+    if (!Arrays.equals(payload, text.getBytes(StandardCharsets.UTF_8))) {
       throw new IOException(
           "WebSocket echo mismatch: expected '"
               + text

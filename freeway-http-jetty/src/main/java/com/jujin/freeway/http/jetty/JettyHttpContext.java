@@ -27,6 +27,7 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -163,9 +164,7 @@ final class JettyHttpContext extends HttpContext {
     LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
     for (String name : request.getHeaders().getFieldNamesCollection()) {
       List<String> values = request.getHeaders().getValuesList(name);
-      map.put(
-          name.toLowerCase(java.util.Locale.ROOT),
-          values != null ? List.copyOf(values) : List.of());
+      map.put(name.toLowerCase(Locale.ROOT), values != null ? List.copyOf(values) : List.of());
     }
     return Map.copyOf(map);
   }

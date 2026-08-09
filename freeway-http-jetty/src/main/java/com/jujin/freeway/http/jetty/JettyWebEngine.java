@@ -37,6 +37,7 @@ import org.eclipse.jetty.http2.server.HTTP2CServerConnectionFactory;
 import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.server.handler.GracefulHandler;
+import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.websocket.api.Session;
@@ -97,8 +98,7 @@ public final class JettyWebEngine implements HttpEngine {
     graceful.setHandler(
         new Handler.Abstract() {
           @Override
-          public boolean handle(
-              Request request, Response response, org.eclipse.jetty.util.Callback callback)
+          public boolean handle(Request request, Response response, Callback callback)
               throws Exception {
             RequestContext requestContext =
                 HttpContext.createRequestContext(request.getHeaders().get("X-Request-Id"));
@@ -193,7 +193,7 @@ public final class JettyWebEngine implements HttpEngine {
   private boolean handleWebSocket(
       Request request,
       Response response,
-      org.eclipse.jetty.util.Callback callback,
+      Callback callback,
       HttpRequestHandler handler,
       RequestContext requestContext,
       ServerWebSocketContainer webSocketContainer) {
@@ -289,7 +289,7 @@ public final class JettyWebEngine implements HttpEngine {
     LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
     for (String name : request.getHeaders().getFieldNamesCollection()) {
       List<String> values = new ArrayList<>(request.getHeaders().getValuesList(name));
-      headers.put(name.toLowerCase(java.util.Locale.ROOT), List.copyOf(values));
+      headers.put(name.toLowerCase(Locale.ROOT), List.copyOf(values));
     }
     return Map.copyOf(headers);
   }

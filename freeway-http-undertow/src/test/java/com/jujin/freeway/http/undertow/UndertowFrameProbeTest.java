@@ -50,16 +50,16 @@ class UndertowFrameProbeTest {
       app.close();
       app = null;
     }
-    System.clearProperty("freeway.web.server.port");
-    System.clearProperty("freeway.web.server.host");
+    System.clearProperty("freeway.http.server.port");
+    System.clearProperty("freeway.http.server.host");
     System.clearProperty("freeway.http.websocket.max-frame-size");
   }
 
   @Test
   void probeUndertowTextFrameFinBit() throws Exception {
     int port = freePort();
-    System.setProperty("freeway.web.server.host", "127.0.0.1");
-    System.setProperty("freeway.web.server.port", String.valueOf(port));
+    System.setProperty("freeway.http.server.host", "127.0.0.1");
+    System.setProperty("freeway.http.server.port", String.valueOf(port));
 
     app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
     assertTrue(app.get(WebServer.class).isRunning());
@@ -94,8 +94,8 @@ class UndertowFrameProbeTest {
   @Test
   void closesConnectionWhenMessageExceedsLimit() throws Exception {
     int port = freePort();
-    System.setProperty("freeway.web.server.host", "127.0.0.1");
-    System.setProperty("freeway.web.server.port", String.valueOf(port));
+    System.setProperty("freeway.http.server.host", "127.0.0.1");
+    System.setProperty("freeway.http.server.port", String.valueOf(port));
     System.setProperty("freeway.http.websocket.max-frame-size", "64");
 
     app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());

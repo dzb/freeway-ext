@@ -32,6 +32,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -73,6 +75,8 @@ final class UndertowHttpContext extends HttpContext {
     this.cachedBody = null;
     this.responseStatus = 200;
     this.responded = false;
+    this.bodyLimitExceeded = false;
+    this.pathVariables.clear();
   }
 
   @Override
@@ -161,7 +165,7 @@ final class UndertowHttpContext extends HttpContext {
 
   @Override
   public SseEmitter sse() throws IOException {
-    exchange.setStatusCode(200);
+    exchange.setStatusCode(responseStatus);
     setupSseHeaders();
     responded = true;
     return new SseEmitter(new SseOutputStream(exchange.getResponseSender()));
@@ -283,6 +287,7 @@ final class UndertowHttpContext extends HttpContext {
 
   @Override
   public HttpContext setHeader(String name, String value) {
+    if (responded) return this;
     validateHeaderName(name);
     validateHeaderValue(value);
     HttpString headerName = HttpString.tryFromString(name.toLowerCase(Locale.ROOT));
@@ -293,6 +298,11 @@ final class UndertowHttpContext extends HttpContext {
     }
     exchange.getResponseHeaders().put(headerName, value);
     return this;
+  }
+
+  @Override
+  public boolean isResponded() {
+    return responded;
   }
 
   @Override
@@ -317,6 +327,20 @@ final class UndertowHttpContext extends HttpContext {
       exchange.endExchange();
     }
     return this;
+  }
+
+  @Override
+  public HttpContext output(InputStream input, long contentLength) throws IOException {
+    return output(input.readAllBytes());
+  }
+
+  @Override
+  public HttpContext outputFile(Path file, long offset, long length) throws IOException {
+    try (InputStream input = Files.newInputStream(file)) {
+      input.skipNBytes(offset);
+      if (length > Integer.MAX_VALUE) throw new IOException("File range is too large");
+      return output(input.readNBytes((int) length));
+    }
   }
 
   private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {

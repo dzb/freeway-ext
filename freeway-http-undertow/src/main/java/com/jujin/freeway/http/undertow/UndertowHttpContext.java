@@ -18,8 +18,8 @@ package com.jujin.freeway.http.undertow;
 
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.http.HttpContext;
-import com.jujin.freeway.http.RequestContext;
+import com.jujin.freeway.http.AbstractHttpContext;
+import com.jujin.freeway.http.HttpResponse;
 import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.sse.SseEmitter;
 import io.undertow.io.IoCallback;
@@ -46,10 +46,9 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-final class UndertowHttpContext extends HttpContext {
+final class UndertowHttpContext extends AbstractHttpContext {
 
   private HttpServerExchange exchange;
-  private RequestContext requestContext;
   private Map<String, List<String>> queryParams;
   private String method;
   private String path;
@@ -64,9 +63,9 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   /** Reinitializes all per-request state for object reuse. */
-  void reset(HttpServerExchange exchange, RequestContext requestContext) {
+  void reset(HttpServerExchange exchange, String correlationId) {
     this.exchange = Objects.requireNonNull(exchange, "exchange");
-    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+    setCorrelationId(correlationId);
     this.queryParams = null; // lazy — PING never accesses
     this.method = exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
     String rel = exchange.getRelativePath();
@@ -264,12 +263,7 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   @Override
-  public RequestContext requestContext() {
-    return requestContext;
-  }
-
-  @Override
-  public HttpContext status(int status) {
+  public HttpResponse status(int status) {
     this.responseStatus = status;
     exchange.setStatusCode(status);
     return this;
@@ -286,7 +280,7 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext setHeader(String name, String value) {
+  public HttpResponse setHeader(String name, String value) {
     if (responded) return this;
     validateHeaderName(name);
     validateHeaderValue(value);
@@ -306,7 +300,7 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext output(byte[] data) throws IOException {
+  public HttpResponse output(byte[] data) throws IOException {
     if (responded) {
       return this;
     }
@@ -330,12 +324,12 @@ final class UndertowHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext output(InputStream input, long contentLength) throws IOException {
+  public HttpResponse output(InputStream input, long contentLength) throws IOException {
     return output(input.readAllBytes());
   }
 
   @Override
-  public HttpContext outputFile(Path file, long offset, long length) throws IOException {
+  public HttpResponse outputFile(Path file, long offset, long length) throws IOException {
     try (InputStream input = Files.newInputStream(file)) {
       input.skipNBytes(offset);
       if (length > Integer.MAX_VALUE) throw new IOException("File range is too large");

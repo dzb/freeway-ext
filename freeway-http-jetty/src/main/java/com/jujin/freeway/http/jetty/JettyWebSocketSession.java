@@ -16,11 +16,12 @@
 
 package com.jujin.freeway.http.jetty;
 
-import com.jujin.freeway.http.RequestContext;
+import com.jujin.freeway.http.ExchangeMetaDefault;
 import com.jujin.freeway.http.websocket.WebSocketSession;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -47,7 +48,7 @@ final class JettyWebSocketSession implements WebSocketSession {
       };
 
   private final Session session;
-  private final RequestContext requestContext;
+  private final ExchangeMetaDefault exchangeMeta;
   private final String method;
   private final String path;
   private final Map<String, String> pathVariables;
@@ -58,14 +59,14 @@ final class JettyWebSocketSession implements WebSocketSession {
 
   JettyWebSocketSession(
       Session session,
-      RequestContext requestContext,
+      String correlationId,
       String method,
       String path,
       Map<String, String> pathVariables,
       Map<String, List<String>> queryParams,
       Map<String, List<String>> headers) {
     this.session = Objects.requireNonNull(session, "session");
-    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+    this.exchangeMeta = new ExchangeMetaDefault(correlationId);
     this.method = Objects.requireNonNull(method, "method");
     this.path = Objects.requireNonNull(path, "path");
     this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
@@ -121,8 +122,38 @@ final class JettyWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public RequestContext requestContext() {
-    return requestContext;
+  public String correlationId() {
+    return exchangeMeta.correlationId();
+  }
+
+  @Override
+  public Instant startTime() {
+    return exchangeMeta.startTime();
+  }
+
+  @Override
+  public Object principal() {
+    return exchangeMeta.principal();
+  }
+
+  @Override
+  public void setPrincipal(Object principal) {
+    exchangeMeta.setPrincipal(principal);
+  }
+
+  @Override
+  public Object attribute(String key) {
+    return exchangeMeta.attribute(key);
+  }
+
+  @Override
+  public void setAttribute(String key, Object value) {
+    exchangeMeta.setAttribute(key, value);
+  }
+
+  @Override
+  public Map<String, Object> attributes() {
+    return exchangeMeta.attributes();
   }
 
   @Override

@@ -16,7 +16,7 @@
 
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.http.RequestContext;
+import com.jujin.freeway.http.ExchangeMetaDefault;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketSession;
 import io.undertow.websockets.core.AbstractReceiveListener;
@@ -29,6 +29,7 @@ import io.undertow.websockets.core.WebSockets;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -55,7 +56,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
       };
 
   private final WebSocketChannel channel;
-  private final RequestContext requestContext;
+  private final ExchangeMetaDefault exchangeMeta;
   private final String method;
   private final String path;
   private final Map<String, String> pathVariables;
@@ -68,7 +69,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
 
   UndertowWebSocketSession(
       WebSocketChannel channel,
-      RequestContext requestContext,
+      String correlationId,
       String method,
       String path,
       Map<String, String> pathVariables,
@@ -76,7 +77,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
       Map<String, List<String>> headers,
       long maxMessageSize) {
     this.channel = Objects.requireNonNull(channel, "channel");
-    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+    this.exchangeMeta = new ExchangeMetaDefault(correlationId);
     this.method = Objects.requireNonNull(method, "method");
     this.path = Objects.requireNonNull(path, "path");
     this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
@@ -234,8 +235,38 @@ final class UndertowWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public RequestContext requestContext() {
-    return requestContext;
+  public String correlationId() {
+    return exchangeMeta.correlationId();
+  }
+
+  @Override
+  public Instant startTime() {
+    return exchangeMeta.startTime();
+  }
+
+  @Override
+  public Object principal() {
+    return exchangeMeta.principal();
+  }
+
+  @Override
+  public void setPrincipal(Object principal) {
+    exchangeMeta.setPrincipal(principal);
+  }
+
+  @Override
+  public Object attribute(String key) {
+    return exchangeMeta.attribute(key);
+  }
+
+  @Override
+  public void setAttribute(String key, Object value) {
+    exchangeMeta.setAttribute(key, value);
+  }
+
+  @Override
+  public Map<String, Object> attributes() {
+    return exchangeMeta.attributes();
   }
 
   @Override

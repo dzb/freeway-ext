@@ -18,8 +18,8 @@ package com.jujin.freeway.http.jetty;
 
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.http.HttpContext;
-import com.jujin.freeway.http.RequestContext;
+import com.jujin.freeway.http.AbstractHttpContext;
+import com.jujin.freeway.http.HttpResponse;
 import com.jujin.freeway.http.sse.SseEmitter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,14 +41,14 @@ import org.eclipse.jetty.util.Fields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Jetty-backed {@link HttpContext} implementation, pooled per thread. */
-final class JettyHttpContext extends HttpContext {
+/** Jetty-backed {@link com.jujin.freeway.http.HttpContext} implementation,
+ *  pooled per thread. */
+final class JettyHttpContext extends AbstractHttpContext {
   private static final Logger LOG = LoggerFactory.getLogger(JettyHttpContext.class);
 
   private Request request;
   private Response response;
   private Callback callback;
-  private RequestContext requestContext;
   private Map<String, List<String>> queryParams;
   private volatile byte[] cachedBody;
   private int responseStatus = 200;
@@ -60,11 +60,11 @@ final class JettyHttpContext extends HttpContext {
   }
 
   /** Reinitializes all per-request state for object reuse. */
-  void reset(Request request, Response response, RequestContext requestContext, Callback callback) {
+  void reset(Request request, Response response, String correlationId, Callback callback) {
     this.request = Objects.requireNonNull(request, "request");
     this.response = Objects.requireNonNull(response, "response");
-    this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
     this.callback = Objects.requireNonNull(callback, "callback");
+    setCorrelationId(correlationId);
     this.queryParams = parseQueryParams(request);
     this.cachedBody = null;
     this.responseStatus = 200;
@@ -179,12 +179,7 @@ final class JettyHttpContext extends HttpContext {
   }
 
   @Override
-  public RequestContext requestContext() {
-    return requestContext;
-  }
-
-  @Override
-  public HttpContext status(int status) {
+  public HttpResponse status(int status) {
     this.responseStatus = status;
     response.setStatus(status);
     return this;
@@ -200,7 +195,7 @@ final class JettyHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext setHeader(String name, String value) {
+  public HttpResponse setHeader(String name, String value) {
     if (responded) return this;
     validateHeaderName(name);
     validateHeaderValue(value);
@@ -214,7 +209,7 @@ final class JettyHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext output(byte[] data) throws IOException {
+  public HttpResponse output(byte[] data) throws IOException {
     if (responded) {
       return this;
     }
@@ -242,12 +237,12 @@ final class JettyHttpContext extends HttpContext {
   }
 
   @Override
-  public HttpContext output(InputStream input, long contentLength) throws IOException {
+  public HttpResponse output(InputStream input, long contentLength) throws IOException {
     return output(input.readAllBytes());
   }
 
   @Override
-  public HttpContext outputFile(Path file, long offset, long length) throws IOException {
+  public HttpResponse outputFile(Path file, long offset, long length) throws IOException {
     try (InputStream input = Files.newInputStream(file)) {
       input.skipNBytes(offset);
       if (length > Integer.MAX_VALUE) throw new IOException("File range is too large");

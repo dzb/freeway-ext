@@ -100,17 +100,16 @@ public final class JettyWebEngine implements HttpEngine {
           @Override
           public boolean handle(Request request, Response response, Callback callback)
               throws Exception {
-            RequestContext requestContext =
-                HttpContext.createRequestContext(request.getHeaders().get("X-Request-Id"));
+            String correlationId = request.getHeaders().get("X-Request-Id");
             response
                 .getHeaders()
-                .put("X-Request-Id", safeCorrelationId(requestContext.correlationId()));
+                .put("X-Request-Id", safeCorrelationId(correlationId));
             if (isWebSocketRequest(request)) {
               return handleWebSocket(
-                  request, response, callback, handler, requestContext, webSocketContainer);
+                  request, response, callback, handler, correlationId, webSocketContainer);
             }
             JettyHttpContext ctx = contextPool.get();
-            ctx.reset(request, response, requestContext, callback);
+            ctx.reset(request, response, correlationId, callback);
             ctx.maxBodySize(config.maxBodySize());
             try {
               handler.handle(ctx);
@@ -195,7 +194,7 @@ public final class JettyWebEngine implements HttpEngine {
       Response response,
       Callback callback,
       HttpRequestHandler handler,
-      RequestContext requestContext,
+      String correlationId,
       ServerWebSocketContainer webSocketContainer) {
     String method = method(request);
     String path = path(request);
@@ -211,10 +210,10 @@ public final class JettyWebEngine implements HttpEngine {
         (upgradeRequest, upgradeResponse, upgradeCallback) -> {
           upgradeResponse
               .getHeaders()
-              .put("X-Request-Id", safeCorrelationId(requestContext.correlationId()));
+              .put("X-Request-Id", safeCorrelationId(correlationId));
           return new JettyWebSocketBridge(
               match,
-              requestContext,
+              correlationId,
               method,
               path,
               snapshotPathVariables(match.pathVariables()),
@@ -334,7 +333,7 @@ public final class JettyWebEngine implements HttpEngine {
   /** WebSocket endpoint bridge between Jetty and the Freeway listener API. */
   public static final class JettyWebSocketBridge implements Session.Listener.AutoDemanding {
     private final WebSocketMatch match;
-    private final RequestContext requestContext;
+    private final String correlationId;
     private final String method;
     private final String path;
     private final Map<String, String> pathVariables;
@@ -345,14 +344,15 @@ public final class JettyWebEngine implements HttpEngine {
 
     JettyWebSocketBridge(
         WebSocketMatch match,
-        RequestContext requestContext,
+        String correlationId,
         String method,
         String path,
         Map<String, String> pathVariables,
         Map<String, List<String>> queryParams,
         Map<String, List<String>> headers) {
       this.match = Objects.requireNonNull(match, "match");
-      this.requestContext = Objects.requireNonNull(requestContext, "requestContext");
+      // Null is fine: ExchangeMetaDefault auto-generates when blank.
+      this.correlationId = correlationId;
       this.method = Objects.requireNonNull(method, "method");
       this.path = Objects.requireNonNull(path, "path");
       this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
@@ -364,7 +364,7 @@ public final class JettyWebEngine implements HttpEngine {
     public void onWebSocketOpen(Session session) {
       JettyWebSocketSession wsSession =
           new JettyWebSocketSession(
-              session, requestContext, method, path, pathVariables, queryParams, headers);
+              session, correlationId, method, path, pathVariables, queryParams, headers);
       this.session = wsSession;
       try {
         appListener = match.endpoint().open(wsSession);

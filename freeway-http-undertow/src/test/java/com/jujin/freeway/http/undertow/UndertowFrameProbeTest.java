@@ -141,7 +141,7 @@ class UndertowFrameProbeTest {
                                       + ":"
                                       + session.pathVar("room")
                                       + ":"
-                                      + session.requestContext().correlationId());
+                                      + session.correlationId());
                             }
                           })));
       binder.contribute(Route.class).add(Route.get("/ping", ctx -> ctx.send(200, "pong")));

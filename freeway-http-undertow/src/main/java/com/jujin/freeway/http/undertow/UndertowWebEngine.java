@@ -178,11 +178,10 @@ public final class UndertowWebEngine implements HttpEngine {
   private void dispatch(
       HttpServerExchange exchange, HttpRequestHandler handler, HttpServerConfig config)
       throws Exception {
-    RequestContext requestContext =
-        HttpContext.createRequestContext(exchange.getRequestHeaders().getFirst("X-Request-Id"));
+    String correlationId = exchange.getRequestHeaders().getFirst("X-Request-Id");
     exchange
         .getResponseHeaders()
-        .put(X_REQUEST_ID, safeCorrelationId(requestContext.correlationId()));
+        .put(X_REQUEST_ID, safeCorrelationId(correlationId));
     if (isWebSocketRequest(exchange)) {
       String origin = exchange.getRequestHeaders().getFirst(Headers.ORIGIN);
       WebSocketMatch match = handler.websocket(method(exchange), path(exchange), origin);
@@ -190,12 +189,12 @@ public final class UndertowWebEngine implements HttpEngine {
         ResponseCodeHandler.HANDLE_404.handleRequest(exchange);
         return;
       }
-      handleWebSocket(exchange, requestContext, match, wsMaxMessageSize);
+      handleWebSocket(exchange, correlationId, match, wsMaxMessageSize);
       return;
     }
 
     UndertowHttpContext ctx = contextPool.get();
-    ctx.reset(exchange, requestContext);
+    ctx.reset(exchange, correlationId);
     ctx.maxBodySize(config.maxBodySize());
     try {
       handler.handle(ctx);
@@ -206,7 +205,7 @@ public final class UndertowWebEngine implements HttpEngine {
 
   private void handleWebSocket(
       HttpServerExchange exchange,
-      RequestContext requestContext,
+      String correlationId,
       WebSocketMatch match,
       long maxMessageSize)
       throws Exception {
@@ -215,7 +214,7 @@ public final class UndertowWebEngine implements HttpEngine {
           UndertowWebSocketSession session =
               new UndertowWebSocketSession(
                   channel,
-                  requestContext,
+                  correlationId,
                   method(exchange),
                   path(exchange),
                   snapshotPathVariables(match.pathVariables()),

@@ -112,7 +112,7 @@ Suggested result table:
 
 | Workload | Baseline | Candidate | Delta |
 | --- | ---: | ---: | ---: |
-| `HttpParser` |  |  |  |
+| `Http1xParser` |  |  |  |
 | `RouteIndex` |  |  |  |
 | `MultipartForm` |  |  |  |
 | `HTTP /ping` |  |  |  |

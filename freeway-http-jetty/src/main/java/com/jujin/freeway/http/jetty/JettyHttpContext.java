@@ -39,8 +39,7 @@ import org.eclipse.jetty.util.Fields;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Jetty-backed {@link com.jujin.freeway.http.HttpContext} implementation,
- *  pooled per thread. */
+/** Jetty-backed {@link com.jujin.freeway.http.HttpContext} implementation, pooled per thread. */
 final class JettyHttpContext extends AbstractHttpContext {
   private static final Logger LOG = LoggerFactory.getLogger(JettyHttpContext.class);
 

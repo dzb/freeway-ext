@@ -57,8 +57,8 @@ public final class CliModule implements ModuleEx {
   }
 
   /**
-   * Dispatches the first CLI argument to the matching Command. Called by {@link BenchApp} after the
-   * container starts.
+   * Dispatches the first CLI argument to the matching Command. Called by {@link
+   * com.jujin.freeway.bench.BenchApp} after the container starts.
    *
    * @return {@code true} when a command ran, {@code false} when the command name was unknown
    *     (caller should exit non-zero)

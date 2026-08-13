@@ -100,9 +100,7 @@ public final class JettyWebEngine implements HttpEngine {
           public boolean handle(Request request, Response response, Callback callback)
               throws Exception {
             String correlationId = request.getHeaders().get("X-Request-Id");
-            response
-                .getHeaders()
-                .put("X-Request-Id", safeCorrelationId(correlationId));
+            response.getHeaders().put("X-Request-Id", safeCorrelationId(correlationId));
             if (isWebSocketRequest(request)) {
               return handleWebSocket(
                   request, response, callback, handler, correlationId, webSocketContainer);
@@ -207,9 +205,7 @@ public final class JettyWebEngine implements HttpEngine {
     }
     WebSocketCreator creator =
         (upgradeRequest, upgradeResponse, upgradeCallback) -> {
-          upgradeResponse
-              .getHeaders()
-              .put("X-Request-Id", safeCorrelationId(correlationId));
+          upgradeResponse.getHeaders().put("X-Request-Id", safeCorrelationId(correlationId));
           return new JettyWebSocketBridge(
               match,
               correlationId,

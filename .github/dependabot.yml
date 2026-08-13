@@ -1,11 +1,36 @@
 version: 2
 updates:
+  # Third-party Maven dependencies; the root POM covers the whole reactor.
   - package-ecosystem: maven
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Shanghai"
     open-pull-requests-limit: 10
+    versioning-strategy: increase
+    commit-message:
+      prefix: "deps"
+    ignore:
+      # Freeway core artifacts are versioned by this repo, not Maven Central.
+      - dependency-name: "com.jujin8.freeway:*"
+      # Keep SLF4J on the latest stable 2.0.x; 2.1.0-alpha1 is a pre-release.
+      - dependency-name: "org.slf4j:slf4j-api"
+        versions:
+          - "2.1.0-alpha1"
+      # Never propose SNAPSHOT versions.
+      - dependency-name: "*"
+        versions:
+          - "*-SNAPSHOT"
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"

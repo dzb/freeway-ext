@@ -34,9 +34,9 @@ import org.openjdk.jmh.annotations.State;
 /**
  * JMH benchmark for the real Freeway HTTP filter chain.
  *
- * <p>Builds the same filter chain used in production: {@link CorsFilter} &rarr;
- * {@link HealthFilter} &rarr; no-op route handler. Request timing is measured
- * by {@code WebServer} itself rather than a filter.
+ * <p>Builds the same filter chain used in production: {@link CorsFilter} &rarr; {@link
+ * HealthFilter} &rarr; no-op route handler. Request timing is measured by {@code WebServer} itself
+ * rather than a filter.
  *
  * <p>Uses a real {@link HttpContextDefault} (not a stub) so that filter overhead includes real
  * header/body/status operations.

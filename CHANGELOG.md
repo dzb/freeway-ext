@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.3.8-SNAPSHOT
+
+### Changed
+
+- **Build**: upgraded to Freeway core `1.3.8-SNAPSHOT`; Jetty/Undertow
+  adapters, WebSocket sessions, contract tests, and the benchmark harness
+  aligned with the tightened HTTP SPI and its naming (`HttpContext`,
+  `RequestComponents`, `ErrorHandler`, `Http1xParser`).
+- **Docs**: benchmark protocol table updated to the `Http1xParser` naming.
+- **CI**: Dependabot refined for Maven and GitHub Actions — weekly Monday
+  morning runs, `increase` versioning strategy, and ignore rules for Freeway
+  core artifacts, SNAPSHOT versions, and the SLF4J 2.1.0 alpha.
+
+### Fixed
+
+- **Kafka**: consumer close now uses the non-deprecated
+  `Consumer.close(CloseOptions)` API with the same 5-second timeout.
+- **Undertow**: binary WebSocket frames no longer reference the deprecated
+  `org.xnio.Pooled` type (Undertow's `BufferedBinaryMessage#getData()` still
+  returns it; the buffers are consumed through local type inference).
+- **Kafka tests**: `MockConsumer` construction is marked with a targeted
+  deprecation suppression because Kafka 4.3.1 deprecated both public
+  constructors without a non-deprecated replacement.
+- **Benchmark**: fixed the Javadoc link to `BenchApp` in `CliModule` (the
+  reference was unqualified across packages, so Javadoc could not resolve it).
+
 ## 1.3.7-SNAPSHOT
 
 ### Changed

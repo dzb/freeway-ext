@@ -40,6 +40,10 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 
+// Kafka 4.3.1 deprecates both public MockConsumer constructors (and
+// OffsetResetStrategy itself) without a non-deprecated public replacement,
+// so the test must keep using the deprecated constructor for now.
+@SuppressWarnings("deprecation")
 class KafkaSubscriberTest {
 
   @Test

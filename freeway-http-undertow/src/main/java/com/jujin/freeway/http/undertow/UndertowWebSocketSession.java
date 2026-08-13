@@ -38,7 +38,6 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.IoUtils;
-import org.xnio.Pooled;
 
 /** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
 final class UndertowWebSocketSession implements WebSocketSession {
@@ -128,7 +127,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
                   WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
                 // getData() transfers ownership of the pooled buffers; the
                 // default listener frees them in a finally, and so must we.
-                Pooled<ByteBuffer[]> pooled = message.getData();
+                var pooled = message.getData();
                 byte[] data;
                 try {
                   ByteBuffer[] buffers = pooled.getResource();
@@ -155,7 +154,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
               @Override
               protected void onFullCloseMessage(
                   WebSocketChannel channel, BufferedBinaryMessage message) throws IOException {
-                Pooled<ByteBuffer[]> pooled = message.getData();
+                var pooled = message.getData();
                 CloseMessage closeMessage;
                 try {
                   closeMessage = new CloseMessage(WebSockets.mergeBuffers(pooled.getResource()));
@@ -211,9 +210,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
   @Override
   public Optional<String> queryParam(String name) {
     List<String> values = queryParams.get(name);
-    return values != null && !values.isEmpty()
-        ? Optional.of(values.get(0))
-        : Optional.empty();
+    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
   }
 
   @Override
@@ -229,9 +226,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
   @Override
   public Optional<String> header(String name) {
     List<String> values = headers.get(name.toLowerCase(Locale.ROOT));
-    return values != null && !values.isEmpty()
-        ? Optional.of(values.get(0))
-        : Optional.empty();
+    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
   }
 
   @Override

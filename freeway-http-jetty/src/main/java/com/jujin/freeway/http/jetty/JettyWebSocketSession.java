@@ -98,9 +98,7 @@ final class JettyWebSocketSession implements WebSocketSession {
   @Override
   public Optional<String> queryParam(String name) {
     List<String> values = queryParams.get(name);
-    return values != null && !values.isEmpty()
-        ? Optional.of(values.get(0))
-        : Optional.empty();
+    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
   }
 
   @Override
@@ -116,9 +114,7 @@ final class JettyWebSocketSession implements WebSocketSession {
   @Override
   public Optional<String> header(String name) {
     List<String> values = headers.get(name.toLowerCase(Locale.ROOT));
-    return values != null && !values.isEmpty()
-        ? Optional.of(values.get(0))
-        : Optional.empty();
+    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
   }
 
   @Override

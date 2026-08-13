@@ -178,9 +178,7 @@ public final class UndertowWebEngine implements HttpEngine {
       HttpServerExchange exchange, ExchangeHandler handler, HttpServerConfig config)
       throws Exception {
     String correlationId = exchange.getRequestHeaders().getFirst("X-Request-Id");
-    exchange
-        .getResponseHeaders()
-        .put(X_REQUEST_ID, safeCorrelationId(correlationId));
+    exchange.getResponseHeaders().put(X_REQUEST_ID, safeCorrelationId(correlationId));
     if (isWebSocketRequest(exchange)) {
       String origin = exchange.getRequestHeaders().getFirst(Headers.ORIGIN);
       WebSocketMatch match = handler.websocket(method(exchange), path(exchange), origin);
@@ -203,10 +201,7 @@ public final class UndertowWebEngine implements HttpEngine {
   }
 
   private void handleWebSocket(
-      HttpServerExchange exchange,
-      String correlationId,
-      WebSocketMatch match,
-      long maxMessageSize)
+      HttpServerExchange exchange, String correlationId, WebSocketMatch match, long maxMessageSize)
       throws Exception {
     WebSocketConnectionCallback callback =
         (wsExchange, channel) -> {

@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.apache.kafka.clients.consumer.CloseOptions;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
@@ -168,7 +169,7 @@ public class KafkaSubscriber implements AutoCloseable {
       // The consumer is only ever closed from this thread; close() never
       // touches it concurrently (KafkaConsumer is not thread-safe).
       try {
-        consumer.close(CLOSE_TIMEOUT);
+        consumer.close(CloseOptions.timeout(CLOSE_TIMEOUT));
       } catch (Exception ex) {
         LOG.warn("Kafka consumer close failed", ex);
       }
@@ -408,7 +409,7 @@ public class KafkaSubscriber implements AutoCloseable {
     }
     if (thread == null) {
       // Never started (e.g. no topics configured) — safe to close here.
-      consumer.close(CLOSE_TIMEOUT);
+      consumer.close(CloseOptions.timeout(CLOSE_TIMEOUT));
       closeResources();
       LOG.info("Kafka subscriber stopped");
       return;

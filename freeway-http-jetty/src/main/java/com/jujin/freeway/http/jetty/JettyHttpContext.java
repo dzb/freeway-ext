@@ -25,8 +25,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -69,7 +67,6 @@ final class JettyHttpContext extends AbstractHttpContext {
     this.cachedBody = null;
     this.responseStatus = 200;
     this.responded = false;
-    this.bodyLimitExceeded = false;
     this.pathVariables.clear();
   }
 
@@ -115,7 +112,7 @@ final class JettyHttpContext extends AbstractHttpContext {
   public byte[] body() throws IOException {
     if (cachedBody == null) {
       try (InputStream input = Request.asInputStream(request)) {
-        cachedBody = readBodyLimited(input);
+        cachedBody = readBody(input);
       }
     }
     return cachedBody;
@@ -204,6 +201,15 @@ final class JettyHttpContext extends AbstractHttpContext {
   }
 
   @Override
+  public HttpResponse addHeader(String name, String value) {
+    if (responded) return this;
+    validateHeaderName(name);
+    validateHeaderValue(value);
+    response.getHeaders().add(name, value);
+    return this;
+  }
+
+  @Override
   public boolean isResponded() {
     return responded;
   }
@@ -213,10 +219,7 @@ final class JettyHttpContext extends AbstractHttpContext {
     if (responded) {
       return this;
     }
-    boolean headRequest = "HEAD".equalsIgnoreCase(method());
-    // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
-    // 204/205/304 have no body and no Content-Length.
-    boolean bodyAllowed = responseStatus != 204 && responseStatus != 205 && responseStatus != 304;
+    boolean bodyAllowed = allowsResponseBody();
     if (bodyAllowed) {
       response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(data.length));
     } else {
@@ -224,30 +227,12 @@ final class JettyHttpContext extends AbstractHttpContext {
       response.getHeaders().remove(HttpHeader.CONTENT_LENGTH);
     }
     responded = true;
-    if (headRequest
-        || responseStatus == 204
-        || responseStatus == 205
-        || responseStatus == 304
-        || data.length == 0) {
+    if (suppressBodyBytes(method()) || data.length == 0) {
       callback.succeeded();
       return this;
     }
     response.write(true, ByteBuffer.wrap(data), callback);
     return this;
-  }
-
-  @Override
-  public HttpResponse output(InputStream input, long contentLength) throws IOException {
-    return output(input.readAllBytes());
-  }
-
-  @Override
-  public HttpResponse outputFile(Path file, long offset, long length) throws IOException {
-    try (InputStream input = Files.newInputStream(file)) {
-      input.skipNBytes(offset);
-      if (length > Integer.MAX_VALUE) throw new IOException("File range is too large");
-      return output(input.readNBytes((int) length));
-    }
   }
 
   private static Map<String, List<String>> parseQueryParams(Request request) {

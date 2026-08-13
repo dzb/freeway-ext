@@ -49,7 +49,6 @@ import org.slf4j.LoggerFactory;
 /** Jetty 12 transport adapter for the Freeway HTTP engine. */
 public final class JettyWebEngine implements HttpEngine {
   private static final Logger LOG = LoggerFactory.getLogger(JettyWebEngine.class);
-  private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8";
   private static final byte[] INTERNAL_ERROR_BODY =
       "Internal Server Error".getBytes(StandardCharsets.UTF_8);
   private static final byte[] NOT_FOUND_BODY = "Not Found".getBytes(StandardCharsets.UTF_8);
@@ -117,7 +116,7 @@ public final class JettyWebEngine implements HttpEngine {
               LOG.error("Jetty request failed for {} {}", method(request), path(request), ex);
               if (!response.isCommitted()) {
                 response.setStatus(500);
-                response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+                response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
                 response.write(true, ByteBuffer.wrap(INTERNAL_ERROR_BODY), callback);
               } else {
                 // Response was already committed by the handler before it
@@ -202,7 +201,7 @@ public final class JettyWebEngine implements HttpEngine {
     WebSocketMatch match = handler.websocket(method, path, origin);
     if (match == null) {
       response.setStatus(404);
-      response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+      response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
       response.write(true, ByteBuffer.wrap(NOT_FOUND_BODY), callback);
       return true;
     }
@@ -223,14 +222,14 @@ public final class JettyWebEngine implements HttpEngine {
     try {
       if (!webSocketContainer.upgrade(creator, request, response, callback)) {
         response.setStatus(400);
-        response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+        response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
         response.write(true, ByteBuffer.wrap(UPGRADE_REJECTED_BODY), callback);
       }
     } catch (Exception ex) {
       LOG.warn("Jetty websocket upgrade failed for {} {}", method, path, ex);
       if (!response.isCommitted()) {
         response.setStatus(500);
-        response.getHeaders().put("Content-Type", TEXT_PLAIN_UTF8);
+        response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
         response.write(true, ByteBuffer.wrap(UPGRADE_FAILED_BODY), callback);
       } else {
         callback.succeeded();

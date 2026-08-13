@@ -32,8 +32,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -74,7 +72,6 @@ final class UndertowHttpContext extends AbstractHttpContext {
     this.cachedBody = null;
     this.responseStatus = 200;
     this.responded = false;
-    this.bodyLimitExceeded = false;
     this.pathVariables.clear();
   }
 
@@ -150,7 +147,7 @@ final class UndertowHttpContext extends AbstractHttpContext {
         exchange.startBlocking();
       }
       try (InputStream in = exchange.getInputStream()) {
-        cachedBody = readBodyLimited(in);
+        cachedBody = readBody(in);
       } catch (RequestTooBigException ex) {
         // Undertow's parser-level MAX_ENTITY_SIZE (propagated from
         // maxBodySize) rejects the body before readBodyLimited's own check
@@ -295,6 +292,19 @@ final class UndertowHttpContext extends AbstractHttpContext {
   }
 
   @Override
+  public HttpResponse addHeader(String name, String value) {
+    if (responded) return this;
+    validateHeaderName(name);
+    validateHeaderValue(value);
+    HttpString headerName = HttpString.tryFromString(name.toLowerCase(Locale.ROOT));
+    if (headerName == null) {
+      throw new IllegalArgumentException("Invalid header name: " + name);
+    }
+    exchange.getResponseHeaders().add(headerName, value);
+    return this;
+  }
+
+  @Override
   public boolean isResponded() {
     return responded;
   }
@@ -304,10 +314,7 @@ final class UndertowHttpContext extends AbstractHttpContext {
     if (responded) {
       return this;
     }
-    boolean head = "HEAD".equalsIgnoreCase(method);
-    // HEAD must report the same Content-Length as GET (RFC 7231 §4.3.2);
-    // 204/205/304 have no body and no Content-Length.
-    boolean bodyAllowed = responseStatus != 204 && responseStatus != 205 && responseStatus != 304;
+    boolean bodyAllowed = allowsResponseBody();
     if (bodyAllowed) {
       exchange.setResponseContentLength(data.length);
     } else {
@@ -315,26 +322,12 @@ final class UndertowHttpContext extends AbstractHttpContext {
       exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
     }
     responded = true;
-    if (bodyAllowed && !head && data.length > 0) {
+    if (!suppressBodyBytes(method) && data.length > 0) {
       exchange.getResponseSender().send(ByteBuffer.wrap(data));
     } else {
       exchange.endExchange();
     }
     return this;
-  }
-
-  @Override
-  public HttpResponse output(InputStream input, long contentLength) throws IOException {
-    return output(input.readAllBytes());
-  }
-
-  @Override
-  public HttpResponse outputFile(Path file, long offset, long length) throws IOException {
-    try (InputStream input = Files.newInputStream(file)) {
-      input.skipNBytes(offset);
-      if (length > Integer.MAX_VALUE) throw new IOException("File range is too large");
-      return output(input.readNBytes((int) length));
-    }
   }
 
   private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {

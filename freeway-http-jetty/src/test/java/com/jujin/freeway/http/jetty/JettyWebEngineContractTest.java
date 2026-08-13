@@ -220,7 +220,7 @@ class JettyWebEngineContractTest {
   @Test
   void mapsOversizedBodyToPayloadTooLarge() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, 16 * 1024, Duration.ofSeconds(5), 1024);
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5), 1024);
     var client = httpClient();
     var routes =
         new RouteIndex(List.of(Route.post("/echo", ctx -> ctx.output(ctx.body()))), List.of());

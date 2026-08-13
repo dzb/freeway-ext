@@ -55,7 +55,6 @@ import org.slf4j.LoggerFactory;
 public final class UndertowWebEngine implements HttpEngine {
   private static final Logger LOG = LoggerFactory.getLogger(UndertowWebEngine.class);
   private static final HttpString X_REQUEST_ID = new HttpString("X-Request-Id");
-  private static final String TEXT_PLAIN_UTF8 = "text/plain; charset=utf-8";
   private static final String INTERNAL_ERROR_BODY = "Internal Server Error";
 
   private final JsonCodec jsonCodec;
@@ -165,7 +164,7 @@ public final class UndertowWebEngine implements HttpEngine {
       LOG.error("Undertow request failed for {} {}", method(exchange), path(exchange), ex);
       if (!exchange.isResponseStarted()) {
         exchange.setStatusCode(500);
-        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, TEXT_PLAIN_UTF8);
+        exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, MediaTypes.TEXT_PLAIN_UTF8);
         exchange.getResponseSender().send(INTERNAL_ERROR_BODY);
       } else {
         // Response was already started by the handler before it failed;

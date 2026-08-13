@@ -139,7 +139,7 @@ class UndertowFrameProbeTest {
                                   "echo:"
                                       + text
                                       + ":"
-                                      + session.pathVar("room")
+                                      + session.pathVar("room").orElse("")
                                       + ":"
                                       + session.correlationId());
                             }

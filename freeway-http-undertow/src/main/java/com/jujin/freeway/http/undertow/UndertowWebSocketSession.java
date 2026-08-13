@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.IoUtils;
@@ -198,8 +199,8 @@ final class UndertowWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public String pathVar(String name) {
-    return pathVariables.get(name);
+  public Optional<String> pathVar(String name) {
+    return Optional.ofNullable(pathVariables.get(name));
   }
 
   @Override
@@ -208,9 +209,11 @@ final class UndertowWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public String queryParam(String name) {
+  public Optional<String> queryParam(String name) {
     List<String> values = queryParams.get(name);
-    return values != null && !values.isEmpty() ? values.get(0) : null;
+    return values != null && !values.isEmpty()
+        ? Optional.of(values.get(0))
+        : Optional.empty();
   }
 
   @Override
@@ -224,14 +227,21 @@ final class UndertowWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public String header(String name) {
+  public Optional<String> header(String name) {
     List<String> values = headers.get(name.toLowerCase(Locale.ROOT));
-    return values != null && !values.isEmpty() ? values.get(0) : null;
+    return values != null && !values.isEmpty()
+        ? Optional.of(values.get(0))
+        : Optional.empty();
   }
 
   @Override
   public List<String> headers(String name) {
     return headers.getOrDefault(name.toLowerCase(Locale.ROOT), List.of());
+  }
+
+  @Override
+  public Map<String, List<String>> headers() {
+    return headers;
   }
 
   @Override

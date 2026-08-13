@@ -60,7 +60,8 @@ class JettyWebSocketProbeTest {
                     new WebSocketListener() {
                       @Override
                       public void onText(String text) throws Exception {
-                        session.sendText("echo:" + text + ":" + session.pathVar("room"));
+                        session.sendText(
+                            "echo:" + text + ":" + session.pathVar("room").orElse(""));
                       }
                     }));
     var pipeline =
@@ -116,7 +117,8 @@ class JettyWebSocketProbeTest {
                     new WebSocketListener() {
                       @Override
                       public void onText(String text) throws Exception {
-                        session.sendText("echo:" + text + ":" + session.pathVar("room"));
+                        session.sendText(
+                            "echo:" + text + ":" + session.pathVar("room").orElse(""));
                       }
                     }));
     var pipeline =

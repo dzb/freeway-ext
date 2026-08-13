@@ -21,7 +21,7 @@ import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.ExceptionMapper;
+import com.jujin.freeway.http.filter.ErrorHandler;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.filter.HttpFilter;
 import com.jujin.freeway.http.jetty.JettyWebEngine;
@@ -201,7 +201,7 @@ public final class ServerHarness implements AutoCloseable {
             noopHealth(),
             List.<StaticResourceMount>of(),
             List.<HttpFilter>of(),
-            List.<ExceptionMapper>of());
+            List.<ErrorHandler>of());
     var srv = new WebServer(engine, config, event -> {}, pipeline);
     srv.start();
     return new ServerHarness(srv, srv.port());
@@ -228,7 +228,7 @@ public final class ServerHarness implements AutoCloseable {
             noopHealth(),
             List.<StaticResourceMount>of(),
             List.<HttpFilter>of(),
-            List.<ExceptionMapper>of());
+            List.<ErrorHandler>of());
     var srv = new WebServer(engine, config, event -> {}, pipeline);
     srv.start();
     return new ServerHarness(srv, srv.port());
@@ -255,7 +255,7 @@ public final class ServerHarness implements AutoCloseable {
             noopHealth(),
             List.<StaticResourceMount>of(),
             List.<HttpFilter>of(),
-            List.<ExceptionMapper>of());
+            List.<ErrorHandler>of());
     var srv = new WebServer(engine, config, event -> {}, pipeline);
     srv.start();
     return new ServerHarness(srv, srv.port());

@@ -151,7 +151,7 @@ final class UndertowHttpContext extends AbstractHttpContext {
       } catch (RequestTooBigException ex) {
         // Undertow's parser-level MAX_ENTITY_SIZE (propagated from
         // maxBodySize) rejects the body before readBodyLimited's own check
-        // fires. Normalize to the Freeway contract so the core ExceptionMapper
+        // fires. Normalize to the Freeway contract so the core ErrorHandler
         // answers 413 instead of an unhandled 500.
         throw new BodyTooLargeException(maxBodySize);
       }

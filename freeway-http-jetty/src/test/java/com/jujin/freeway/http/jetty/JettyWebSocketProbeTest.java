@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestPipeline;
+import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -65,7 +65,7 @@ class JettyWebSocketProbeTest {
                       }
                     }));
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             new RouteIndex(List.of(), List.of()),
             new WebSocketIndex(List.of(), List.of(wsGroup)),
             new CorsFilter(false, null, null, null, null, null, false),
@@ -122,7 +122,7 @@ class JettyWebSocketProbeTest {
                       }
                     }));
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             new RouteIndex(List.of(), List.of()),
             new WebSocketIndex(List.of(), List.of(wsGroup)),
             new CorsFilter(false, null, null, null, null, null, false),

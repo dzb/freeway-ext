@@ -194,7 +194,7 @@ public final class ServerHarness implements AutoCloseable {
       wsIndex = new WebSocketIndex(List.of(), List.of());
     }
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routeIndex,
             wsIndex,
             noopCors(),
@@ -221,7 +221,7 @@ public final class ServerHarness implements AutoCloseable {
       wsIndex = new WebSocketIndex(List.of(), List.of());
     }
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routeIndex,
             wsIndex,
             noopCors(),
@@ -248,7 +248,7 @@ public final class ServerHarness implements AutoCloseable {
       wsIndex = new WebSocketIndex(List.of(), List.of());
     }
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routeIndex,
             wsIndex,
             noopCors(),

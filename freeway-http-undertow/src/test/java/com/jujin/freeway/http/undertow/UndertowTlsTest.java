@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestPipeline;
+import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -82,10 +82,10 @@ class UndertowTlsTest {
     }
   }
 
-  private static RequestPipeline pipeline() {
+  private static RequestComponents pipeline() {
     var routes =
         new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
-    return new RequestPipeline(
+    return new RequestComponents(
         routes,
         new WebSocketIndex(List.of(), List.of()),
         new CorsFilter(false, null, null, null, null, null, false),

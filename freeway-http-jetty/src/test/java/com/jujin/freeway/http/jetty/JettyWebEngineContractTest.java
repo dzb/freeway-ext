@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestPipeline;
+import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.filter.CorsFilter;
@@ -55,7 +55,7 @@ class JettyWebEngineContractTest {
     var routes =
         new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routes,
             new WebSocketIndex(List.of(), List.of()),
             new CorsFilter(false, null, null, null, null, null, false),
@@ -87,7 +87,7 @@ class JettyWebEngineContractTest {
     var routes =
         new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routes,
             new WebSocketIndex(List.of(), List.of()),
             new CorsFilter(false, null, null, null, null, null, false),
@@ -143,7 +143,7 @@ class JettyWebEngineContractTest {
                     })),
             List.of());
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routes,
             new WebSocketIndex(List.of(), List.of()),
             new CorsFilter(false, null, null, null, null, null, false),
@@ -190,7 +190,7 @@ class JettyWebEngineContractTest {
             List.of(Route.get("/bad", ctx -> ctx.setHeader("X-Bad\r\nX-Injected: 1", "v"))),
             List.of());
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routes,
             new WebSocketIndex(List.of(), List.of()),
             new CorsFilter(false, null, null, null, null, null, false),
@@ -225,7 +225,7 @@ class JettyWebEngineContractTest {
     var routes =
         new RouteIndex(List.of(Route.post("/echo", ctx -> ctx.output(ctx.body()))), List.of());
     var pipeline =
-        new RequestPipeline(
+        new RequestComponents(
             routes,
             new WebSocketIndex(List.of(), List.of()),
             new CorsFilter(false, null, null, null, null, null, false),

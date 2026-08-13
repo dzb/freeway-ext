@@ -87,15 +87,15 @@ Run the microbenchmarks through the JMH launcher:
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
   -Dexec.mainClass=org.openjdk.jmh.Main \
-  -Dexec.args='-bm thrpt -f 0 -wi 5 -i 5 com.jujin.freeway.http.engine.HttpParserBenchmark'
+  -Dexec.args='-bm thrpt -f 0 -wi 5 -i 5 com.jujin.freeway.http.engine.Http1xParserBenchmark'
 ```
 
 Useful benchmark classes:
 
-- `com.jujin.freeway.http.engine.HttpParserBenchmark` — HTTP/1.1 request parsing
+- `com.jujin.freeway.http.engine.Http1xParserBenchmark` — HTTP/1.1 request parsing
 - `com.jujin.freeway.http.engine.HttpContextOutputBenchmark` — response output (text, JSON, not-found)
 - `com.jujin.freeway.http.engine.HttpContextLookupBenchmark` — header/query/param lookup
-- `com.jujin.freeway.http.engine.FilterChainBenchmark` — full filter chain (timing → cors → health)
+- `com.jujin.freeway.http.engine.FilterChainBenchmark` — full filter chain (cors → health)
 - `com.jujin.freeway.http.engine.JsonCodecBenchmark` — JSON serialization/deserialization
 - `com.jujin.freeway.http.engine.ws.WebSocketFrameBenchmark` — WebSocket frame read/write/construct
 - `com.jujin.freeway.http.route.RouteIndexBenchmark` — route matching (exact, param, wildcard)

@@ -116,9 +116,10 @@ public class HttpContextOutputBenchmark {
         null,
         false,
         true);
-    ctx.status(200);
+    ctx.setStatus(200);
     ctx.setHeader("Content-Type", "text/plain; charset=utf-8");
-    return ctx.output(PONG);
+    ctx.output(PONG);
+    return ctx;
   }
 
   @Benchmark
@@ -135,8 +136,9 @@ public class HttpContextOutputBenchmark {
         null,
         false,
         true);
-    ctx.status(200);
-    return ctx.outputJson(Map.of("status", "ok"));
+    ctx.setStatus(200);
+    ctx.outputJson(Map.of("status", "ok"));
+    return ctx;
   }
 
   @Benchmark
@@ -153,8 +155,9 @@ public class HttpContextOutputBenchmark {
         null,
         false,
         true);
-    ctx.status(404);
-    return ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));
+    ctx.setStatus(404);
+    ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));
+    return ctx;
   }
 
   // --- New scenarios ---
@@ -163,9 +166,10 @@ public class HttpContextOutputBenchmark {
   @Benchmark
   public HttpContext readBodyThenOutput() throws IOException {
     bodyReadCtx.body(); // reads + caches body
-    bodyReadCtx.status(201);
+    bodyReadCtx.setStatus(201);
     bodyReadCtx.setHeader("Content-Type", "application/json");
-    return bodyReadCtx.output(PONG);
+    bodyReadCtx.output(PONG);
+    return bodyReadCtx;
   }
 
   /** Convenience shortcut: sendJson(status, value). */

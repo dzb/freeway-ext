@@ -260,7 +260,7 @@ final class UndertowHttpContext extends AbstractHttpContext {
   }
 
   @Override
-  public HttpResponse status(int status) {
+  public HttpResponse setStatus(int status) {
     this.responseStatus = status;
     exchange.setStatusCode(status);
     return this;

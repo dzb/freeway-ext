@@ -176,7 +176,7 @@ final class JettyHttpContext extends AbstractHttpContext {
   }
 
   @Override
-  public HttpResponse status(int status) {
+  public HttpResponse setStatus(int status) {
     this.responseStatus = status;
     response.setStatus(status);
     return this;

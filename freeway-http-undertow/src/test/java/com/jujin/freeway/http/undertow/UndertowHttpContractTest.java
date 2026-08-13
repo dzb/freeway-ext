@@ -55,7 +55,7 @@ class UndertowHttpContractTest {
                 Route.post(
                     "/echo",
                     ctx -> {
-                      ctx.status(200);
+                      ctx.setStatus(200);
                       ctx.output(ctx.body());
                     })),
             List.of());

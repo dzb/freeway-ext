@@ -70,7 +70,7 @@ public final class UndertowWebEngine implements HttpEngine {
   }
 
   @Override
-  public HttpServerHandle start(HttpServerConfig config, HttpRequestHandler handler) {
+  public HttpServerHandle start(HttpServerConfig config, ExchangeHandler handler) {
     Objects.requireNonNull(config, "config");
     Objects.requireNonNull(handler, "handler");
 
@@ -157,7 +157,7 @@ public final class UndertowWebEngine implements HttpEngine {
   }
 
   private void handle(
-      HttpServerExchange exchange, HttpRequestHandler handler, HttpServerConfig config) {
+      HttpServerExchange exchange, ExchangeHandler handler, HttpServerConfig config) {
     try {
       dispatch(exchange, handler, config);
     } catch (Exception ex) {
@@ -175,7 +175,7 @@ public final class UndertowWebEngine implements HttpEngine {
   }
 
   private void dispatch(
-      HttpServerExchange exchange, HttpRequestHandler handler, HttpServerConfig config)
+      HttpServerExchange exchange, ExchangeHandler handler, HttpServerConfig config)
       throws Exception {
     String correlationId = exchange.getRequestHeaders().getFirst("X-Request-Id");
     exchange
@@ -194,7 +194,7 @@ public final class UndertowWebEngine implements HttpEngine {
 
     UndertowHttpContext ctx = contextPool.get();
     ctx.reset(exchange, correlationId);
-    ctx.maxBodySize(config.maxBodySize());
+    ctx.setMaxBodySize(config.maxBodySize());
     try {
       handler.handle(ctx);
     } catch (Exception ex) {

@@ -66,7 +66,7 @@ public class HttpContextLookupBenchmark {
         null,
         false,
         true);
-    ctx.pathVars(Map.of("id", "42"));
+    ctx.setPathVars(Map.of("id", "42"));
   }
 
   /** O(1) exact-match query param lookup (LinkedHashMap.get). */

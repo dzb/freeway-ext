@@ -21,7 +21,6 @@ import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthCheck;
 import com.jujin.freeway.http.filter.HealthFilter;
-import com.jujin.freeway.http.filter.RequestTimingFilter;
 import com.jujin.freeway.http.route.RouteHandler;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -35,8 +34,9 @@ import org.openjdk.jmh.annotations.State;
 /**
  * JMH benchmark for the real Freeway HTTP filter chain.
  *
- * <p>Builds the same filter chain used in production: {@link RequestTimingFilter} &rarr; {@link
- * CorsFilter} &rarr; {@link HealthFilter} &rarr; no-op route handler.
+ * <p>Builds the same filter chain used in production: {@link CorsFilter} &rarr;
+ * {@link HealthFilter} &rarr; no-op route handler. Request timing is measured
+ * by {@code WebServer} itself rather than a filter.
  *
  * <p>Uses a real {@link HttpContextDefault} (not a stub) so that filter overhead includes real
  * header/body/status operations.
@@ -62,14 +62,12 @@ public class FilterChainBenchmark {
     var json = new JsonCodecDefault();
     var coercer = new CoercerDefault();
 
-    // Real filter chain: timing -> cors -> health -> noop handler
-    var timing = new RequestTimingFilter();
+    // Real filter chain: cors -> health -> noop handler
     var cors = CorsFilter.DEFAULT;
     var health = new HealthFilter(true, "/healthz", new HealthCheck.Default());
     RouteHandler noop = ctx -> {};
     RouteHandler h = ctx -> health.doFilter(ctx, noop);
-    RouteHandler c = ctx -> cors.doFilter(ctx, h);
-    chain = ctx -> timing.doFilter(ctx, c);
+    chain = ctx -> cors.doFilter(ctx, h);
 
     // Normal GET /ping — passes through all filters
     normalCtx = new HttpContextDefault(json, coercer);

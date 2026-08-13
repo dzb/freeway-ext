@@ -16,7 +16,6 @@
 
 package com.jujin.freeway.http.engine;
 
-import com.jujin.freeway.http.engine.http11.HttpParser;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -26,10 +25,10 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
 @State(Scope.Thread)
-public class HttpParserBenchmark {
+public class Http1xParserBenchmark {
 
   private byte[] request;
-  private HttpParser parser;
+  private Http1xParser parser;
 
   @Setup
   public void setup() {
@@ -42,11 +41,11 @@ public class HttpParserBenchmark {
                 + "X-Trace-Id: trace-1\r\n"
                 + "\r\n")
             .getBytes(StandardCharsets.ISO_8859_1);
-    parser = new HttpParser(new ByteArrayInputStream(request));
+    parser = new Http1xParser(new ByteArrayInputStream(request));
   }
 
   @Benchmark
-  public HttpParser.ParsedRequest parse() throws IOException {
+  public Http1xParser.ParsedRequest parse() throws IOException {
     parser.reset(new ByteArrayInputStream(request));
     return parser.parse();
   }

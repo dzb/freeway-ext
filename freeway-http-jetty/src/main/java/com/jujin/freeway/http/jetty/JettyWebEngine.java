@@ -69,7 +69,7 @@ public final class JettyWebEngine implements HttpEngine {
   }
 
   @Override
-  public HttpServerHandle start(HttpServerConfig config, HttpRequestHandler handler)
+  public HttpServerHandle start(HttpServerConfig config, ExchangeHandler handler)
       throws IOException {
     Objects.requireNonNull(config, "config");
     Objects.requireNonNull(handler, "handler");
@@ -109,7 +109,7 @@ public final class JettyWebEngine implements HttpEngine {
             }
             JettyHttpContext ctx = contextPool.get();
             ctx.reset(request, response, correlationId, callback);
-            ctx.maxBodySize(config.maxBodySize());
+            ctx.setMaxBodySize(config.maxBodySize());
             try {
               handler.handle(ctx);
             } catch (Exception ex) {
@@ -192,7 +192,7 @@ public final class JettyWebEngine implements HttpEngine {
       Request request,
       Response response,
       Callback callback,
-      HttpRequestHandler handler,
+      ExchangeHandler handler,
       String correlationId,
       ServerWebSocketContainer webSocketContainer) {
     String method = method(request);

@@ -25,6 +25,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -75,12 +76,25 @@ public final class JettyWebEngine implements HttpEngine {
     Objects.requireNonNull(handler, "handler");
 
     Server server = new Server();
-    ServerConnector connector = buildConnector(server);
+    ServerConnector connector = buildConnector(server, config);
     connector.setHost(config.host());
     connector.setPort(config.port());
     connector.setAcceptQueueSize(config.backlog());
+    connector.setIdleTimeout(config.readTimeout().toMillis());
+    if (config.receiveBufferSize() > 0) {
+      connector.setAcceptedReceiveBufferSize(config.receiveBufferSize());
+    }
+    if (config.sendBufferSize() > 0) {
+      connector.setAcceptedSendBufferSize(config.sendBufferSize());
+    }
     server.addConnector(connector);
     server.setStopTimeout(config.shutdownGrace().toMillis());
+    if (config.maxConnections() > 0) {
+      // Rejects excess connections at accept time (Jetty 12's non-deprecated
+      // connection-limit listener), matching the built-in engine's
+      // max-connections semantics.
+      server.addBean(new NetworkConnectionLimit(config.maxConnections(), server));
+    }
 
     ServerWebSocketContainer webSocketContainer = ServerWebSocketContainer.ensure(server);
     long maxFrameSize = Long.getLong("freeway.http.websocket.max-frame-size", 65_536L);
@@ -108,6 +122,7 @@ public final class JettyWebEngine implements HttpEngine {
             JettyHttpContext ctx = contextPool.get();
             ctx.reset(request, response, correlationId, callback);
             ctx.setMaxBodySize(config.maxBodySize());
+            ctx.setCompression(config.compression());
             try {
               handler.handle(ctx);
             } catch (Exception ex) {
@@ -142,20 +157,52 @@ public final class JettyWebEngine implements HttpEngine {
   }
 
   /**
-   * Builds the listener stack from system properties: {@code freeway.http.ssl.enabled} (+ key-store
-   * / key-store-password / key-password / key-alias) and {@code freeway.http.http2} (h2c or h2 via
-   * ALPN when TLS is enabled).
+   * Builds the listener stack from the shared {@code freeway.http.ssl.*} keys, matching the
+   * built-in engine: {@code freeway.http.ssl.enabled} + key-store / key-store-password /
+   * key-store-type / trust-store / client-auth / protocols / ciphers, and {@code
+   * freeway.http.ssl.http2} (default true) for h2 via ALPN when TLS is enabled. The Jetty-only
+   * {@code freeway.http.http2} toggle remains for h2c (cleartext HTTP/2); it is ignored when TLS is
+   * enabled.
    */
-  private static ServerConnector buildConnector(Server server) {
-    boolean sslEnabled = Boolean.getBoolean("freeway.http.ssl.enabled");
-    boolean http2 = Boolean.getBoolean("freeway.http.http2");
-    if (!sslEnabled && !http2) {
+  private static ServerConnector buildConnector(Server server, HttpServerConfig config) {
+    boolean sslEnabled = Boolean.getBoolean(HttpConfigKeys.SSL_ENABLED);
+    boolean alpnHttp2 =
+        sslEnabled
+            && !"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true"));
+    boolean h2c = !sslEnabled && Boolean.getBoolean("freeway.http.http2");
+    if (!sslEnabled && !h2c) {
       return new ServerConnector(server);
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
-      ssl.setKeyStorePath(System.getProperty("freeway.http.ssl.key-store"));
-      ssl.setKeyStorePassword(System.getProperty("freeway.http.ssl.key-store-password", ""));
+      ssl.setKeyStorePath(System.getProperty(HttpConfigKeys.SSL_KEY_STORE));
+      ssl.setKeyStorePassword(System.getProperty(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, ""));
+      String keyStoreType = System.getProperty(HttpConfigKeys.SSL_KEY_STORE_TYPE);
+      if (keyStoreType != null && !keyStoreType.isBlank()) {
+        ssl.setKeyStoreType(keyStoreType);
+      }
+      String trustStorePath = System.getProperty(HttpConfigKeys.SSL_TRUST_STORE);
+      if (trustStorePath != null) {
+        ssl.setTrustStorePath(trustStorePath);
+        ssl.setTrustStorePassword(System.getProperty(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, ""));
+        String trustStoreType = System.getProperty(HttpConfigKeys.SSL_TRUST_STORE_TYPE);
+        if (trustStoreType != null && !trustStoreType.isBlank()) {
+          ssl.setTrustStoreType(trustStoreType);
+        }
+      }
+      if (Boolean.getBoolean(HttpConfigKeys.SSL_CLIENT_AUTH)) {
+        ssl.setNeedClientAuth(true);
+      }
+      String protocols = System.getProperty(HttpConfigKeys.SSL_PROTOCOLS);
+      if (protocols != null && !protocols.isBlank()) {
+        ssl.setIncludeProtocols(splitCommaSeparated(protocols));
+      }
+      String ciphers = System.getProperty(HttpConfigKeys.SSL_CIPHERS);
+      if (ciphers != null && !ciphers.isBlank()) {
+        ssl.setIncludeCipherSuites(splitCommaSeparated(ciphers));
+      }
+      // Jetty extensions kept from the pre-refactor adapter: separate key
+      // manager password and certificate alias selection.
       String keyPassword = System.getProperty("freeway.http.ssl.key-password");
       if (keyPassword != null) {
         ssl.setKeyManagerPassword(keyPassword);
@@ -167,7 +214,7 @@ public final class JettyWebEngine implements HttpEngine {
       HttpConfiguration https = new HttpConfiguration();
       https.addCustomizer(new SecureRequestCustomizer());
       HttpConnectionFactory http11 = new HttpConnectionFactory(https);
-      if (http2) {
+      if (alpnHttp2) {
         HTTP2ServerConnectionFactory h2 = new HTTP2ServerConnectionFactory(https);
         // Route the SSL connection through the ALPN factory (its "alpn"
         // protocol name), otherwise the TLS handshake skips ALPN entirely
@@ -184,6 +231,14 @@ public final class JettyWebEngine implements HttpEngine {
     HttpConfiguration http = new HttpConfiguration();
     return new ServerConnector(
         server, new HttpConnectionFactory(http), new HTTP2CServerConnectionFactory(http));
+  }
+
+  /** Splits a comma-separated property value into trimmed, non-empty tokens. */
+  private static String[] splitCommaSeparated(String value) {
+    return Arrays.stream(value.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toArray(String[]::new);
   }
 
   private boolean handleWebSocket(

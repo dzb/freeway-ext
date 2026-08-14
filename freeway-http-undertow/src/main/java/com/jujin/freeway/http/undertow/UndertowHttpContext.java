@@ -20,7 +20,10 @@ import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.AbstractHttpContext;
 import com.jujin.freeway.http.HttpResponse;
+import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.MediaTypes;
 import com.jujin.freeway.http.body.BodyTooLargeException;
+import com.jujin.freeway.http.engine.ResponseFraming;
 import com.jujin.freeway.http.sse.SseEmitter;
 import io.undertow.io.IoCallback;
 import io.undertow.io.Sender;
@@ -28,6 +31,7 @@ import io.undertow.server.HttpServerExchange;
 import io.undertow.server.RequestTooBigException;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -41,6 +45,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.zip.GZIPOutputStream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,6 +59,10 @@ final class UndertowHttpContext extends AbstractHttpContext {
   private byte[] cachedBody;
   private int responseStatus = 200;
   private boolean responded;
+
+  /** gzip policy from the server config; set once per dispatch. */
+  private HttpServerConfig.CompressionConfig compression =
+      HttpServerConfig.CompressionConfig.DEFAULT;
 
   /** Pooled constructor — call {@link #reset} before use. */
   UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer) {
@@ -73,6 +82,13 @@ final class UndertowHttpContext extends AbstractHttpContext {
     this.responseStatus = 200;
     this.responded = false;
     this.pathVariables.clear();
+  }
+
+  /** Sets the gzip compression policy for this exchange (from the server config). */
+  void setCompression(HttpServerConfig.CompressionConfig compression) {
+    if (compression != null) {
+      this.compression = compression;
+    }
   }
 
   @Override
@@ -315,19 +331,85 @@ final class UndertowHttpContext extends AbstractHttpContext {
       return this;
     }
     boolean bodyAllowed = allowsResponseBody();
+    // Mirror the built-in engine's buffered gzip path (ResponseFraming):
+    // same gates (status, min-size, Accept-Encoding, compressible type),
+    // same headers (Content-Encoding + merged Vary), Content-Length set to
+    // the compressed length.
+    byte[] body = data;
+    if (ResponseFraming.shouldGzip(
+        compression,
+        responseStatus,
+        bodyAllowed,
+        data.length,
+        acceptsGzip(),
+        compressibleContentType())) {
+      body = gzip(data);
+      setHeader("Content-Encoding", "gzip");
+      addVary("Accept-Encoding");
+    }
     if (bodyAllowed) {
-      exchange.setResponseContentLength(data.length);
+      exchange.setResponseContentLength(body.length);
     } else {
       // 204/205/304 must not carry Content-Length even if the handler set it.
       exchange.getResponseHeaders().remove(Headers.CONTENT_LENGTH);
     }
     responded = true;
-    if (!suppressBodyBytes(method) && data.length > 0) {
-      exchange.getResponseSender().send(ByteBuffer.wrap(data));
+    if (!suppressBodyBytes(method) && body.length > 0) {
+      exchange.getResponseSender().send(ByteBuffer.wrap(body));
     } else {
       exchange.endExchange();
     }
     return this;
+  }
+
+  /**
+   * True when the client explicitly accepts gzip (same semantics as the built-in engine: an absent
+   * Accept-Encoding header is treated as "no preference" and does not compress).
+   */
+  private boolean acceptsGzip() {
+    String acceptEncoding = exchange.getRequestHeaders().getFirst(Headers.ACCEPT_ENCODING);
+    if (acceptEncoding == null) {
+      return false;
+    }
+    for (String part : acceptEncoding.split(",")) {
+      String token = part.trim();
+      int q = token.indexOf(';');
+      String name = q < 0 ? token : token.substring(0, q).trim();
+      if ("gzip".equalsIgnoreCase(name)) {
+        if (q < 0) {
+          return true;
+        }
+        return !qValueIsZero(token.substring(q + 1));
+      }
+    }
+    return false;
+  }
+
+  private static boolean qValueIsZero(String params) {
+    for (String part : params.split(";")) {
+      String[] kv = part.trim().split("=", 2);
+      if (kv.length == 2 && "q".equals(kv[0].trim())) {
+        try {
+          return Double.parseDouble(kv[1].trim()) == 0.0;
+        } catch (NumberFormatException e) {
+          return false;
+        }
+      }
+    }
+    return false;
+  }
+
+  private boolean compressibleContentType() {
+    return MediaTypes.isCompressibleContentType(
+        exchange.getResponseHeaders().getFirst(Headers.CONTENT_TYPE));
+  }
+
+  private static byte[] gzip(byte[] data) throws IOException {
+    var out = new ByteArrayOutputStream(Math.max(32, data.length / 2));
+    try (var gzip = new GZIPOutputStream(out)) {
+      gzip.write(data);
+    }
+    return out.toByteArray();
   }
 
   private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {

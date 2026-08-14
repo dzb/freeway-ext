@@ -46,10 +46,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import javax.net.ssl.KeyManager;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.xnio.Options;
+import org.xnio.Sequence;
+import org.xnio.SslClientAuthMode;
 
 /** Undertow transport adapter for the Freeway HTTP engine. */
 public final class UndertowWebEngine implements HttpEngine {
@@ -96,64 +102,155 @@ public final class UndertowWebEngine implements HttpEngine {
             handle(exchange, handler, config);
           }
         };
+    // gzip response compression (HttpServerConfig.compression) is applied in
+    // UndertowHttpContext.output(), mirroring the built-in engine's buffered
+    // path (min-size, status, Accept-Encoding and Content-Type gates). A
+    // handler-level EncodingHandler is deliberately not used: Undertow's
+    // dynamic encoding has no minimum-size gate, so it would compress small
+    // responses the shared config says to leave alone.
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
+    boolean sslEnabled = Boolean.getBoolean(HttpConfigKeys.SSL_ENABLED);
     Undertow.Builder builder =
         Undertow.builder()
             .setHandler(gracefulShutdown)
             .setIoThreads(Runtime.getRuntime().availableProcessors())
             // Undertow's defaults leave connections without idle/parse
             // deadlines and allow a 1 MiB header budget, exposing slow-loris
-            // and per-connection memory abuse. Set explicit bounds mirroring
-            // Jetty's defaults, and propagate maxBodySize to the parser so
-            // Freeway's limit is not silently capped at Undertow's 2 MiB
-            // entity default.
-            .setServerOption(UndertowOptions.IDLE_TIMEOUT, 60_000)
-            .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, 30_000)
+            // and per-connection memory abuse. Map the shared Freeway config
+            // (readTimeout, backlog, socket buffers) onto Undertow's options;
+            // maxConnections and writeTimeout have no Undertow equivalent.
+            .setServerOption(UndertowOptions.IDLE_TIMEOUT, (int) config.readTimeout().toMillis())
+            .setServerOption(
+                UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) config.readTimeout().toMillis())
             .setServerOption(UndertowOptions.MAX_HEADER_SIZE, 64 * 1024)
             .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, config.maxBodySize())
             .setServerOption(UndertowOptions.MULTIPART_MAX_ENTITY_SIZE, config.maxBodySize());
+    if (config.backlog() > 0) {
+      builder.setSocketOption(Options.BACKLOG, config.backlog());
+    }
+    if (config.receiveBufferSize() > 0) {
+      builder.setSocketOption(Options.RECEIVE_BUFFER, config.receiveBufferSize());
+    }
+    if (config.sendBufferSize() > 0) {
+      builder.setSocketOption(Options.SEND_BUFFER, config.sendBufferSize());
+    }
     // Undertow defaults to workerThreads = ioThreads * 8; the old explicit
     // 1-thread worker pool starved blocking handlers.
-    if (Boolean.getBoolean("freeway.http.ssl.enabled")) {
+    if (sslEnabled) {
       builder.addHttpsListener(config.port(), config.host(), sslContext());
+      // mTLS / protocol / cipher constraints, keyed on the same
+      // freeway.http.ssl.* options the built-in engine uses. XNIO applies
+      // these socket options when the SSL engine is created.
+      if (Boolean.getBoolean(HttpConfigKeys.SSL_CLIENT_AUTH)) {
+        builder.setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED);
+      }
+      String protocols = prop(HttpConfigKeys.SSL_PROTOCOLS);
+      if (protocols != null && !protocols.isBlank()) {
+        builder.setSocketOption(
+            Options.SSL_ENABLED_PROTOCOLS, Sequence.of(splitCommaSeparated(protocols)));
+      }
+      String ciphers = prop(HttpConfigKeys.SSL_CIPHERS);
+      if (ciphers != null && !ciphers.isBlank()) {
+        builder.setSocketOption(
+            Options.SSL_ENABLED_CIPHER_SUITES, Sequence.of(splitCommaSeparated(ciphers)));
+      }
+      // HTTP/2 over TLS via ALPN, keyed on the same freeway.http.ssl.http2
+      // flag the built-in engine uses (default true). Undertow performs ALPN
+      // itself on JDK 9+; h2c (cleartext) has no core knob and is not
+      // enabled by this adapter.
+      if (!"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true"))) {
+        builder.setServerOption(UndertowOptions.ENABLE_HTTP2, true);
+      }
     } else {
       builder.addHttpListener(config.port(), config.host());
     }
     Undertow server = builder.build();
     server.start();
-    LOG.info("Freeway undertow web engine started on {}:{}", config.host(), listenerPort(server));
+    LOG.info(
+        "Freeway undertow web engine started on {}:{} (http2={})",
+        config.host(),
+        listenerPort(server),
+        sslEnabled
+            && !"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true")));
     return new UndertowHandle(server, gracefulShutdown, config.shutdownGrace(), config.host());
   }
 
   /**
-   * Builds a TLS context from {@code freeway.http.ssl.key-store} and {@code
-   * freeway.http.ssl.key-store-password} (JKS vs PKCS12 is inferred from the file extension).
+   * Builds a TLS context from the shared {@code freeway.http.ssl.*} keys, mirroring the built-in
+   * engine's {@code SslContextFactory}: keystore type from {@code freeway.http.ssl.key-store-type}
+   * (inferred from the file extension when unset), optional truststore for peer validation, and
+   * client-auth/protocols/ciphers enforced via XNIO socket options (the JDK SSLContext itself is
+   * configured with key/trust managers only).
    */
   private static SSLContext sslContext() {
-    String keyStorePath = System.getProperty("freeway.http.ssl.key-store");
-    char[] password = System.getProperty("freeway.http.ssl.key-store-password", "").toCharArray();
+    String keyStorePath = prop(HttpConfigKeys.SSL_KEY_STORE);
+    char[] password = prop(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, "").toCharArray();
     try {
-      String type =
-          keyStorePath != null && keyStorePath.toLowerCase(Locale.ROOT).endsWith(".jks")
-              ? "JKS"
-              : "PKCS12";
+      String type = keyStoreType(keyStorePath);
+      KeyStore keyStore = KeyStore.getInstance(type);
       try (var in = Files.newInputStream(Path.of(keyStorePath))) {
-        KeyStore keyStore = KeyStore.getInstance(type);
         keyStore.load(in, password);
-        // JKS keystores may protect the key with a separate password; honor
-        // freeway.http.ssl.key-password like the Jetty adapter does.
-        String keyPasswordProp = System.getProperty("freeway.http.ssl.key-password");
-        char[] keyPassword = keyPasswordProp != null ? keyPasswordProp.toCharArray() : password;
-        KeyManagerFactory kmf =
-            KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(keyStore, keyPassword);
-        SSLContext context = SSLContext.getInstance("TLS");
-        context.init(kmf.getKeyManagers(), null, null);
-        return context;
       }
+      // JKS keystores may protect the key with a separate password; honor
+      // freeway.http.ssl.key-password like the Jetty adapter does.
+      String keyPasswordProp = System.getProperty("freeway.http.ssl.key-password");
+      char[] keyPassword = keyPasswordProp != null ? keyPasswordProp.toCharArray() : password;
+      KeyManagerFactory kmf =
+          KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+      kmf.init(keyStore, keyPassword);
+      KeyManager[] keyManagers = kmf.getKeyManagers();
+
+      TrustManager[] trustManagers = null;
+      String trustStorePath = prop(HttpConfigKeys.SSL_TRUST_STORE);
+      if (trustStorePath != null) {
+        String trustStoreType = prop(HttpConfigKeys.SSL_TRUST_STORE_TYPE, "PKCS12");
+        char[] trustPassword = prop(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, "").toCharArray();
+        KeyStore trustStore = KeyStore.getInstance(trustStoreType);
+        try (var in = Files.newInputStream(Path.of(trustStorePath))) {
+          trustStore.load(in, trustPassword);
+        }
+        TrustManagerFactory tmf =
+            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+        tmf.init(trustStore);
+        trustManagers = tmf.getTrustManagers();
+      }
+
+      SSLContext context = SSLContext.getInstance("TLS");
+      context.init(keyManagers, trustManagers, null);
+      return context;
     } catch (Exception ex) {
       throw new IllegalStateException("Failed to configure TLS for Undertow", ex);
     }
+  }
+
+  /**
+   * Resolves the keystore type: explicit {@code freeway.http.ssl.key-store-type} wins, else
+   * inferred from the {@code .jks} extension, else PKCS12 (the built-in engine's default).
+   */
+  private static String keyStoreType(String keyStorePath) {
+    String explicit = prop(HttpConfigKeys.SSL_KEY_STORE_TYPE);
+    if (explicit != null && !explicit.isBlank()) {
+      return explicit;
+    }
+    return keyStorePath != null && keyStorePath.toLowerCase(Locale.ROOT).endsWith(".jks")
+        ? "JKS"
+        : "PKCS12";
+  }
+
+  private static String prop(String key) {
+    return System.getProperty(key);
+  }
+
+  private static String prop(String key, String defaultValue) {
+    return System.getProperty(key, defaultValue);
+  }
+
+  /** Splits a comma-separated property value into trimmed, non-empty tokens. */
+  private static String[] splitCommaSeparated(String value) {
+    return java.util.Arrays.stream(value.split(","))
+        .map(String::trim)
+        .filter(s -> !s.isEmpty())
+        .toArray(String[]::new);
   }
 
   private void handle(
@@ -193,6 +290,7 @@ public final class UndertowWebEngine implements HttpEngine {
     UndertowHttpContext ctx = contextPool.get();
     ctx.reset(exchange, correlationId);
     ctx.setMaxBodySize(config.maxBodySize());
+    ctx.setCompression(config.compression());
     try {
       handler.handle(ctx);
     } catch (Exception ex) {

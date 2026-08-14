@@ -53,6 +53,8 @@ class UndertowTlsTest {
     System.clearProperty("freeway.http.ssl.key-store");
     System.clearProperty("freeway.http.ssl.key-store-password");
     System.clearProperty("freeway.http.ssl.key-password");
+    System.clearProperty("freeway.http.ssl.key-store-type");
+    System.clearProperty("freeway.http.ssl.http2");
   }
 
   @Test
@@ -79,6 +81,37 @@ class UndertowTlsTest {
               HttpResponse.BodyHandlers.ofString());
       assertEquals(200, resp.statusCode());
       assertEquals("pong", resp.body());
+    }
+  }
+
+  @Test
+  void servesHttp2OverTlsByDefault() throws Exception {
+    // freeway.http.ssl.http2 defaults to true (same as the built-in engine);
+    // Undertow performs ALPN on JDK 9+ so an HTTP/2 client negotiates h2.
+    System.setProperty("freeway.http.ssl.enabled", "true");
+    System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
+    System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var client =
+        HttpClient.newBuilder()
+            .sslContext(trustingSslContext())
+            .version(HttpClient.Version.HTTP_2)
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+
+    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+      server.start();
+      var resp =
+          client.send(
+              HttpRequest.newBuilder(URI.create("https://127.0.0.1:" + server.port() + "/ping"))
+                  .GET()
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, resp.statusCode());
+      assertEquals("pong", resp.body());
+      assertEquals(HttpClient.Version.HTTP_2, resp.version());
     }
   }
 

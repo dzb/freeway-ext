@@ -51,6 +51,9 @@ public final class HikariPool implements Pool {
     if (config.healthCheckQuery() != null) {
       hc.setConnectionTestQuery(config.healthCheckQuery());
     }
+    // healthCheckTimeout maps to HikariCP's validation timeout: the maximum
+    // time a borrowed connection may take to pass its validity test.
+    hc.setValidationTimeout(config.healthCheckTimeout().toMillis());
     String leakDetection = System.getProperty("freeway.db.pool.leak-detection");
     if (leakDetection != null && !leakDetection.isBlank()) {
       try {
@@ -64,8 +67,7 @@ public final class HikariPool implements Pool {
       }
     }
     // PoolConfig fields without a HikariCP equivalent are intentionally not
-    // mapped: cleanInterval (Hikari runs its own housekeeping),
-    // healthCheckTimeout (covered by connectionTimeout + test query), and
+    // mapped: cleanInterval (Hikari runs its own housekeeping) and
     // queryTimeout (JDBC statement level, not pool level).
     this.config = hc;
     try {

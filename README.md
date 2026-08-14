@@ -24,7 +24,7 @@ For the vast majority of applications, this is all you need.
 | Module | When to use | External Dependency |
 |--------|-------------|-------------------|
 | `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.2.Final |
-| `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.11 |
+| `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.12 |
 | `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH-based micro-benchmarks for HTTP, WebSocket, and DB adapters | [JMH](https://github.com/openjdk/jmh) 1.37 |
@@ -79,16 +79,26 @@ silently dropped.
 
 ## HTTP adapter configuration
 
-The Jetty and Undertow adapters read the following system properties:
+The Jetty and Undertow adapters read the shared `freeway.http.ssl.*` keys of the
+built-in engine (same names, same defaults), so a TLS configuration written for
+`FreewayHttpEngine` works unchanged on either adapter:
 
 | Property | Default | Applies to | Meaning |
 |----------|---------|------------|---------|
 | `freeway.http.ssl.enabled` | `false` | Jetty, Undertow | Serve HTTPS instead of plain HTTP. |
-| `freeway.http.ssl.key-store` | — | Jetty, Undertow | Path to the key store (JKS or PKCS12; Undertow infers the type from the `.jks` extension). |
+| `freeway.http.ssl.key-store` | — | Jetty, Undertow | Path to the key store (PKCS12 or JKS). |
 | `freeway.http.ssl.key-store-password` | `` | Jetty, Undertow | Key store password. |
-| `freeway.http.ssl.key-password` | (same as store) | Jetty | Key manager password. |
-| `freeway.http.ssl.key-alias` | (first entry) | Jetty | Alias of the server certificate. |
-| `freeway.http.http2` | `false` | Jetty | Enable HTTP/2: h2 via ALPN when TLS is enabled, otherwise h2c (cleartext). |
+| `freeway.http.ssl.key-store-type` | inferred (`.jks` → JKS, else PKCS12) | Jetty, Undertow | Key store type. |
+| `freeway.http.ssl.trust-store` | — | Jetty, Undertow | Optional trust store for validating peer certificates. |
+| `freeway.http.ssl.trust-store-password` | `` | Jetty, Undertow | Trust store password. |
+| `freeway.http.ssl.trust-store-type` | `PKCS12` | Jetty, Undertow | Trust store type. |
+| `freeway.http.ssl.client-auth` | `false` | Jetty, Undertow | Require client certificates (mTLS). |
+| `freeway.http.ssl.protocols` | (JVM defaults) | Jetty, Undertow | Comma-separated TLS protocol versions (e.g. `TLSv1.3,TLSv1.2`). |
+| `freeway.http.ssl.ciphers` | (JVM defaults) | Jetty, Undertow | Comma-separated TLS cipher suite names. |
+| `freeway.http.ssl.http2` | `true` | Jetty, Undertow | HTTP/2 over TLS via ALPN (same key and default as the built-in engine). |
+| `freeway.http.ssl.key-password` | (same as store) | Jetty | Key manager password (Jetty extension for JKS keystores). |
+| `freeway.http.ssl.key-alias` | (first entry) | Jetty | Alias of the server certificate (Jetty extension). |
+| `freeway.http.http2` | `false` | Jetty | Jetty-only: h2c (cleartext HTTP/2). Ignored when TLS is enabled — use `freeway.http.ssl.http2` there. |
 | `freeway.http.websocket.max-frame-size` | `65536` | Jetty, Undertow | Maximum WebSocket text/binary message size in bytes; `0` disables the limit. |
 | `freeway.http.undertow.dispatch-io` | `true` | Undertow | Dispatch handler execution from I/O threads to the worker pool. Keep enabled when handlers can block (body reads, DB calls); set `false` only for fully non-blocking handlers. |
 
@@ -98,8 +108,23 @@ Example (Jetty, TLS + HTTP/2):
 -Dfreeway.http.ssl.enabled=true \
 -Dfreeway.http.ssl.key-store=/etc/freeway/keystore.p12 \
 -Dfreeway.http.ssl.key-store-password=changeit \
--Dfreeway.http.http2=true
+-Dfreeway.http.ssl.http2=true
 ```
+
+### Shared server settings honored by the adapters
+
+Both adapters receive the same `HttpServerConfig` as the built-in engine and
+honor the shared `freeway.http.server.*` keys where the underlying server
+supports them:
+
+| Key | Adapters | Notes |
+|-----|----------|-------|
+| `freeway.http.server.read-timeout` | Jetty, Undertow | Jetty maps it to the connector idle timeout; Undertow to its idle and request-parse timeouts (default 30s, `0` disables). |
+| `freeway.http.server.backlog` | Jetty, Undertow | Accept backlog (0 = platform default). |
+| `freeway.http.server.max-connections` | Jetty | Rejected at accept time via Jetty's connection limit. Undertow has no equivalent; the knob is ignored there. |
+| `freeway.http.server.write-timeout` | — | Neither adapter exposes a per-write timeout; the knob is ignored. |
+| `freeway.http.server.receive-buffer-size` / `send-buffer-size` | Jetty, Undertow | Desired socket buffer sizes (0 = OS default). |
+| `freeway.http.compression.enabled` / `min-size` | Jetty, Undertow | gzip response compression with the built-in engine's semantics (status, min-size, `Accept-Encoding` and Content-Type gates, `Vary: Accept-Encoding`). |
 
 ## Engine modules are independent
 
@@ -140,8 +165,9 @@ during assembly. Note: on Undertow an oversized message surfaces to the
 application as `onError` only (no `onClose` callback); on Jetty the listener
 also receives `onClose(1009)`.
 
-The Undertow adapter sets a 60-second connection idle timeout (and a 30-second
-request-parse timeout) — connections with no traffic are dropped. Long-lived
+The Undertow adapter's idle/parse deadlines come from the shared
+`freeway.http.server.read-timeout` (default 30 seconds, matching the built-in
+engine; `0` disables) — connections with no traffic are dropped. Long-lived
 SSE streams should therefore emit periodic heartbeat comments, and WebSocket
 peers should stay within the idle window or expect the connection to be
 closed.

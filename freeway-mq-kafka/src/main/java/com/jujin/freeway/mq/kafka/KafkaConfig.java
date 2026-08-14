@@ -28,18 +28,30 @@ import java.util.stream.Collectors;
  * {@code freeway.kafka.bootstrap-servers}).
  */
 public record KafkaConfig(
-    @Value("${freeway.kafka.bootstrap-servers:localhost:9092}") String bootstrapServers,
-    @Value("${freeway.kafka.group-id:freeway}") String groupId,
-    @Value("${freeway.kafka.client-id:}") String clientId,
-    @Value("${freeway.kafka.topics:}") String topicsRaw,
-    @Value("${freeway.kafka.allowed-event-types:}") String allowedEventTypesRaw,
-    @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicy,
-    @Value("${freeway.kafka.properties:}") String propertiesRaw,
-    @Value("${freeway.kafka.dlq-topic:}") String dlqTopic,
-    @Value("${freeway.kafka.max-retries:1}") int maxRetries,
-    @Value("${freeway.kafka.retry-backoff-ms:1000}") long retryBackoffMs,
-    @Value("${freeway.kafka.concurrency:1}") int concurrency) {
-  public KafkaConfig {
+    String bootstrapServers,
+    String groupId,
+    String clientId,
+    String topicsRaw,
+    String allowedEventTypesRaw,
+    String poisonPolicy,
+    String propertiesRaw,
+    String dlqTopic,
+    int maxRetries,
+    long retryBackoffMs,
+    int concurrency) {
+
+  public KafkaConfig(
+      @Value("${freeway.kafka.bootstrap-servers:localhost:9092}") String bootstrapServers,
+      @Value("${freeway.kafka.group-id:freeway}") String groupId,
+      @Value("${freeway.kafka.client-id:}") String clientId,
+      @Value("${freeway.kafka.topics:}") String topicsRaw,
+      @Value("${freeway.kafka.allowed-event-types:}") String allowedEventTypesRaw,
+      @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicy,
+      @Value("${freeway.kafka.properties:}") String propertiesRaw,
+      @Value("${freeway.kafka.dlq-topic:}") String dlqTopic,
+      @Value("${freeway.kafka.max-retries:1}") int maxRetries,
+      @Value("${freeway.kafka.retry-backoff-ms:1000}") long retryBackoffMs,
+      @Value("${freeway.kafka.concurrency:1}") int concurrency) {
     if (!isValidPoisonPolicy(poisonPolicy)) {
       throw new IllegalArgumentException(
           "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicy + "'");
@@ -56,6 +68,17 @@ public record KafkaConfig(
       throw new IllegalArgumentException(
           "freeway.kafka.concurrency must be >= 1, got: " + concurrency);
     }
+    this.bootstrapServers = bootstrapServers;
+    this.groupId = groupId;
+    this.clientId = clientId;
+    this.topicsRaw = topicsRaw;
+    this.allowedEventTypesRaw = allowedEventTypesRaw;
+    this.poisonPolicy = poisonPolicy;
+    this.propertiesRaw = propertiesRaw;
+    this.dlqTopic = dlqTopic;
+    this.maxRetries = maxRetries;
+    this.retryBackoffMs = retryBackoffMs;
+    this.concurrency = concurrency;
   }
 
   private static boolean isValidPoisonPolicy(String policy) {

@@ -8,6 +8,32 @@
   adapters, WebSocket sessions, contract tests, and the benchmark harness
   aligned with the tightened HTTP SPI and its naming (`HttpContext`,
   `RequestComponents`, `ErrorHandler`, `Http1xParser`).
+- **HTTP adapters**: SSL configuration now reads the shared
+  `freeway.http.ssl.*` keys of the built-in engine, including the new
+  `key-store-type`, `trust-store*`, `client-auth`, `protocols` and `ciphers`
+  options (Jetty and Undertow). HTTP/2 over TLS is keyed on
+  `freeway.http.ssl.http2` with the core's default of `true` on both
+  adapters; the old Jetty-only `freeway.http.http2` remains as the h2c
+  (cleartext) toggle and is ignored when TLS is enabled.
+- **HTTP adapters**: the shared `HttpServerConfig` knobs are now honored
+  where the underlying server supports them — `read-timeout` (Jetty idle
+  timeout; Undertow idle + parse timeouts), `backlog`, `receive/send-buffer-size`,
+  and `max-connections` (Jetty only, via `NetworkConnectionLimit`).
+  Undertow's previous hardcoded 60s/30s idle/parse defaults are replaced by
+  the shared 30s default. `write-timeout` and Undertow's `max-connections`
+  have no server equivalent and are documented as ignored.
+- **HTTP adapters**: gzip response compression implemented with the built-in
+  engine's exact semantics (`ResponseFraming` gates, `Vary: Accept-Encoding`,
+  compressed `Content-Length`) — enabled by default, min-size 256.
+- **Kafka**: `KafkaConfig` now resolves `@Value` on the canonical constructor
+  because the refactored IoC `@Value` annotation no longer targets record
+  components.
+- **DB**: `HikariPool` maps `freeway.db.pool.health-check-timeout` to
+  HikariCP's validation timeout.
+- **Build**: removed the orphaned `freeway-http-robaho/` directory (stale
+  build output from the pre-refactor module that referenced the removed
+  `Module2` SPI; it had no sources or POM). The robaho `httpserver` library
+  itself stays as a benchmark dependency for the `robaho-native` engine.
 - **Docs**: benchmark protocol table updated to the `Http1xParser` naming.
 - **CI**: Dependabot refined for Maven and GitHub Actions — weekly Monday
   morning runs, `increase` versioning strategy, and ignore rules for Freeway

@@ -53,12 +53,16 @@ class JettyTlsHttp2Test {
     System.clearProperty("freeway.http.ssl.key-store");
     System.clearProperty("freeway.http.ssl.key-store-password");
     System.clearProperty("freeway.http.ssl.key-password");
+    System.clearProperty("freeway.http.ssl.http2");
     System.clearProperty("freeway.http.http2");
   }
 
   @Test
   void servesHttpsWithTls() throws Exception {
     enableTls();
+    // freeway.http.ssl.http2 defaults to true (matching the built-in engine):
+    // the ALPN stack is up, but an HTTP/1.1-only client still negotiates 1.1.
+    System.setProperty("freeway.http.ssl.http2", "false");
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
@@ -82,9 +86,38 @@ class JettyTlsHttp2Test {
   }
 
   @Test
+  void servesHttp2OverTlsByDefault() throws Exception {
+    // No freeway.http.ssl.http2 property: the adapter must default to true,
+    // same as the built-in engine's HttpConfig.
+    enableTls();
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var client =
+        HttpClient.newBuilder()
+            .sslContext(trustingSslContext())
+            .version(HttpClient.Version.HTTP_2)
+            .connectTimeout(Duration.ofSeconds(5))
+            .build();
+
+    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+      server.start();
+      var resp =
+          client.send(
+              HttpRequest.newBuilder(URI.create("https://127.0.0.1:" + server.port() + "/ping"))
+                  .GET()
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, resp.statusCode());
+      assertEquals("pong", resp.body());
+      assertEquals(HttpClient.Version.HTTP_2, resp.version());
+    }
+  }
+
+  @Test
   void servesHttp2OverTlsWithAlpn() throws Exception {
     enableTls();
-    System.setProperty("freeway.http.http2", "true");
+    System.setProperty("freeway.http.ssl.http2", "true");
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =

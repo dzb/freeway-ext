@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -97,7 +98,7 @@ public record KafkaConfig(
     return PROCESS_ORIGIN;
   }
 
-  private static final String PROCESS_ORIGIN = java.util.UUID.randomUUID().toString();
+  private static final String PROCESS_ORIGIN = UUID.randomUUID().toString();
 
   private static boolean isValidPoisonPolicy(String policy) {
     if (policy == null || policy.isBlank()) {

@@ -23,6 +23,7 @@ import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
+import java.util.UUID;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -111,7 +112,7 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
         .add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
     record
         .headers()
-        .add("X-Event-Id", java.util.UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
+        .add("X-Event-Id", UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
     producer.send(
         record,
         (meta, ex) -> {

@@ -30,12 +30,12 @@ class KafkaConfigTest {
 
   private static KafkaConfig config(String topics, String allowed, String policy) {
     return new KafkaConfig(
-        "localhost:9092", "test-group", "", topics, allowed, policy, "", "", 1, 1000, 1);
+        "localhost:9092", "test-group", "", topics, allowed, policy, "", "", 1, 1000, 1, true);
   }
 
   private static KafkaConfig config(String clientId, String topics, String allowed, String policy) {
     return new KafkaConfig(
-        "localhost:9092", "test-group", clientId, topics, allowed, policy, "", "", 1, 1000, 1);
+        "localhost:9092", "test-group", clientId, topics, allowed, policy, "", "", 1, 1000, 1, true);
   }
 
   @Test
@@ -77,6 +77,42 @@ class KafkaConfigTest {
   }
 
   @Test
+  void originUsesClientIdWhenConfigured() {
+    assertEquals("node-1", config("node-1", "orders", "", "skip").origin());
+  }
+
+  @Test
+  void originFallsBackToStableProcessIdentity() {
+    String fromClientIdHelper = config("", "orders", "", "skip").origin();
+    String fromTopicsHelper = config("orders", "", "skip").origin();
+    assertFalse(fromClientIdHelper.isBlank(), "origin must never be blank");
+    assertEquals(
+        fromClientIdHelper,
+        fromTopicsHelper,
+        "blank clientId must fall back to the same per-process origin");
+  }
+
+  @Test
+  void suppressOwnDefaultsToTrue() {
+    assertTrue(config("orders", "", "skip").suppressOwn());
+    assertFalse(
+        new KafkaConfig(
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "",
+                "skip",
+                "",
+                "",
+                1,
+                1000,
+                1,
+                false)
+            .suppressOwn());
+  }
+
+  @Test
   void extraPropertiesParsesKeyValuePairs() {
     var config =
         new KafkaConfig(
@@ -90,7 +126,8 @@ class KafkaConfigTest {
             "",
             1,
             1000,
-            1);
+            1,
+            true);
     Properties props = config.extraProperties();
     assertEquals(2, props.size());
     assertEquals("SASL_SSL", props.getProperty("security.protocol"));
@@ -106,7 +143,7 @@ class KafkaConfigTest {
   void malformedExtraPropertyIsRejected() {
     var config =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "just-a-key", "", 1, 1000, 1);
+            "localhost:9092", "test-group", "", "orders", "", "skip", "just-a-key", "", 1, 1000, 1, true);
     assertThrows(IllegalArgumentException.class, config::extraProperties);
   }
 
@@ -115,7 +152,7 @@ class KafkaConfigTest {
     assertFalse(config("orders", "", "skip").dlqEnabled());
     var enabled =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 1000, 1);
+            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 1000, 1, true);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -125,16 +162,16 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             new KafkaConfig(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", -1, 1000, 1));
+                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", -1, 1000, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new KafkaConfig(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, -1, 1));
+                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, -1, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             new KafkaConfig(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 0));
+                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 0, true));
   }
 }

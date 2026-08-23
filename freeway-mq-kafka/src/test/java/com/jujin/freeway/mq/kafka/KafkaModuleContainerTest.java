@@ -58,6 +58,7 @@ class KafkaModuleContainerTest {
       assertEquals(List.of("orders", "payments"), config.topics());
       assertEquals(Set.of("com.acme.OrderCreated"), config.allowedEventTypes());
       assertTrue(config.failOnPoison());
+      assertTrue(config.suppressOwn(), "suppress-own must default to true");
       assertEquals("SASL_SSL", config.extraProperties().getProperty("security.protocol"));
     }
   }

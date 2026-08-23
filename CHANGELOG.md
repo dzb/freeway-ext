@@ -4,10 +4,28 @@
 
 ### Changed
 
-- **Build**: upgraded to Freeway core `1.3.8-SNAPSHOT`; Jetty/Undertow
+- **Build**: aligned with the released Freeway core `1.3.8` (was
+  `1.3.8-SNAPSHOT`); Jetty/Undertow
   adapters, WebSocket sessions, contract tests, and the benchmark harness
   aligned with the tightened HTTP SPI and its naming (`HttpContext`,
   `RequestComponents`, `ErrorHandler`, `Http1xParser`).
+- **Kafka**: cross-JVM event-bus semantics — outbound envelopes now carry
+  `X-Event-Origin` (node identity: `freeway.kafka.client-id`, else a
+  per-process UUID) and `X-Event-Channel` (`CLASS`/`TOPIC`); inbound dispatch
+  mirrors the channel, so class events re-enter the class channel and topic
+  events the topic channel (header-less messages from older producers keep
+  topic dispatch). Events are consumed via `EventBus.publishInbound`, so
+  inbound traffic is never re-bridged (no queue loop). Own re-broadcast
+  events are suppressed by default (`freeway.kafka.suppress-own`, default
+  `true`, disable for DLQ replay) to avoid duplicate local delivery in
+  publish-and-subscribe-topology nodes.
+- **Kafka**: events implementing `EventBus.Keyed` are now published with
+  `key()` as the Kafka record key — per-aggregate ordering on the broker and
+  key-partitioned parallel consumption (previously every record carried a
+  null key, so `freeway.kafka.concurrency` serialized all messages into one
+  bucket). Every envelope also carries an `X-Event-Id` UUID for correlation;
+  delivery stays at-least-once (documented on `KafkaEventBridge`) —
+  consumers needing exactly-once must deduplicate by their own business key.
 - **HTTP adapters**: SSL configuration now reads the shared
   `freeway.http.ssl.*` keys of the built-in engine, including the new
   `key-store-type`, `trust-store*`, `client-auth`, `protocols` and `ciphers`

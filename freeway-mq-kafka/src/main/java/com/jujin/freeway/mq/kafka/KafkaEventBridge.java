@@ -19,6 +19,7 @@ package com.jujin.freeway.mq.kafka;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.EventBridge;
+import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;
@@ -32,19 +33,42 @@ import org.slf4j.LoggerFactory;
 
 /**
  * {@link EventBridge} that publishes Freeway events to Kafka topics. Events are serialized as JSON
- * with an {@code X-Event-Type} header carrying the concrete class name.
+ * with an {@code X-Event-Type} header carrying the concrete class name, plus {@code X-Event-Origin}
+ * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and
+ * {@code X-Event-Id} (per-send UUID for correlation).
+ *
+ * <p>Events implementing {@link EventBus.Keyed} are published with
+ * {@code key()} as the record key, so the broker keeps per-aggregate order and consuming
+ * subscribers can parallelize across keys. Other events carry a null key.</p>
+ *
+ * <p><b>Delivery semantics:</b> at-least-once. Producer retries and consumer rebalances can
+ * deliver duplicates; consumers that need exactly-once must deduplicate by their own business
+ * key. Inbound consumers must not re-bridge received events (see
+ * {@code EventBus.publishInbound}).</p>
  */
 public class KafkaEventBridge implements EventBridge, AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(KafkaEventBridge.class);
 
   private final Producer<String, byte[]> producer;
   private final JsonCodec codec;
+  private final String origin;
 
   public KafkaEventBridge(KafkaConfig config) {
     this(config, new JsonCodecDefault());
   }
 
   public KafkaEventBridge(KafkaConfig config, JsonCodec codec) {
+    this(config, codec, createProducer(config));
+  }
+
+  /** Test seam: allows injecting a mock producer. */
+  KafkaEventBridge(KafkaConfig config, JsonCodec codec, Producer<String, byte[]> producer) {
+    this.producer = producer;
+    this.codec = codec;
+    this.origin = config.origin();
+  }
+
+  private static Producer<String, byte[]> createProducer(KafkaConfig config) {
     var props = new Properties();
     props.put("bootstrap.servers", config.bootstrapServers());
     props.put("key.serializer", StringSerializer.class.getName());
@@ -55,22 +79,39 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
       props.put("client.id", config.clientId() + "-producer");
     }
     props.putAll(config.extraProperties());
-    this.producer = new KafkaProducer<>(props);
-    this.codec = codec;
+    return new KafkaProducer<>(props);
   }
 
   @Override
   public void send(String topic, Object event) {
+    // Direct two-argument callers publish on the topic channel.
+    send(topic, event, EventBridge.Channel.TOPIC);
+  }
+
+  @Override
+  public void send(String topic, Object event, EventBridge.Channel channel) {
     byte[] bytes;
     try {
       bytes = codec.toJson(event).getBytes(StandardCharsets.UTF_8);
     } catch (Exception ex) {
       throw new RuntimeException("Failed to serialize event for topic '" + topic + "'", ex);
     }
-    var record = new ProducerRecord<String, byte[]>(topic, null, bytes);
+    // EventBus.Keyed key -> Kafka record key: per-aggregate ordering on the
+    // broker and per-key parallel consumption on the subscriber side.
+    String key = (event instanceof EventBus.Keyed k) ? k.key() : null;
+    var record = new ProducerRecord<String, byte[]>(topic, key, bytes);
     record
         .headers()
         .add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
+    record
+        .headers()
+        .add("X-Event-Origin", origin.getBytes(StandardCharsets.UTF_8));
+    record
+        .headers()
+        .add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
+    record
+        .headers()
+        .add("X-Event-Id", java.util.UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
     producer.send(
         record,
         (meta, ex) -> {

@@ -69,6 +69,9 @@ public class KafkaSubscriber implements AutoCloseable {
   private final Producer<String, byte[]> dlqProducer;
   private final ExecutorService executor;
   private final int concurrency;
+  /** This node's identity on the wire; used to skip its own re-broadcast events. */
+  private final String origin;
+  private final boolean suppressOwn;
   private volatile boolean running;
   private volatile Thread pollThread;
 
@@ -96,6 +99,8 @@ public class KafkaSubscriber implements AutoCloseable {
     this.consumer = consumer;
     this.dlqProducer = dlqProducer;
     this.concurrency = config.concurrency();
+    this.origin = config.origin();
+    this.suppressOwn = config.suppressOwn();
     this.executor = concurrency > 1 ? Executors.newFixedThreadPool(concurrency) : null;
   }
 
@@ -245,6 +250,18 @@ public class KafkaSubscriber implements AutoCloseable {
       LOG.debug("Skipping tombstone at '{}' offset {}", record.topic(), record.offset());
       return true;
     }
+    if (suppressOwn && isOwnEvent(record)) {
+      // This node's own re-broadcast event (published locally, bridged out,
+      // and consumed back by the same group): local subscribers already
+      // received it at publish time. Skip to avoid duplicate local delivery.
+      // Not a failure — acknowledge so the offset is committed.
+      LOG.debug(
+          "Skipping own event at '{}' offset {} (origin {})",
+          record.topic(),
+          record.offset(),
+          origin);
+      return true;
+    }
     int attempts = config.maxRetries() + 1;
     Exception lastFailure = null;
     for (int attempt = 0; attempt < attempts; attempt++) {
@@ -347,8 +364,30 @@ public class KafkaSubscriber implements AutoCloseable {
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
-          bus.publish(record.topic(), event);
+          // Inbound events are never re-bridged (publishInbound), so a
+          // consumed event cannot loop back into the queue. The dispatch
+          // channel mirrors the producer's: class events re-enter the
+          // class channel, topic events the topic channel.
+          if (classChannel(record)) {
+            bus.publishInbound(event);
+          } else {
+            bus.publishInbound(record.topic(), event);
+          }
         });
+  }
+
+  /** True when the producer bridged this record on the class dispatch channel. */
+  private boolean classChannel(ConsumerRecord<String, byte[]> record) {
+    String channel = header(record, "X-Event-Channel");
+    // Absent header means an older producer — fall back to topic dispatch,
+    // the pre-channel behavior.
+    return channel != null && "CLASS".equalsIgnoreCase(channel.trim());
+  }
+
+  /** True when this record was published by this node (its origin header matches ours). */
+  private boolean isOwnEvent(ConsumerRecord<String, byte[]> record) {
+    String recordOrigin = header(record, "X-Event-Origin");
+    return recordOrigin != null && recordOrigin.equals(origin);
   }
 
   private Object deserialize(ConsumerRecord<String, byte[]> record) throws Exception {

@@ -46,10 +46,14 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("deprecation")
 class KafkaSubscriberTest {
 
+  /** Typed event used to verify class-channel dispatch across the bridge. */
+  record TestEvent(String value) {}
+
+
   @Test
   void consumesAndPublishesMessagesUntilClosed() throws Exception {
     var config =
-        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1);
+        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
 
@@ -80,7 +84,7 @@ class KafkaSubscriberTest {
   void poisonMessageIsForwardedToDlq() throws Exception {
     var config =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 0, 1);
+            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 0, 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var dlqProducer =
         new MockProducer<String, byte[]>(
@@ -132,7 +136,7 @@ class KafkaSubscriberTest {
   @Test
   void concurrentConsumptionDeliversAllMessages() throws Exception {
     var config =
-        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2);
+        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
 
@@ -161,6 +165,205 @@ class KafkaSubscriberTest {
         Thread.sleep(20);
       }
       assertEquals(10, received.size(), "all messages should be delivered with concurrency=2");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void typedClassEventIsDispatchedByClassChannel() throws Exception {
+    var config =
+        new KafkaConfig(
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            TestEvent.class.getName(),
+            "skip",
+            "",
+            "",
+            1,
+            0,
+            1,
+            true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var byClass = new LinkedBlockingQueue<Object>();
+      var byTopic = new LinkedBlockingQueue<Object>();
+      bus.subscribe(TestEvent.class, byClass::add);
+      bus.subscribe("orders", byTopic::add);
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      // Class-channel envelope: type header + channel marker.
+      var record =
+          new ConsumerRecord<>(
+              "orders",
+              0,
+              0L,
+              "key-1",
+              "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
+      record
+          .headers()
+          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Channel", "CLASS".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      Object event = byClass.poll(5, TimeUnit.SECONDS);
+      assertNotNull(event, "class-channel event must reach class subscribers");
+      assertTrue(event instanceof TestEvent, "typed event must deserialize to the declared class");
+      assertEquals("hi", ((TestEvent) event).value());
+      assertTrue(byTopic.isEmpty(), "class-channel event must not dispatch on the topic channel");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void typedMessageWithoutChannelHeaderDefaultsToTopicDispatch() throws Exception {
+    // Backward compatibility: producers that predate the channel header
+    // always dispatched inbound events on the topic channel.
+    var config =
+        new KafkaConfig(
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            TestEvent.class.getName(),
+            "skip",
+            "",
+            "",
+            1,
+            0,
+            1,
+            true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var byClass = new LinkedBlockingQueue<Object>();
+      var byTopic = new LinkedBlockingQueue<Object>();
+      bus.subscribe(TestEvent.class, byClass::add);
+      bus.subscribe("orders", byTopic::add);
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      // Type header present, channel header absent.
+      var record =
+          new ConsumerRecord<>(
+              "orders",
+              0,
+              0L,
+              "key-1",
+              "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
+      record
+          .headers()
+          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      Object event = byTopic.poll(5, TimeUnit.SECONDS);
+      assertNotNull(event, "header-less messages must keep dispatching on the topic channel");
+      assertTrue(event instanceof TestEvent);
+      assertTrue(byClass.isEmpty(), "topic dispatch must not reach class subscribers");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void ownOriginMessagesAreSuppressed() throws Exception {
+    var config =
+        new KafkaConfig(
+            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var received = new LinkedBlockingQueue<Object>();
+      bus.subscribe("orders", received::add);
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      // This node's own re-broadcast (origin == config origin) -> suppressed.
+      var own =
+          new ConsumerRecord<>(
+              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+      own.headers().add("X-Event-Origin", "node-1".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(own);
+
+      // Foreign event -> delivered.
+      var foreign =
+          new ConsumerRecord<>(
+              "orders", 0, 1L, "key-1", "{\"x\":2}".getBytes(StandardCharsets.UTF_8));
+      foreign.headers().add("X-Event-Origin", "node-2".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(foreign);
+
+      Object event = received.poll(5, TimeUnit.SECONDS);
+      assertNotNull(event, "foreign event must be delivered");
+      assertTrue(event instanceof Map);
+      assertEquals(2, ((Map<?, ?>) event).get("x"), "the own event must be suppressed");
+      assertTrue(received.isEmpty(), "only the foreign event may be delivered");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void suppressionCanBeDisabled() throws Exception {
+    var config =
+        new KafkaConfig(
+            "localhost:9092",
+            "test-group",
+            "node-1",
+            "orders",
+            "",
+            "skip",
+            "",
+            "",
+            1,
+            0,
+            1,
+            false);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var received = new LinkedBlockingQueue<Object>();
+      bus.subscribe("orders", received::add);
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var own =
+          new ConsumerRecord<>(
+              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+      own.headers().add("X-Event-Origin", "node-1".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(own);
+
+      Object event = received.poll(5, TimeUnit.SECONDS);
+      assertNotNull(event, "with suppress-own=false own events are delivered");
+      assertTrue(received.isEmpty());
 
       subscriber.close();
       assertTrue(consumer.closed());

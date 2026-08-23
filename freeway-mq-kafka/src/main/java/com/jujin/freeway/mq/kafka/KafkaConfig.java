@@ -38,7 +38,8 @@ public record KafkaConfig(
     String dlqTopic,
     int maxRetries,
     long retryBackoffMs,
-    int concurrency) {
+    int concurrency,
+    boolean suppressOwn) {
 
   public KafkaConfig(
       @Value("${freeway.kafka.bootstrap-servers:localhost:9092}") String bootstrapServers,
@@ -51,7 +52,8 @@ public record KafkaConfig(
       @Value("${freeway.kafka.dlq-topic:}") String dlqTopic,
       @Value("${freeway.kafka.max-retries:1}") int maxRetries,
       @Value("${freeway.kafka.retry-backoff-ms:1000}") long retryBackoffMs,
-      @Value("${freeway.kafka.concurrency:1}") int concurrency) {
+      @Value("${freeway.kafka.concurrency:1}") int concurrency,
+      @Value("${freeway.kafka.suppress-own:true}") boolean suppressOwn) {
     if (!isValidPoisonPolicy(poisonPolicy)) {
       throw new IllegalArgumentException(
           "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicy + "'");
@@ -79,7 +81,23 @@ public record KafkaConfig(
     this.maxRetries = maxRetries;
     this.retryBackoffMs = retryBackoffMs;
     this.concurrency = concurrency;
+    this.suppressOwn = suppressOwn;
   }
+
+  /**
+   * Per-process identity used to recognize this node's own messages. Falls back to a UUID unique
+   * per JVM when no {@code clientId} is configured, so the bridge and the subscriber always agree
+   * on the origin even across separate {@link KafkaConfig} instances. Set a unique
+   * {@code freeway.kafka.client-id} per node for a stable identity across restarts.
+   */
+  public String origin() {
+    if (clientId != null && !clientId.isBlank()) {
+      return clientId;
+    }
+    return PROCESS_ORIGIN;
+  }
+
+  private static final String PROCESS_ORIGIN = java.util.UUID.randomUUID().toString();
 
   private static boolean isValidPoisonPolicy(String policy) {
     if (policy == null || policy.isBlank()) {

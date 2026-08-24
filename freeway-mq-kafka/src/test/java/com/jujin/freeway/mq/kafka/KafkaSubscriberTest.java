@@ -49,11 +49,11 @@ class KafkaSubscriberTest {
   /** Typed event used to verify class-channel dispatch across the bridge. */
   record TestEvent(String value) {}
 
-
   @Test
   void consumesAndPublishesMessagesUntilClosed() throws Exception {
     var config =
-        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1, true);
+        new KafkaConfig(
+            "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
 
@@ -84,7 +84,18 @@ class KafkaSubscriberTest {
   void poisonMessageIsForwardedToDlq() throws Exception {
     var config =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 0, 1, true);
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            "",
+            "skip",
+            "",
+            "orders-dlq",
+            1,
+            0,
+            1,
+            true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var dlqProducer =
         new MockProducer<String, byte[]>(
@@ -136,7 +147,8 @@ class KafkaSubscriberTest {
   @Test
   void concurrentConsumptionDeliversAllMessages() throws Exception {
     var config =
-        new KafkaConfig("localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2, true);
+        new KafkaConfig(
+            "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
 
@@ -205,11 +217,7 @@ class KafkaSubscriberTest {
       // Class-channel envelope: type header + channel marker.
       var record =
           new ConsumerRecord<>(
-              "orders",
-              0,
-              0L,
-              "key-1",
-              "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
+              "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
       record
           .headers()
           .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
@@ -263,11 +271,7 @@ class KafkaSubscriberTest {
       // Type header present, channel header absent.
       var record =
           new ConsumerRecord<>(
-              "orders",
-              0,
-              0L,
-              "key-1",
-              "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
+              "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
       record
           .headers()
           .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
@@ -330,18 +334,7 @@ class KafkaSubscriberTest {
   void suppressionCanBeDisabled() throws Exception {
     var config =
         new KafkaConfig(
-            "localhost:9092",
-            "test-group",
-            "node-1",
-            "orders",
-            "",
-            "skip",
-            "",
-            "",
-            1,
-            0,
-            1,
-            false);
+            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, false);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
 

@@ -69,8 +69,10 @@ public class KafkaSubscriber implements AutoCloseable {
   private final Producer<String, byte[]> dlqProducer;
   private final ExecutorService executor;
   private final int concurrency;
+
   /** This node's identity on the wire; used to skip its own re-broadcast events. */
   private final String origin;
+
   private final boolean suppressOwn;
   private volatile boolean running;
   private volatile Thread pollThread;

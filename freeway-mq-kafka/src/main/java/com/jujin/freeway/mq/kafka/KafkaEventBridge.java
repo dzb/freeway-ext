@@ -35,17 +35,16 @@ import org.slf4j.LoggerFactory;
 /**
  * {@link EventBridge} that publishes Freeway events to Kafka topics. Events are serialized as JSON
  * with an {@code X-Event-Type} header carrying the concrete class name, plus {@code X-Event-Origin}
- * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and
- * {@code X-Event-Id} (per-send UUID for correlation).
+ * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and {@code
+ * X-Event-Id} (per-send UUID for correlation).
  *
- * <p>Events implementing {@link EventBus.Keyed} are published with
- * {@code key()} as the record key, so the broker keeps per-aggregate order and consuming
- * subscribers can parallelize across keys. Other events carry a null key.</p>
+ * <p>Events implementing {@link EventBus.Keyed} are published with {@code key()} as the record key,
+ * so the broker keeps per-aggregate order and consuming subscribers can parallelize across keys.
+ * Other events carry a null key.
  *
- * <p><b>Delivery semantics:</b> at-least-once. Producer retries and consumer rebalances can
- * deliver duplicates; consumers that need exactly-once must deduplicate by their own business
- * key. Inbound consumers must not re-bridge received events (see
- * {@code EventBus.publishInbound}).</p>
+ * <p><b>Delivery semantics:</b> at-least-once. Producer retries and consumer rebalances can deliver
+ * duplicates; consumers that need exactly-once must deduplicate by their own business key. Inbound
+ * consumers must not re-bridge received events (see {@code EventBus.publishInbound}).
  */
 public class KafkaEventBridge implements EventBridge, AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(KafkaEventBridge.class);
@@ -104,12 +103,8 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
     record
         .headers()
         .add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
-    record
-        .headers()
-        .add("X-Event-Origin", origin.getBytes(StandardCharsets.UTF_8));
-    record
-        .headers()
-        .add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
+    record.headers().add("X-Event-Origin", origin.getBytes(StandardCharsets.UTF_8));
+    record.headers().add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
     record
         .headers()
         .add("X-Event-Id", UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));

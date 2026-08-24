@@ -77,8 +77,8 @@ class KafkaEventBridgeTest {
     KafkaEventBridge bridge = bridge("", producer);
     bridge.send("orders", new PlainTestEvent("x"), EventBridge.Channel.CLASS);
 
-    assertNull(producer.history().getFirst().key(),
-        "events without a key must keep a null record key");
+    assertNull(
+        producer.history().getFirst().key(), "events without a key must keep a null record key");
   }
 
   @Test
@@ -94,10 +94,10 @@ class KafkaEventBridgeTest {
         KeyedTestEvent.class.getName(),
         header(record, "X-Event-Type"),
         "the concrete event class must be carried for typed deserialization");
-    assertEquals("node-1", header(record, "X-Event-Origin"),
-        "the node identity (clientId) must be stamped");
-    assertEquals("TOPIC", header(record, "X-Event-Channel"),
-        "the dispatch channel must be stamped");
+    assertEquals(
+        "node-1", header(record, "X-Event-Origin"), "the node identity (clientId) must be stamped");
+    assertEquals(
+        "TOPIC", header(record, "X-Event-Channel"), "the dispatch channel must be stamped");
     assertNotNull(header(record, "X-Event-Id"), "every envelope must carry an event id");
     assertFalse(header(record, "X-Event-Id").isBlank());
   }

@@ -35,7 +35,18 @@ class KafkaConfigTest {
 
   private static KafkaConfig config(String clientId, String topics, String allowed, String policy) {
     return new KafkaConfig(
-        "localhost:9092", "test-group", clientId, topics, allowed, policy, "", "", 1, 1000, 1, true);
+        "localhost:9092",
+        "test-group",
+        clientId,
+        topics,
+        allowed,
+        policy,
+        "",
+        "",
+        1,
+        1000,
+        1,
+        true);
   }
 
   @Test
@@ -97,18 +108,7 @@ class KafkaConfigTest {
     assertTrue(config("orders", "", "skip").suppressOwn());
     assertFalse(
         new KafkaConfig(
-                "localhost:9092",
-                "test-group",
-                "",
-                "orders",
-                "",
-                "skip",
-                "",
-                "",
-                1,
-                1000,
-                1,
-                false)
+                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 1, false)
             .suppressOwn());
   }
 
@@ -143,7 +143,18 @@ class KafkaConfigTest {
   void malformedExtraPropertyIsRejected() {
     var config =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "just-a-key", "", 1, 1000, 1, true);
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            "",
+            "skip",
+            "just-a-key",
+            "",
+            1,
+            1000,
+            1,
+            true);
     assertThrows(IllegalArgumentException.class, config::extraProperties);
   }
 
@@ -152,7 +163,18 @@ class KafkaConfigTest {
     assertFalse(config("orders", "", "skip").dlqEnabled());
     var enabled =
         new KafkaConfig(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "orders-dlq", 1, 1000, 1, true);
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            "",
+            "skip",
+            "",
+            "orders-dlq",
+            1,
+            1000,
+            1,
+            true);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -162,7 +184,18 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             new KafkaConfig(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", -1, 1000, 1, true));
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "",
+                "skip",
+                "",
+                "",
+                -1,
+                1000,
+                1,
+                true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -172,6 +205,17 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             new KafkaConfig(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 0, true));
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "",
+                "skip",
+                "",
+                "",
+                1,
+                1000,
+                0,
+                true));
   }
 }

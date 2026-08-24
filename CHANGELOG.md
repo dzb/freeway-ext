@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.9
+
+### Changed
+
+- **Build**: aligned with the released Freeway core `1.3.9` (was
+  `1.3.8-SNAPSHOT`). All adapters build and test against the core release;
+  no API breaks — the release is additive on the core side.
+
+### Notes
+
+- **No adaptation needed for the new message-domain APIs** (verified):
+  `EventBus.stream()` is a local subscription view and deliberately never
+  crosses the MQ bridge; `CallBus` is strictly in-process (its javadoc
+  defers remote invocation to freeway-cloud), so there is no Kafka RPC
+  bridging to add; the Jetty/Undertow contexts construct the core
+  `SseEmitter` directly, so its new reactive pump (`from(Flow.Publisher)`)
+  works through both engines without adapter changes.
+
 ## 1.3.8-SNAPSHOT
 
 ### Changed

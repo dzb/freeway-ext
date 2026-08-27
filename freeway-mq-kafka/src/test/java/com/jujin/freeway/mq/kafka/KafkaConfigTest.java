@@ -29,12 +29,12 @@ import org.junit.jupiter.api.Test;
 class KafkaConfigTest {
 
   private static KafkaConfig config(String topics, String allowed, String policy) {
-    return new KafkaConfig(
+    return KafkaConfig.of(
         "localhost:9092", "test-group", "", topics, allowed, policy, "", "", 1, 1000, 1, true);
   }
 
   private static KafkaConfig config(String clientId, String topics, String allowed, String policy) {
-    return new KafkaConfig(
+    return KafkaConfig.of(
         "localhost:9092",
         "test-group",
         clientId,
@@ -107,7 +107,7 @@ class KafkaConfigTest {
   void suppressOwnDefaultsToTrue() {
     assertTrue(config("orders", "", "skip").suppressOwn());
     assertFalse(
-        new KafkaConfig(
+        KafkaConfig.of(
                 "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 1, false)
             .suppressOwn());
   }
@@ -115,7 +115,7 @@ class KafkaConfigTest {
   @Test
   void extraPropertiesParsesKeyValuePairs() {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092",
             "test-group",
             "",
@@ -141,28 +141,29 @@ class KafkaConfigTest {
 
   @Test
   void malformedExtraPropertyIsRejected() {
-    var config =
-        new KafkaConfig(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            "",
-            "skip",
-            "just-a-key",
-            "",
-            1,
-            1000,
-            1,
-            true);
-    assertThrows(IllegalArgumentException.class, config::extraProperties);
+    assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            KafkaConfig.of(
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "",
+                "skip",
+                "just-a-key",
+                "",
+                1,
+                1000,
+                1,
+                true));
   }
 
   @Test
   void dlqDefaultsToDisabled() {
     assertFalse(config("orders", "", "skip").dlqEnabled());
     var enabled =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092",
             "test-group",
             "",
@@ -183,7 +184,7 @@ class KafkaConfigTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new KafkaConfig(
+            KafkaConfig.of(
                 "localhost:9092",
                 "test-group",
                 "",
@@ -199,12 +200,12 @@ class KafkaConfigTest {
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new KafkaConfig(
+            KafkaConfig.of(
                 "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, -1, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
-            new KafkaConfig(
+            KafkaConfig.of(
                 "localhost:9092",
                 "test-group",
                 "",

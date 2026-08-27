@@ -109,7 +109,8 @@ public final class ServerHarness implements AutoCloseable {
       throw new IllegalArgumentException(
           "Unknown engine: "
               + s
-              + ". Supported: freeway, jdk-native, robaho-native, undertow-native, undertow-adapter, jetty-adapter, jetty-native");
+              + ". Supported: freeway, jdk-native, robaho-native, undertow-native,"
+              + " undertow-adapter, jetty-adapter, jetty-native");
     }
   }
 

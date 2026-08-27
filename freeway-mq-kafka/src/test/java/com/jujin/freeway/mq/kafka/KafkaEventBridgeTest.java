@@ -45,7 +45,7 @@ class KafkaEventBridgeTest {
 
   private static KafkaEventBridge bridge(String clientId, MockProducer<String, byte[]> producer) {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092", "test-group", clientId, "orders", "", "skip", "", "", 1, 0, 1, true);
     return new KafkaEventBridge(config, new JsonCodecDefault(), producer);
   }

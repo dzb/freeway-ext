@@ -19,6 +19,7 @@ package com.jujin.freeway.mq.kafka;
 import com.jujin.freeway.ioc.annotation.Value;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
@@ -26,39 +27,53 @@ import java.util.stream.Collectors;
 
 /**
  * Configuration for the Kafka adapter, resolved from the config cascade via {@code @Value} (e.g.
- * {@code freeway.kafka.bootstrap-servers}).
+ * {@code freeway.kafka.bootstrap-servers}). Components are fully parsed — raw config-cascade
+ * strings are normalized by {@link #of}.
  */
 public record KafkaConfig(
     String bootstrapServers,
     String groupId,
     String clientId,
-    String topicsRaw,
-    String allowedEventTypesRaw,
-    String poisonPolicy,
-    String propertiesRaw,
+    List<String> topics,
+    Set<String> allowedEventTypes,
+    PoisonPolicy poisonPolicy,
+    Properties extraProperties,
     String dlqTopic,
     int maxRetries,
     long retryBackoffMs,
     int concurrency,
     boolean suppressOwn) {
 
-  public KafkaConfig(
+  /** Poison-message policy: {@code SKIP} logs and continues, {@code FAIL} stops the subscriber. */
+  public enum PoisonPolicy {
+    SKIP,
+    FAIL
+  }
+
+  private static final String PROCESS_ORIGIN = UUID.randomUUID().toString();
+
+  /**
+   * Adapting factory: parses the raw config-cascade strings (see the {@code freeway.kafka.*}
+   * defaults) into the typed components above, validating as it goes.
+   */
+  public static KafkaConfig of(
       @Value("${freeway.kafka.bootstrap-servers:localhost:9092}") String bootstrapServers,
       @Value("${freeway.kafka.group-id:freeway}") String groupId,
       @Value("${freeway.kafka.client-id:}") String clientId,
       @Value("${freeway.kafka.topics:}") String topicsRaw,
       @Value("${freeway.kafka.allowed-event-types:}") String allowedEventTypesRaw,
-      @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicy,
+      @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicyRaw,
       @Value("${freeway.kafka.properties:}") String propertiesRaw,
       @Value("${freeway.kafka.dlq-topic:}") String dlqTopic,
       @Value("${freeway.kafka.max-retries:1}") int maxRetries,
       @Value("${freeway.kafka.retry-backoff-ms:1000}") long retryBackoffMs,
       @Value("${freeway.kafka.concurrency:1}") int concurrency,
       @Value("${freeway.kafka.suppress-own:true}") boolean suppressOwn) {
-    if (!isValidPoisonPolicy(poisonPolicy)) {
+    if (!isValidPoisonPolicy(poisonPolicyRaw)) {
       throw new IllegalArgumentException(
-          "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicy + "'");
+          "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicyRaw + "'");
     }
+    var poisonPolicy = PoisonPolicy.valueOf(poisonPolicyRaw.trim().toUpperCase(Locale.ROOT));
     if (maxRetries < 0) {
       throw new IllegalArgumentException(
           "freeway.kafka.max-retries must be >= 0, got: " + maxRetries);
@@ -71,18 +86,19 @@ public record KafkaConfig(
       throw new IllegalArgumentException(
           "freeway.kafka.concurrency must be >= 1, got: " + concurrency);
     }
-    this.bootstrapServers = bootstrapServers;
-    this.groupId = groupId;
-    this.clientId = clientId;
-    this.topicsRaw = topicsRaw;
-    this.allowedEventTypesRaw = allowedEventTypesRaw;
-    this.poisonPolicy = poisonPolicy;
-    this.propertiesRaw = propertiesRaw;
-    this.dlqTopic = dlqTopic;
-    this.maxRetries = maxRetries;
-    this.retryBackoffMs = retryBackoffMs;
-    this.concurrency = concurrency;
-    this.suppressOwn = suppressOwn;
+    return new KafkaConfig(
+        bootstrapServers,
+        groupId,
+        clientId,
+        parseList(topicsRaw),
+        parseSet(allowedEventTypesRaw),
+        poisonPolicy,
+        parseProperties(propertiesRaw),
+        dlqTopic,
+        maxRetries,
+        retryBackoffMs,
+        concurrency,
+        suppressOwn);
   }
 
   /**
@@ -98,54 +114,42 @@ public record KafkaConfig(
     return PROCESS_ORIGIN;
   }
 
-  private static final String PROCESS_ORIGIN = UUID.randomUUID().toString();
-
-  private static boolean isValidPoisonPolicy(String policy) {
-    if (policy == null || policy.isBlank()) {
-      return false;
-    }
-    String trimmed = policy.trim();
-    return "skip".equalsIgnoreCase(trimmed) || "fail".equalsIgnoreCase(trimmed);
-  }
-
-  public List<String> topics() {
-    if (topicsRaw == null || topicsRaw.isBlank()) return List.of();
-    return Arrays.stream(topicsRaw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
-  }
-
   /**
-   * Comma-separated allowlist of event types that may be deserialized from incoming messages. When
-   * empty, only plain {@code Map} payloads (messages without an {@code X-Event-Type} header) are
-   * accepted. Typed messages whose type is not listed are rejected instead of being deserialized
-   * into arbitrary classes from the classpath.
+   * Poison-message policy: {@code skip} (default) logs an error and continues, {@code fail} stops
+   * the subscriber so the offset is not committed.
    */
-  public Set<String> allowedEventTypes() {
-    if (allowedEventTypesRaw == null || allowedEventTypesRaw.isBlank()) return Set.of();
-    return Arrays.stream(allowedEventTypesRaw.split(","))
+  public boolean failOnPoison() {
+    return poisonPolicy == PoisonPolicy.FAIL;
+  }
+
+  /** Returns true when poison messages should be forwarded to a DLQ topic. */
+  public boolean dlqEnabled() {
+    return dlqTopic != null && !dlqTopic.isBlank();
+  }
+
+  private static List<String> parseList(String raw) {
+    if (raw == null || raw.isBlank()) return List.of();
+    return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+  }
+
+  private static Set<String> parseSet(String raw) {
+    if (raw == null || raw.isBlank()) return Set.of();
+    return Arrays.stream(raw.split(","))
         .map(String::trim)
         .filter(s -> !s.isEmpty())
         .collect(Collectors.toUnmodifiableSet());
   }
 
   /**
-   * Poison-message policy: {@code skip} (default) logs an error and continues, {@code fail} stops
-   * the subscriber so the offset is not committed.
+   * Parses extra Kafka client properties in {@code key=value} pairs separated by semicolons (e.g.
+   * {@code security.protocol=SASL_SSL;sasl.mechanism=PLAIN}).
    */
-  public boolean failOnPoison() {
-    return poisonPolicy != null && "fail".equalsIgnoreCase(poisonPolicy.trim());
-  }
-
-  /**
-   * Extra Kafka client properties in {@code key=value} pairs separated by semicolons (e.g. {@code
-   * security.protocol=SASL_SSL;sasl.mechanism=PLAIN}). Applied last so they override any adapter
-   * defaults.
-   */
-  public Properties extraProperties() {
+  private static Properties parseProperties(String raw) {
     var props = new Properties();
-    if (propertiesRaw == null || propertiesRaw.isBlank()) {
+    if (raw == null || raw.isBlank()) {
       return props;
     }
-    for (String entry : propertiesRaw.split(";")) {
+    for (String entry : raw.split(";")) {
       String trimmed = entry.trim();
       if (trimmed.isEmpty()) {
         continue;
@@ -160,8 +164,11 @@ public record KafkaConfig(
     return props;
   }
 
-  /** Returns true when poison messages should be forwarded to a DLQ topic. */
-  public boolean dlqEnabled() {
-    return dlqTopic != null && !dlqTopic.isBlank();
+  private static boolean isValidPoisonPolicy(String policy) {
+    if (policy == null || policy.isBlank()) {
+      return false;
+    }
+    String trimmed = policy.trim();
+    return "skip".equalsIgnoreCase(trimmed) || "fail".equalsIgnoreCase(trimmed);
   }
 }

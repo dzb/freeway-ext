@@ -79,7 +79,11 @@ public final class WsClient implements AutoCloseable {
     new SecureRandom().nextBytes(kb);
     String key = Base64.getEncoder().encodeToString(kb);
     String req =
-        "GET /ws/echo HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: "
+        "GET /ws/echo HTTP/1.1\r\n"
+            + "Host: 127.0.0.1\r\n"
+            + "Upgrade: websocket\r\n"
+            + "Connection: Upgrade\r\n"
+            + "Sec-WebSocket-Key: "
             + key
             + "\r\nSec-WebSocket-Version: 13\r\n\r\n";
     out.write(req.getBytes(StandardCharsets.ISO_8859_1));

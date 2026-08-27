@@ -52,7 +52,7 @@ class KafkaSubscriberTest {
   @Test
   void consumesAndPublishesMessagesUntilClosed() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
@@ -83,7 +83,7 @@ class KafkaSubscriberTest {
   @Test
   void poisonMessageIsForwardedToDlq() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092",
             "test-group",
             "",
@@ -147,7 +147,7 @@ class KafkaSubscriberTest {
   @Test
   void concurrentConsumptionDeliversAllMessages() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
@@ -186,7 +186,7 @@ class KafkaSubscriberTest {
   @Test
   void typedClassEventIsDispatchedByClassChannel() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092",
             "test-group",
             "",
@@ -240,7 +240,7 @@ class KafkaSubscriberTest {
     // Backward compatibility: producers that predate the channel header
     // always dispatched inbound events on the topic channel.
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092",
             "test-group",
             "",
@@ -290,7 +290,7 @@ class KafkaSubscriberTest {
   @Test
   void ownOriginMessagesAreSuppressed() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
@@ -333,7 +333,7 @@ class KafkaSubscriberTest {
   @Test
   void suppressionCanBeDisabled() throws Exception {
     var config =
-        new KafkaConfig(
+        KafkaConfig.of(
             "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, false);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);

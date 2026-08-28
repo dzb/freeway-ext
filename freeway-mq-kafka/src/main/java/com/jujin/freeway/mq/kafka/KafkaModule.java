@@ -16,6 +16,7 @@
 
 package com.jujin.freeway.mq.kafka;
 
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
@@ -46,8 +47,19 @@ public class KafkaModule implements ModuleEx {
                     Integer.parseInt(resolve(container, "freeway.kafka.concurrency", "1")),
                     Boolean.parseBoolean(
                         resolve(container, "freeway.kafka.suppress-own", "true"))));
-    binder.bind(KafkaEventBridge.class).to(KafkaEventBridge.class);
-    binder.bind(KafkaSubscriber.class).to(KafkaSubscriber.class);
+    // Provider lambdas: constructor injection would select the max-param
+    // constructor, which for these classes is the package-private test seam
+    // (KafkaEventBridge(config, codec, Producer)) — never reachable in
+    // production. Bind explicitly instead.
+    binder
+        .bind(KafkaEventBridge.class)
+        .to(c -> new KafkaEventBridge(c.get(KafkaConfig.class), c.get(JsonCodec.class)));
+    binder
+        .bind(KafkaSubscriber.class)
+        .to(
+            c ->
+                new KafkaSubscriber(
+                    c.get(KafkaConfig.class), c.get(EventBus.class), c.get(JsonCodec.class)));
 
     binder
         .contribute(RuntimeHook.class)

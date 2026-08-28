@@ -90,11 +90,19 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
 
   @Override
   public void send(String topic, Object event, EventBridge.Channel channel) {
+    // Framework lifecycle events carry internal references (the Container)
+    // and are inherently JVM-local — never bridge them.
+    if (event.getClass().getName().startsWith("com.jujin.freeway.boot.")) {
+      return;
+    }
     byte[] bytes;
     try {
       bytes = codec.toJson(event).getBytes(StandardCharsets.UTF_8);
     } catch (Exception ex) {
-      throw new RuntimeException("Failed to serialize event for topic '" + topic + "'", ex);
+      // A bridge must not abort the publishing thread: the local dispatch
+      // already happened; the remote copy is best-effort by contract.
+      LOG.warn("Failed to serialize event for topic '{}' — not bridged", topic, ex);
+      return;
     }
     // EventBus.Keyed key -> Kafka record key: per-aggregate ordering on the
     // broker and per-key parallel consumption on the subscriber side.

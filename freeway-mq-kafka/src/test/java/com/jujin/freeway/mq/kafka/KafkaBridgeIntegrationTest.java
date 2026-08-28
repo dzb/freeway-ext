@@ -1,7 +1,6 @@
 package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -17,25 +16,26 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
- * Real-broker contract test for the Kafka bridge: a live Apache Kafka
- * instance must be reachable at {@code FREEway_TEST_KAFKA} (host:port),
- * defaulting to {@code 127.0.0.1:9092}. Skips cleanly when no broker is
- * present — the mock-based suites stay the default CI path.
+ * Real-broker contract test for the Kafka bridge: a live Apache Kafka instance must be reachable at
+ * {@code FREEway_TEST_KAFKA} (host:port), defaulting to {@code 127.0.0.1:9092}. Skips cleanly when
+ * no broker is present — the mock-based suites stay the default CI path.
  *
- * <p>Verifies the full wire loop the mocks cannot: publish → broker →
- * consume → publishInbound → local subscriber, both dispatch channels,
- * origin suppression, and the Keyed partition key.</p>
+ * <p>Verifies the full wire loop the mocks cannot: publish → broker → consume → publishInbound →
+ * local subscriber, both dispatch channels, origin suppression, and the Keyed partition key.
  */
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_KAFKA", matches = ".*")
 class KafkaBridgeIntegrationTest {
 
-  private static final String BROKER = System.getenv().getOrDefault(
-      "FREEWAY_TEST_KAFKA", "127.0.0.1:9092");
+  private static final String BROKER =
+      System.getenv().getOrDefault("FREEWAY_TEST_KAFKA", "127.0.0.1:9092");
 
   record OrderCreated(String orderId) {}
 
   record KeyedOrder(String id) implements EventBus.Keyed {
-    @Override public String key() { return id; }
+    @Override
+    public String key() {
+      return id;
+    }
   }
 
   private static Container container;
@@ -47,19 +47,20 @@ class KafkaBridgeIntegrationTest {
 
   @BeforeAll
   static void setUp() throws Exception {
-    config = KafkaConfig.of(
-        BROKER,                     // bootstrapServers
-        "freeway-it",               // groupId
-        "it-producer",              // clientId
-        TOPIC,                      // topics
-        "",                         // allowedEventTypes (defaults to Map-only for untyped)
-        "skip",                     // poisonPolicy
-        "",                         // propertiesRaw
-        "",                         // dlqTopic
-        1,                          // maxRetries
-        1000,                       // retryBackoffMs
-        1,                          // concurrency
-        true);                      // suppressOwn
+    config =
+        KafkaConfig.of(
+            BROKER, // bootstrapServers
+            "freeway-it", // groupId
+            "it-producer", // clientId
+            TOPIC, // topics
+            "", // allowedEventTypes (defaults to Map-only for untyped)
+            "skip", // poisonPolicy
+            "", // propertiesRaw
+            "", // dlqTopic
+            1, // maxRetries
+            1000, // retryBackoffMs
+            1, // concurrency
+            true); // suppressOwn
     container = Freeway.create();
     bus = container.get(EventBus.class);
     bridge = new KafkaEventBridge(config, new JsonCodecDefault());
@@ -81,11 +82,16 @@ class KafkaBridgeIntegrationTest {
   void topicEventCrossesTheBroker() throws Exception {
     var received = new CountDownLatch(1);
     var payload = new AtomicReference<String>();
-    bus.subscribe(TOPIC + ".greet",
-        value -> { payload.set(String.valueOf(value)); received.countDown(); });
+    bus.subscribe(
+        TOPIC + ".greet",
+        value -> {
+          payload.set(String.valueOf(value));
+          received.countDown();
+        });
 
     bus.publish(TOPIC + ".greet", "hello-kafka");
-    assertTrue(received.await(15, TimeUnit.SECONDS),
+    assertTrue(
+        received.await(15, TimeUnit.SECONDS),
         "topic event must cross the broker to the local subscriber");
     assertEquals("hello-kafka", payload.get());
   }
@@ -94,11 +100,16 @@ class KafkaBridgeIntegrationTest {
   void classEventRoundTripsThroughKafka() throws Exception {
     var received = new CountDownLatch(1);
     var event = new AtomicReference<OrderCreated>();
-    bus.subscribe(OrderCreated.class, e -> { event.set(e); received.countDown(); });
+    bus.subscribe(
+        OrderCreated.class,
+        e -> {
+          event.set(e);
+          received.countDown();
+        });
 
     bus.publish(new OrderCreated("order-1"));
-    assertTrue(received.await(15, TimeUnit.SECONDS),
-        "class event must cross the broker and rebuild");
+    assertTrue(
+        received.await(15, TimeUnit.SECONDS), "class event must cross the broker and rebuild");
     assertEquals(new OrderCreated("order-1"), event.get());
   }
 
@@ -106,7 +117,12 @@ class KafkaBridgeIntegrationTest {
   void keyedEventsCarryThePartitionKey() throws Exception {
     var received = new CountDownLatch(1);
     var event = new AtomicReference<KeyedOrder>();
-    bus.subscribe(KeyedOrder.class, e -> { event.set(e); received.countDown(); });
+    bus.subscribe(
+        KeyedOrder.class,
+        e -> {
+          event.set(e);
+          received.countDown();
+        });
 
     bus.publish(new KeyedOrder("key-42"));
     assertTrue(received.await(15, TimeUnit.SECONDS));
@@ -121,7 +137,7 @@ class KafkaBridgeIntegrationTest {
     bus.subscribe(TOPIC + ".loop", v -> deliveries.incrementAndGet());
     bus.publish(TOPIC + ".loop", "no-self");
     Thread.sleep(2500); // give the broker loop time to re-deliver if broken
-    assertEquals(1, deliveries.get(),
-        "own events must be suppressed at the broker loop (origin header)");
+    assertEquals(
+        1, deliveries.get(), "own events must be suppressed at the broker loop (origin header)");
   }
 }

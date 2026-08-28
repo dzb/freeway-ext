@@ -68,7 +68,7 @@ public class KafkaModule implements ModuleEx {
             new RuntimeHook() {
               @Override
               public void start(Container container) {
-                container.get(EventBus.class).setEventBridge(container.get(KafkaEventBridge.class));
+                container.get(EventBus.class).addEventBridge(container.get(KafkaEventBridge.class));
                 container.get(KafkaSubscriber.class).start();
               }
 

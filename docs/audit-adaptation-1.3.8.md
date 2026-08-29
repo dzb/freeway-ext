@@ -93,6 +93,8 @@ freeway-ext 在本次审计前已随 core 重构做过多轮对齐（git 历史�
   按 key 分桶并发等行为复核无漂移。
 - `KafkaModule`：`RuntimeHook.start` 中 `EventBus.setEventBridge(...)` + `KafkaSubscriber.start()`
   与重构后 `EventBus` 生命周期一致（EventBus 在全部 lifecycle 回调之后才 close）。
+  （注：`setEventBridge` 后来已随多 bridge 版 EventBus 移除，改为 `addEventBridge` /
+  `removeEventBridge`；此处保留 1.3.8 当时的写法，仅作历史记录。）
 
 ### 3.4 freeway-db-hikari
 

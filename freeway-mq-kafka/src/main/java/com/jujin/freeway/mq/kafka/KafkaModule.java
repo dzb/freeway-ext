@@ -74,8 +74,12 @@ public class KafkaModule implements ModuleEx {
 
               @Override
               public void stop(Container container) {
+                // Detach before closing: a publish during shutdown must not
+                // reach a closed producer.
+                KafkaEventBridge bridge = container.get(KafkaEventBridge.class);
+                container.get(EventBus.class).removeEventBridge(bridge);
                 container.get(KafkaSubscriber.class).close();
-                container.get(KafkaEventBridge.class).close();
+                bridge.close();
               }
             });
   }

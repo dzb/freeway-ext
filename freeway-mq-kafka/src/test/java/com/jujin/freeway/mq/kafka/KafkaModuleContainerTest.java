@@ -17,10 +17,15 @@
 package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jujin.freeway.commons.json.JsonCodec;
+import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
+import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.Freeway;
+import com.jujin.freeway.ioc.RuntimeHook;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +65,34 @@ class KafkaModuleContainerTest {
       assertTrue(config.failOnPoison());
       assertTrue(config.suppressOwn(), "suppress-own must default to true");
       assertEquals("SASL_SSL", config.extraProperties().getProperty("security.protocol"));
+    }
+  }
+
+  @Test
+  void hookStopDetachesTheBridgeFromTheBus() throws Exception {
+    // No topics: KafkaSubscriber.start() is a no-op, so this exercises the
+    // hook without a broker.
+    System.setProperty("freeway.kafka.bootstrap-servers", "127.0.0.1:1");
+    System.setProperty("freeway.kafka.group-id", "container-test");
+
+    // JsonCodec is a builtin of the app runtime, not of a bare container.
+    try (Container container =
+        Freeway.create(
+            new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(new JsonCodecDefault()))) {
+      EventBus bus = container.get(EventBus.class);
+      KafkaEventBridge bridge = container.get(KafkaEventBridge.class);
+      RuntimeHook hook = container.extension(RuntimeHook.class).all().get(0);
+
+      hook.start(container);
+      assertTrue(bus.removeEventBridge(bridge), "hook start installs the bridge");
+      bus.addEventBridge(bridge);
+
+      hook.stop(container);
+
+      assertFalse(
+          bus.removeEventBridge(bridge),
+          "hook stop must detach the bridge — a publish during shutdown must "
+              + "not reach a closed producer");
     }
   }
 }

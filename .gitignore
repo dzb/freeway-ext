@@ -32,6 +32,7 @@ replay_pid*
 .DS_Store
 
 .soloncode/
+.claude/
 
 # Temp scripts
 _script_*.bat

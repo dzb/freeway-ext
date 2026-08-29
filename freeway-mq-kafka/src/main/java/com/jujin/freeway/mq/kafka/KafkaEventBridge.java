@@ -36,7 +36,9 @@ import org.slf4j.LoggerFactory;
  * {@link EventBridge} that publishes Freeway events to Kafka topics. Events are serialized as JSON
  * with an {@code X-Event-Type} header carrying the concrete class name, plus {@code X-Event-Origin}
  * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and {@code
- * X-Event-Id} (per-send UUID for correlation).
+ * X-Event-Id} (the bus-minted dispatch identity, shared by every transport). Reusing that id rather
+ * than minting a per-send one is what makes one event arriving over both Kafka and another
+ * transport (e.g. the WS mesh) recognizable as a single event instead of two unrelated copies.
  *
  * <p>Events implementing {@link EventBus.Keyed} are published with {@code key()} as the record key,
  * so the broker keeps per-aggregate order and consuming subscribers can parallelize across keys.
@@ -84,12 +86,22 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
 
   @Override
   public void send(String topic, Object event) {
-    // Direct two-argument callers publish on the topic channel.
-    send(topic, event, EventBridge.Channel.TOPIC);
+    // A direct two-argument caller hands us a concrete event object and the
+    // topic is derived from its type — that is the class channel. Matches
+    // CloudEventBridge on purpose so the two bridges behave identically.
+    send(topic, event, EventBridge.Channel.CLASS);
   }
 
   @Override
   public void send(String topic, Object event, EventBridge.Channel channel) {
+    // Only reachable from a direct caller: EventBus always calls the four-arg
+    // form with an id it minted once for the whole dispatch. A direct caller
+    // has no bus-minted id, so mint one here.
+    send(topic, event, channel, UUID.randomUUID().toString());
+  }
+
+  @Override
+  public void send(String topic, Object event, EventBridge.Channel channel, String eventId) {
     // Framework lifecycle events carry internal references (the Container)
     // and are inherently JVM-local — never bridge them.
     if (event.getClass().getName().startsWith("com.jujin.freeway.boot.")) {
@@ -113,9 +125,9 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
         .add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
     record.headers().add("X-Event-Origin", origin.getBytes(StandardCharsets.UTF_8));
     record.headers().add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
-    record
-        .headers()
-        .add("X-Event-Id", UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
+    // The bus-minted id: one identity shared by every transport this event
+    // was dispatched over, so consumers can correlate/dedupe copies.
+    record.headers().add("X-Event-Id", eventId.getBytes(StandardCharsets.UTF_8));
     producer.send(
         record,
         (meta, ex) -> {

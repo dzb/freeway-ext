@@ -101,4 +101,38 @@ class KafkaEventBridgeTest {
     assertNotNull(header(record, "X-Event-Id"), "every envelope must carry an event id");
     assertFalse(header(record, "X-Event-Id").isBlank());
   }
+
+  @Test
+  void twoArgSendDefaultsToClassChannel() {
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    KafkaEventBridge bridge = bridge("", producer);
+    bridge.send("orders", new PlainTestEvent("x"));
+
+    assertEquals(
+        "CLASS",
+        header(producer.history().getFirst(), "X-Event-Channel"),
+        "a direct two-arg send passes a concrete event, so it dispatches on the class channel "
+            + "(matching CloudEventBridge)");
+  }
+
+  @Test
+  void sendCarriesTheBusMintedEventId() {
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    KafkaEventBridge bridge = bridge("", producer);
+    bridge.send("orders", new PlainTestEvent("x"), EventBridge.Channel.CLASS, "bus-id-7");
+    bridge.send("orders", new PlainTestEvent("y"), EventBridge.Channel.CLASS, "bus-id-7");
+
+    assertEquals(
+        "bus-id-7",
+        header(producer.history().getFirst(), "X-Event-Id"),
+        "the id handed in by the bus must be reused verbatim, not replaced by a fresh UUID");
+    assertEquals(
+        header(producer.history().getFirst(), "X-Event-Id"),
+        header(producer.history().getLast(), "X-Event-Id"),
+        "two transports carrying one dispatch must expose one identity");
+  }
 }

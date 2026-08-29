@@ -370,10 +370,16 @@ public class KafkaSubscriber implements AutoCloseable {
           // consumed event cannot loop back into the queue. The dispatch
           // channel mirrors the producer's: class events re-enter the
           // class channel, topic events the topic channel.
+          //
+          // The wire id is what lets the bus recognize this event if the same
+          // one also arrives over another transport: the inbound dedup window
+          // drops the second copy instead of delivering it twice. Null for
+          // records produced before the header existed — that always delivers.
+          String id = header(record, "X-Event-Id");
           if (classChannel(record)) {
-            bus.publishInbound(event);
+            bus.publishInboundWithId(event, id);
           } else {
-            bus.publishInbound(record.topic(), event);
+            bus.publishInboundWithId(record.topic(), event, id);
           }
         });
   }

@@ -64,7 +64,7 @@ class KafkaBridgeIntegrationTest {
     container = Freeway.create();
     bus = container.get(EventBus.class);
     bridge = new KafkaEventBridge(config, new JsonCodecDefault());
-    bus.setEventBridge(bridge);
+    bus.addEventBridge(bridge);
     subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault());
     subscriber.start();
     // Allow the consumer group to join and the topic to be created.

@@ -22,6 +22,7 @@ import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
+import com.jujin.freeway.ioc.symbol.ConfigValues;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
 /** IoC module wiring the Kafka event bridge and subscriber into the container. */
@@ -32,21 +33,23 @@ public class KafkaModule implements ModuleEx {
     binder
         .bind(KafkaConfig.class)
         .to(
-            container ->
-                KafkaConfig.of(
-                    resolve(container, "freeway.kafka.bootstrap-servers", "localhost:9092"),
-                    resolve(container, "freeway.kafka.group-id", "freeway"),
-                    resolve(container, "freeway.kafka.client-id", ""),
-                    resolve(container, "freeway.kafka.topics", ""),
-                    resolve(container, "freeway.kafka.allowed-event-types", ""),
-                    resolve(container, "freeway.kafka.poison-policy", "skip"),
-                    resolve(container, "freeway.kafka.properties", ""),
-                    resolve(container, "freeway.kafka.dlq-topic", ""),
-                    Integer.parseInt(resolve(container, "freeway.kafka.max-retries", "1")),
-                    Long.parseLong(resolve(container, "freeway.kafka.retry-backoff-ms", "1000")),
-                    Integer.parseInt(resolve(container, "freeway.kafka.concurrency", "1")),
-                    Boolean.parseBoolean(
-                        resolve(container, "freeway.kafka.suppress-own", "true"))));
+            container -> {
+              SymbolSource symbols = container.get(SymbolSource.class);
+              return KafkaConfig.of(
+                  symbols.resolve("freeway.kafka.bootstrap-servers", "localhost:9092"),
+                  symbols.resolve("freeway.kafka.group-id", "freeway"),
+                  symbols.resolve("freeway.kafka.client-id", ""),
+                  symbols.resolve("freeway.kafka.topics", ""),
+                  symbols.resolve("freeway.kafka.allowed-event-types", ""),
+                  symbols.resolve("freeway.kafka.poison-policy", "skip"),
+                  symbols.resolve("freeway.kafka.properties", ""),
+                  symbols.resolve("freeway.kafka.dlq-topic", ""),
+                  ConfigValues.intValue(symbols, "freeway.kafka.max-retries", "1"),
+                  ConfigValues.longValue(symbols, "freeway.kafka.retry-backoff-ms", "1000"),
+                  ConfigValues.intValue(symbols, "freeway.kafka.concurrency", "1"),
+                  Boolean.parseBoolean(
+                      symbols.resolve("freeway.kafka.suppress-own", "true")));
+            });
     // Provider lambdas: constructor injection would select the max-param
     // constructor, which for these classes is the package-private test seam
     // (KafkaEventBridge(config, codec, Producer)) — never reachable in
@@ -82,9 +85,5 @@ public class KafkaModule implements ModuleEx {
                 bridge.close();
               }
             });
-  }
-
-  private static String resolve(Container container, String key, String defaultValue) {
-    return container.get(SymbolSource.class).resolve(key, defaultValue);
   }
 }

@@ -18,6 +18,7 @@ package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.json.JsonCodec;
@@ -42,6 +43,9 @@ class KafkaModuleContainerTest {
     System.clearProperty("freeway.kafka.allowed-event-types");
     System.clearProperty("freeway.kafka.poison-policy");
     System.clearProperty("freeway.kafka.properties");
+    System.clearProperty("freeway.kafka.max-retries");
+    System.clearProperty("freeway.kafka.retry-backoff-ms");
+    System.clearProperty("freeway.kafka.concurrency");
   }
 
   @Test
@@ -65,6 +69,31 @@ class KafkaModuleContainerTest {
       assertTrue(config.failOnPoison());
       assertTrue(config.suppressOwn(), "suppress-own must default to true");
       assertEquals("SASL_SSL", config.extraProperties().getProperty("security.protocol"));
+    }
+  }
+
+  @Test
+  void malformedNumericConfigFailsFastNamingTheKey() {
+    // A bad number must not surface as a bare NumberFormatException — the
+    // failing key and the rejected raw value belong in the message.
+    System.setProperty("freeway.kafka.max-retries", "soon");
+    try {
+      IllegalArgumentException ex =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> {
+                try (Container container = Freeway.create(new KafkaModule())) {
+                  container.get(KafkaConfig.class);
+                }
+              });
+      assertTrue(
+          ex.getMessage().contains("freeway.kafka.max-retries"),
+          "the failing key must be named: " + ex.getMessage());
+      assertTrue(
+          ex.getMessage().contains("soon"),
+          "the rejected value must be quoted: " + ex.getMessage());
+    } finally {
+      System.clearProperty("freeway.kafka.max-retries");
     }
   }
 

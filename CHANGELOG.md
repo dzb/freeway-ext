@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.11
+
+### Fixed
+
+- **mq-kafka**: `freeway.kafka.max-retries` / `retry-backoff-ms` /
+  `concurrency` went through bare `Integer.parseInt` — a malformed value
+  surfaced as a `NumberFormatException` with no context. Parsing now uses
+  the core's `ConfigValues` (new in `ioc.symbol`, core ≥ this release's
+  dependency baseline) and fails fast naming the key and the rejected raw
+  value, matching the `HikariPool` precedent. Regression test pins the
+  message shape.
+
 ## 1.3.9
 
 ### Changed

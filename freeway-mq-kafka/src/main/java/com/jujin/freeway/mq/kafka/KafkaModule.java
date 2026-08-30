@@ -47,8 +47,7 @@ public class KafkaModule implements ModuleEx {
                   ConfigValues.intValue(symbols, "freeway.kafka.max-retries", "1"),
                   ConfigValues.longValue(symbols, "freeway.kafka.retry-backoff-ms", "1000"),
                   ConfigValues.intValue(symbols, "freeway.kafka.concurrency", "1"),
-                  Boolean.parseBoolean(
-                      symbols.resolve("freeway.kafka.suppress-own", "true")));
+                  Boolean.parseBoolean(symbols.resolve("freeway.kafka.suppress-own", "true")));
             });
     // Provider lambdas: constructor injection would select the max-param
     // constructor, which for these classes is the package-private test seam

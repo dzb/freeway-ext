@@ -50,7 +50,7 @@ Ordinary applications depend on exactly one adapter and never hit this.
 
 ## Architecture
 
-- Every adapter module implements a core SPI (`HttpEngine`, `Pool`, `EventBridge`).
+- Every adapter module implements a core SPI (`HttpEngine`, `Pool`, `EventSink`).
 - Modules are selected via config or explicit binding; nothing is auto-discovered.
 - The `freeway-ext` parent POM inherits from `freeway-parent` for build plugins
   (compiler 25, surefire, source, javadoc, GPG signing, Central publishing).

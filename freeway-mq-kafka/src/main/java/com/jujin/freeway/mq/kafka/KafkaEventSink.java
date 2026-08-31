@@ -18,7 +18,7 @@ package com.jujin.freeway.mq.kafka;
 
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.ioc.EventBridge;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -33,7 +33,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * {@link EventBridge} that publishes Freeway events to Kafka topics. Events are serialized as JSON
+ * {@link EventSink} that publishes Freeway events to Kafka topics. Events are serialized as JSON
  * with an {@code X-Event-Type} header carrying the concrete class name, plus {@code X-Event-Origin}
  * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and {@code
  * X-Event-Id} (the bus-minted dispatch identity, shared by every transport). Reusing that id rather
@@ -46,25 +46,25 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>Delivery semantics:</b> at-least-once. Producer retries and consumer rebalances can deliver
  * duplicates; consumers that need exactly-once must deduplicate by their own business key. Inbound
- * consumers must not re-bridge received events (see {@code EventBus.publishInbound}).
+ * consumers must not send received events back out (see {@code EventBus.publishInbound}).
  */
-public class KafkaEventBridge implements EventBridge, AutoCloseable {
-  private static final Logger LOG = LoggerFactory.getLogger(KafkaEventBridge.class);
+public class KafkaEventSink implements EventSink, AutoCloseable {
+  private static final Logger LOG = LoggerFactory.getLogger(KafkaEventSink.class);
 
   private final Producer<String, byte[]> producer;
   private final JsonCodec codec;
   private final String origin;
 
-  public KafkaEventBridge(KafkaConfig config) {
+  public KafkaEventSink(KafkaConfig config) {
     this(config, new JsonCodecDefault());
   }
 
-  public KafkaEventBridge(KafkaConfig config, JsonCodec codec) {
+  public KafkaEventSink(KafkaConfig config, JsonCodec codec) {
     this(config, codec, createProducer(config));
   }
 
   /** Test seam: allows injecting a mock producer. */
-  KafkaEventBridge(KafkaConfig config, JsonCodec codec, Producer<String, byte[]> producer) {
+  KafkaEventSink(KafkaConfig config, JsonCodec codec, Producer<String, byte[]> producer) {
     this.producer = producer;
     this.codec = codec;
     this.origin = config.origin();
@@ -88,12 +88,12 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
   public void send(String topic, Object event) {
     // A direct two-argument caller hands us a concrete event object and the
     // topic is derived from its type — that is the class channel. Matches
-    // CloudEventBridge on purpose so the two bridges behave identically.
-    send(topic, event, EventBridge.Channel.CLASS);
+    // CloudEventSink on purpose so the two sinks behave identically.
+    send(topic, event, EventSink.Channel.CLASS);
   }
 
   @Override
-  public void send(String topic, Object event, EventBridge.Channel channel) {
+  public void send(String topic, Object event, EventSink.Channel channel) {
     // Only reachable from a direct caller: EventBus always calls the four-arg
     // form with an id it minted once for the whole dispatch. A direct caller
     // has no bus-minted id, so mint one here.
@@ -101,9 +101,9 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
   }
 
   @Override
-  public void send(String topic, Object event, EventBridge.Channel channel, String eventId) {
+  public void send(String topic, Object event, EventSink.Channel channel, String eventId) {
     // Framework lifecycle events carry internal references (the Container)
-    // and are inherently JVM-local — never bridge them.
+    // and are inherently JVM-local — never send them.
     if (event.getClass().getName().startsWith("com.jujin.freeway.boot.")) {
       return;
     }
@@ -111,9 +111,9 @@ public class KafkaEventBridge implements EventBridge, AutoCloseable {
     try {
       bytes = codec.toJson(event).getBytes(StandardCharsets.UTF_8);
     } catch (Exception ex) {
-      // A bridge must not abort the publishing thread: the local dispatch
+      // A sink must not abort the publishing thread: the local dispatch
       // already happened; the remote copy is best-effort by contract.
-      LOG.warn("Failed to serialize event for topic '{}' — not bridged", topic, ex);
+      LOG.warn("Failed to serialize event for topic '{}' — not sent", topic, ex);
       return;
     }
     // EventBus.Keyed key -> Kafka record key: per-aggregate ordering on the

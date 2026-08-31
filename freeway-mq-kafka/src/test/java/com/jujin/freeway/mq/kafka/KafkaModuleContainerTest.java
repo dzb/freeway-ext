@@ -98,7 +98,7 @@ class KafkaModuleContainerTest {
   }
 
   @Test
-  void hookStopDetachesTheBridgeFromTheBus() throws Exception {
+  void hookStopDetachesTheSinkFromTheBus() throws Exception {
     // No topics: KafkaSubscriber.start() is a no-op, so this exercises the
     // hook without a broker.
     System.setProperty("freeway.kafka.bootstrap-servers", "127.0.0.1:1");
@@ -109,18 +109,18 @@ class KafkaModuleContainerTest {
         Freeway.create(
             new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(new JsonCodecDefault()))) {
       EventBus bus = container.get(EventBus.class);
-      KafkaEventBridge bridge = container.get(KafkaEventBridge.class);
+      KafkaEventSink sink = container.get(KafkaEventSink.class);
       RuntimeHook hook = container.extension(RuntimeHook.class).all().get(0);
 
       hook.start(container);
-      assertTrue(bus.removeEventBridge(bridge), "hook start installs the bridge");
-      bus.addEventBridge(bridge);
+      assertTrue(bus.removeEventSink(sink), "hook start installs the sink");
+      bus.addEventSink(sink);
 
       hook.stop(container);
 
       assertFalse(
-          bus.removeEventBridge(bridge),
-          "hook stop must detach the bridge — a publish during shutdown must "
+          bus.removeEventSink(sink),
+          "hook stop must detach the sink — a publish during shutdown must "
               + "not reach a closed producer");
     }
   }

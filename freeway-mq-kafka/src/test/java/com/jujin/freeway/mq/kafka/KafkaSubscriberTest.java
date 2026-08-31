@@ -46,7 +46,7 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("deprecation")
 class KafkaSubscriberTest {
 
-  /** Typed event used to verify class-channel dispatch across the bridge. */
+  /** Typed event used to verify class-channel dispatch across the sink. */
   record TestEvent(String value) {}
 
   @Test

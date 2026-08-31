@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **mq-kafka**: aligned with the core message-domain rename
+  `EventBridge` → `EventSink`. `KafkaEventBridge` is now
+  `KafkaEventSink` — installed via `EventBus.addEventSink` /
+  `removeEventSink`, hook id `kafka-bridge` → `kafka-sink`; inbound
+  publishing uses the `EventBusInbound` SPI (`publishInbound(event,
+  eventId)` / `publishInbound(topic, payload, eventId)`), which replaces
+  the removed `EventBus.publishInboundWithId`. Requires the next core
+  release after 1.3.11.
+
 ## 1.3.11
 
 ### Fixed

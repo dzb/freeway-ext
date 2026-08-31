@@ -253,7 +253,7 @@ public class KafkaSubscriber implements AutoCloseable {
       return true;
     }
     if (suppressOwn && isOwnEvent(record)) {
-      // This node's own re-broadcast event (published locally, bridged out,
+      // This node's own re-broadcast event (published locally, sent out,
       // and consumed back by the same group): local subscribers already
       // received it at publish time. Skip to avoid duplicate local delivery.
       // Not a failure — acknowledge so the offset is committed.
@@ -366,7 +366,7 @@ public class KafkaSubscriber implements AutoCloseable {
           } catch (Exception e) {
             throw new RuntimeException(e);
           }
-          // Inbound events are never re-bridged (publishInbound), so a
+          // Inbound events are never sent back out (publishInbound), so a
           // consumed event cannot loop back into the queue. The dispatch
           // channel mirrors the producer's: class events re-enter the
           // class channel, topic events the topic channel.
@@ -377,14 +377,14 @@ public class KafkaSubscriber implements AutoCloseable {
           // records produced before the header existed — that always delivers.
           String id = header(record, "X-Event-Id");
           if (classChannel(record)) {
-            bus.publishInboundWithId(event, id);
+            bus.publishInbound(event, id);
           } else {
-            bus.publishInboundWithId(record.topic(), event, id);
+            bus.publishInbound(record.topic(), event, id);
           }
         });
   }
 
-  /** True when the producer bridged this record on the class dispatch channel. */
+  /** True when the producer sent this record on the class dispatch channel. */
   private boolean classChannel(ConsumerRecord<String, byte[]> record) {
     String channel = header(record, "X-Event-Channel");
     // Absent header means an older producer — fall back to topic dispatch,

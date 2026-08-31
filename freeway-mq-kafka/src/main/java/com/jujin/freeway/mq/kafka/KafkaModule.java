@@ -25,7 +25,7 @@ import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.ConfigValues;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
-/** IoC module wiring the Kafka event bridge and subscriber into the container. */
+/** IoC module wiring the Kafka event sink and subscriber into the container. */
 public class KafkaModule implements ModuleEx {
 
   @Override
@@ -51,11 +51,11 @@ public class KafkaModule implements ModuleEx {
             });
     // Provider lambdas: constructor injection would select the max-param
     // constructor, which for these classes is the package-private test seam
-    // (KafkaEventBridge(config, codec, Producer)) — never reachable in
+    // (KafkaEventSink(config, codec, Producer)) — never reachable in
     // production. Bind explicitly instead.
     binder
-        .bind(KafkaEventBridge.class)
-        .to(c -> new KafkaEventBridge(c.get(KafkaConfig.class), c.get(JsonCodec.class)));
+        .bind(KafkaEventSink.class)
+        .to(c -> new KafkaEventSink(c.get(KafkaConfig.class), c.get(JsonCodec.class)));
     binder
         .bind(KafkaSubscriber.class)
         .to(
@@ -66,11 +66,11 @@ public class KafkaModule implements ModuleEx {
     binder
         .contribute(RuntimeHook.class)
         .add(
-            "kafka-bridge",
+            "kafka-sink",
             new RuntimeHook() {
               @Override
               public void start(Container container) {
-                container.get(EventBus.class).addEventBridge(container.get(KafkaEventBridge.class));
+                container.get(EventBus.class).addEventSink(container.get(KafkaEventSink.class));
                 container.get(KafkaSubscriber.class).start();
               }
 
@@ -78,10 +78,10 @@ public class KafkaModule implements ModuleEx {
               public void stop(Container container) {
                 // Detach before closing: a publish during shutdown must not
                 // reach a closed producer.
-                KafkaEventBridge bridge = container.get(KafkaEventBridge.class);
-                container.get(EventBus.class).removeEventBridge(bridge);
+                KafkaEventSink sink = container.get(KafkaEventSink.class);
+                container.get(EventBus.class).removeEventSink(sink);
                 container.get(KafkaSubscriber.class).close();
-                bridge.close();
+                sink.close();
               }
             });
   }

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
- * Real-broker contract test for the Kafka bridge: a live Apache Kafka instance must be reachable at
+ * Real-broker contract test for the Kafka event sink: a live Apache Kafka instance must be reachable at
  * {@code FREEway_TEST_KAFKA} (host:port), defaulting to {@code 127.0.0.1:9092}. Skips cleanly when
  * no broker is present — the mock-based suites stay the default CI path.
  *
@@ -24,7 +24,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * local subscriber, both dispatch channels, origin suppression, and the Keyed partition key.
  */
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_KAFKA", matches = ".*")
-class KafkaBridgeIntegrationTest {
+class KafkaEventSinkIntegrationTest {
 
   private static final String BROKER =
       System.getenv().getOrDefault("FREEWAY_TEST_KAFKA", "127.0.0.1:9092");
@@ -41,7 +41,7 @@ class KafkaBridgeIntegrationTest {
   private static Container container;
   private static KafkaConfig config;
   private static EventBus bus;
-  private static KafkaEventBridge bridge;
+  private static KafkaEventSink sink;
   private static KafkaSubscriber subscriber;
   private static final String TOPIC = "freeway-integration";
 
@@ -63,8 +63,8 @@ class KafkaBridgeIntegrationTest {
             true); // suppressOwn
     container = Freeway.create();
     bus = container.get(EventBus.class);
-    bridge = new KafkaEventBridge(config, new JsonCodecDefault());
-    bus.addEventBridge(bridge);
+    sink = new KafkaEventSink(config, new JsonCodecDefault());
+    bus.addEventSink(sink);
     subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault());
     subscriber.start();
     // Allow the consumer group to join and the topic to be created.
@@ -74,7 +74,7 @@ class KafkaBridgeIntegrationTest {
   @AfterAll
   static void tearDown() throws Exception {
     if (subscriber != null) subscriber.close();
-    if (bridge != null) bridge.close();
+    if (sink != null) sink.close();
     if (container != null) container.close();
   }
 

@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.ioc.EventBridge;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.producer.MockProducer;
@@ -31,7 +31,7 @@ import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.Test;
 
-class KafkaEventBridgeTest {
+class KafkaEventSinkTest {
 
   /** Event carrying a partitioning key, mirroring a domain record with an aggregate id. */
   record KeyedTestEvent(String id) implements EventBus.Keyed {
@@ -43,11 +43,11 @@ class KafkaEventBridgeTest {
 
   record PlainTestEvent(String value) {}
 
-  private static KafkaEventBridge bridge(String clientId, MockProducer<String, byte[]> producer) {
+  private static KafkaEventSink newSink(String clientId, MockProducer<String, byte[]> producer) {
     var config =
         KafkaConfig.of(
             "localhost:9092", "test-group", clientId, "orders", "", "skip", "", "", 1, 0, 1, true);
-    return new KafkaEventBridge(config, new JsonCodecDefault(), producer);
+    return new KafkaEventSink(config, new JsonCodecDefault(), producer);
   }
 
   private static String header(ProducerRecord<String, byte[]> record, String name) {
@@ -60,8 +60,8 @@ class KafkaEventBridgeTest {
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventBridge bridge = bridge("", producer);
-    bridge.send("orders", new KeyedTestEvent("agg-42"), EventBridge.Channel.CLASS);
+    KafkaEventSink sink = newSink("", producer);
+    sink.send("orders", new KeyedTestEvent("agg-42"), EventSink.Channel.CLASS);
 
     assertEquals(
         "agg-42",
@@ -74,8 +74,8 @@ class KafkaEventBridgeTest {
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventBridge bridge = bridge("", producer);
-    bridge.send("orders", new PlainTestEvent("x"), EventBridge.Channel.CLASS);
+    KafkaEventSink sink = newSink("", producer);
+    sink.send("orders", new PlainTestEvent("x"), EventSink.Channel.CLASS);
 
     assertNull(
         producer.history().getFirst().key(), "events without a key must keep a null record key");
@@ -86,8 +86,8 @@ class KafkaEventBridgeTest {
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventBridge bridge = bridge("node-1", producer);
-    bridge.send("orders", new KeyedTestEvent("agg-1"), EventBridge.Channel.TOPIC);
+    KafkaEventSink sink = newSink("node-1", producer);
+    sink.send("orders", new KeyedTestEvent("agg-1"), EventSink.Channel.TOPIC);
 
     ProducerRecord<String, byte[]> record = producer.history().getFirst();
     assertEquals(
@@ -107,14 +107,14 @@ class KafkaEventBridgeTest {
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventBridge bridge = bridge("", producer);
-    bridge.send("orders", new PlainTestEvent("x"));
+    KafkaEventSink sink = newSink("", producer);
+    sink.send("orders", new PlainTestEvent("x"));
 
     assertEquals(
         "CLASS",
         header(producer.history().getFirst(), "X-Event-Channel"),
         "a direct two-arg send passes a concrete event, so it dispatches on the class channel "
-            + "(matching CloudEventBridge)");
+            + "(matching CloudEventSink)");
   }
 
   @Test
@@ -122,9 +122,9 @@ class KafkaEventBridgeTest {
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventBridge bridge = bridge("", producer);
-    bridge.send("orders", new PlainTestEvent("x"), EventBridge.Channel.CLASS, "bus-id-7");
-    bridge.send("orders", new PlainTestEvent("y"), EventBridge.Channel.CLASS, "bus-id-7");
+    KafkaEventSink sink = newSink("", producer);
+    sink.send("orders", new PlainTestEvent("x"), EventSink.Channel.CLASS, "bus-id-7");
+    sink.send("orders", new PlainTestEvent("y"), EventSink.Channel.CLASS, "bus-id-7");
 
     assertEquals(
         "bus-id-7",

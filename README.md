@@ -66,7 +66,7 @@ These are applied last and override adapter defaults.
 | `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
 | `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
 
-Messages published by `KafkaEventBridge` carry a null key, so keyed fan-out
+Messages published by `KafkaEventSink` carry a null key, so keyed fan-out
 does not apply to them: self-produced events are always processed by the same
 worker (in order). Keys set by other producers are honored.
 

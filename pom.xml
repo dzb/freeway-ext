@@ -36,7 +36,7 @@
         <jetty.version>12.1.12</jetty.version>
         <kafka.version>4.3.1</kafka.version>
         <hikari.version>7.1.0</hikari.version>
-        <sqlite.version>3.53.2.1</sqlite.version>
+        <sqlite.version>3.53.4.0</sqlite.version>
         <h2.version>2.4.240</h2.version>
         <robaho.version>1.0.29</robaho.version>
         <!-- Overrides of freeway-parent properties: latest JUnit (6.x) and the

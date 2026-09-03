@@ -18,8 +18,8 @@ package com.jujin.freeway.mq.kafka;
 
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Properties;

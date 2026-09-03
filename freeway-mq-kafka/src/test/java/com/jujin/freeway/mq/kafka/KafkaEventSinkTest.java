@@ -22,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.clients.producer.ProducerRecord;

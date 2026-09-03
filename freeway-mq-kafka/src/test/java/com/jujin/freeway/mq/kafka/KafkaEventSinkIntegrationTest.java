@@ -16,9 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
- * Real-broker contract test for the Kafka event sink: a live Apache Kafka instance must be reachable at
- * {@code FREEway_TEST_KAFKA} (host:port), defaulting to {@code 127.0.0.1:9092}. Skips cleanly when
- * no broker is present — the mock-based suites stay the default CI path.
+ * Real-broker contract test for the Kafka event sink: a live Apache Kafka instance must be
+ * reachable at {@code FREEway_TEST_KAFKA} (host:port), defaulting to {@code 127.0.0.1:9092}. Skips
+ * cleanly when no broker is present — the mock-based suites stay the default CI path.
  *
  * <p>Verifies the full wire loop the mocks cannot: publish → broker → consume → publishInbound →
  * local subscriber, both dispatch channels, origin suppression, and the Keyed partition key.

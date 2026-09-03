@@ -103,8 +103,8 @@ public record KafkaConfig(
 
   /**
    * Per-process identity used to recognize this node's own messages. Falls back to a UUID unique
-   * per JVM when no {@code clientId} is configured, so the sink and the subscriber always agree
-   * on the origin even across separate {@link KafkaConfig} instances. Set a unique {@code
+   * per JVM when no {@code clientId} is configured, so the sink and the subscriber always agree on
+   * the origin even across separate {@link KafkaConfig} instances. Set a unique {@code
    * freeway.kafka.client-id} per node for a stable identity across restarts.
    */
   public String origin() {

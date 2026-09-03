@@ -16,17 +16,24 @@
 
 package com.jujin.freeway.mq.kafka;
 
+import com.jujin.freeway.commons.config.ConfigSpec;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
-import com.jujin.freeway.ioc.symbol.ConfigValues;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
 /** IoC module wiring the Kafka event sink and subscriber into the container. */
 public class KafkaModule implements ModuleEx {
+
+  private static final ConfigSpec<Integer> MAX_RETRIES =
+      ConfigSpec.of("freeway.kafka.max-retries", Integer.class, 1, Integer::parseInt);
+  private static final ConfigSpec<Long> RETRY_BACKOFF_MS =
+      ConfigSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
+  private static final ConfigSpec<Integer> CONCURRENCY =
+      ConfigSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
 
   @Override
   public void bind(Binder binder) {
@@ -44,9 +51,9 @@ public class KafkaModule implements ModuleEx {
                   symbols.resolve("freeway.kafka.poison-policy", "skip"),
                   symbols.resolve("freeway.kafka.properties", ""),
                   symbols.resolve("freeway.kafka.dlq-topic", ""),
-                  ConfigValues.intValue(symbols, "freeway.kafka.max-retries", "1"),
-                  ConfigValues.longValue(symbols, "freeway.kafka.retry-backoff-ms", "1000"),
-                  ConfigValues.intValue(symbols, "freeway.kafka.concurrency", "1"),
+                  MAX_RETRIES.parse(symbols.resolve(MAX_RETRIES.key(), null)),
+                  RETRY_BACKOFF_MS.parse(symbols.resolve(RETRY_BACKOFF_MS.key(), null)),
+                  CONCURRENCY.parse(symbols.resolve(CONCURRENCY.key(), null)),
                   Boolean.parseBoolean(symbols.resolve("freeway.kafka.suppress-own", "true")));
             });
     // Provider lambdas: constructor injection would select the max-param

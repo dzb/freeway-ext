@@ -1,9 +1,11 @@
 # Changelog
 
-## Unreleased
+## 1.4.0
 
 ### Changed
 
+- **build**: aligned with Freeway core `1.4.0`; typed Kafka config
+  resolution migrated from the removed `ConfigValues` to `ConfigSpec`.
 - **mq-kafka**: aligned with the core message-domain rename
   `EventBridge` → `EventSink`. `KafkaEventBridge` is now
   `KafkaEventSink` — installed via `EventBus.addEventSink` /

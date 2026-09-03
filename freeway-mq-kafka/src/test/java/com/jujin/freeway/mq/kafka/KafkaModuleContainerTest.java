@@ -107,7 +107,7 @@ class KafkaModuleContainerTest {
     // JsonCodec is a builtin of the app runtime, not of a bare container.
     try (Container container =
         Freeway.create(
-            new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(new JsonCodecDefault()))) {
+            new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
       EventBus bus = container.get(EventBus.class);
       KafkaEventSink sink = container.get(KafkaEventSink.class);
       RuntimeHook hook = container.extension(RuntimeHook.class).all().get(0);

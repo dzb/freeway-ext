@@ -19,7 +19,7 @@ package com.jujin.freeway.http.jetty;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.commons.coercion.CoercerImpl;
+import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.RequestComponents;
@@ -49,7 +49,7 @@ class JettyWebSocketProbeTest {
 
   @Test
   void probeJettyTextFrameEcho() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var wsGroup =
         WebSocketGroup.of(
@@ -105,7 +105,7 @@ class JettyWebSocketProbeTest {
 
   @Test
   void rejectsOversizedMessageWithClose() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var wsGroup =
         WebSocketGroup.of(

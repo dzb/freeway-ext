@@ -16,7 +16,7 @@
 
 package com.jujin.freeway.http.engine;
 
-import com.jujin.freeway.commons.coercion.CoercerImpl;
+import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -53,7 +53,7 @@ public class HttpContextLookupBenchmark {
 
   @Setup
   public void setup() {
-    ctx = new HttpContextDefault(new JsonCodecDefault(), new CoercerImpl());
+    ctx = new HttpContextDefault(new JsonCodecDefault(), new CoercerDefault());
     ctx.reset(
         "GET",
         "/users/42",

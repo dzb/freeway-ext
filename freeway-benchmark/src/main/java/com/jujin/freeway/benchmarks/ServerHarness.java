@@ -16,7 +16,7 @@
 
 package com.jujin.freeway.benchmarks;
 
-import com.jujin.freeway.commons.coercion.CoercerImpl;
+import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
@@ -183,7 +183,7 @@ public final class ServerHarness implements AutoCloseable {
   // ---------------------------------------------------------------
 
   private static ServerHarness freeway(Scenario scenario) throws Exception {
-    var engine = new FreewayHttpEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new FreewayHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
     WebSocketIndex wsIndex;
     RouteIndex routeIndex;
@@ -210,7 +210,7 @@ public final class ServerHarness implements AutoCloseable {
 
   /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness jettyAdapter(Scenario scenario) throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
     WebSocketIndex wsIndex;
     RouteIndex routeIndex;
@@ -237,7 +237,7 @@ public final class ServerHarness implements AutoCloseable {
 
   /** Freeway + Undertow adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness undertowAdapter(Scenario scenario) throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
     WebSocketIndex wsIndex;
     RouteIndex routeIndex;

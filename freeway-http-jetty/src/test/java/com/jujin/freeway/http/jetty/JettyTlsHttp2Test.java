@@ -18,7 +18,7 @@ package com.jujin.freeway.http.jetty;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.jujin.freeway.commons.coercion.CoercerImpl;
+import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.RequestComponents;
@@ -63,7 +63,7 @@ class JettyTlsHttp2Test {
     // freeway.http.ssl.http2 defaults to true (matching the built-in engine):
     // the ALPN stack is up, but an HTTP/1.1-only client still negotiates 1.1.
     System.setProperty("freeway.http.ssl.http2", "false");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
@@ -90,7 +90,7 @@ class JettyTlsHttp2Test {
     // No freeway.http.ssl.http2 property: the adapter must default to true,
     // same as the built-in engine's HttpConfig.
     enableTls();
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
@@ -118,7 +118,7 @@ class JettyTlsHttp2Test {
   void servesHttp2OverTlsWithAlpn() throws Exception {
     enableTls();
     System.setProperty("freeway.http.ssl.http2", "true");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
@@ -145,7 +145,7 @@ class JettyTlsHttp2Test {
   @Test
   void servesHttp2Cleartext() throws Exception {
     System.setProperty("freeway.http.http2", "true");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerImpl());
+    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()

@@ -18,7 +18,7 @@ package com.jujin.freeway.http.undertow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.coercion.CoercerImpl;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.RequestComponents;
@@ -62,7 +62,7 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.enabled", "true");
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
@@ -91,7 +91,7 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.enabled", "true");
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()

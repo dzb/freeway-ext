@@ -17,7 +17,7 @@
 package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.coercion.CoercerImpl;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpContext;
@@ -44,7 +44,7 @@ import org.openjdk.jmh.annotations.State;
 public class HttpContextOutputBenchmark {
 
   private static final JsonCodec JSON = new JsonCodecDefault();
-  private static final Coercer COERCER = new CoercerDefault();
+  private static final Coercer COERCER = new CoercerImpl();
   private static final byte[] PONG = "pong".getBytes(StandardCharsets.UTF_8);
   private static final byte[] LARGE_BODY =
       "large-body-".repeat(2000).getBytes(StandardCharsets.UTF_8);

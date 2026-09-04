@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.coercion.CoercerImpl;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.RequestComponents;
@@ -48,7 +48,7 @@ class UndertowCompressionTest {
 
   @Test
   void compressesLargeBufferedResponseWhenClientAcceptsGzip() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client = HttpClient.newHttpClient();
 
@@ -75,7 +75,7 @@ class UndertowCompressionTest {
 
   @Test
   void doesNotCompressSmallResponseBelowMinSize() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client = HttpClient.newHttpClient();
 
@@ -98,7 +98,7 @@ class UndertowCompressionTest {
 
   @Test
   void doesNotCompressWithoutAcceptEncoding() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     var client = HttpClient.newHttpClient();
 
@@ -120,7 +120,7 @@ class UndertowCompressionTest {
 
   @Test
   void compressionDisabledByConfig() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config =
         HttpServerConfig.builder()
             .port(0)

@@ -9,7 +9,7 @@ import com.jujin.freeway.cloud.rpc.CloudException;
 import com.jujin.freeway.cloud.rpc.RemoteCaller;
 import com.jujin.freeway.cloud.rpc.RemoteInvocationException;
 import com.jujin.freeway.cloud.rpc.RpcEndpoint;
-import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.coercion.CoercerImpl;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.RequestComponents;
@@ -109,7 +109,7 @@ class UndertowRemoteRpcTest {
             List.of(),
             List.of());
 
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerImpl());
     var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
     server = new WebServer(engine, config, event -> {}, pipeline);
     server.start();

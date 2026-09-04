@@ -16,7 +16,7 @@
 
 package com.jujin.freeway.http.engine;
 
-import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.coercion.CoercerImpl;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthCheck;
@@ -60,7 +60,7 @@ public class FilterChainBenchmark {
   @Setup
   public void setup() {
     var json = new JsonCodecDefault();
-    var coercer = new CoercerDefault();
+    var coercer = new CoercerImpl();
 
     // Real filter chain: cors -> health -> noop handler
     var cors = CorsFilter.DEFAULT;

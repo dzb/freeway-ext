@@ -85,6 +85,12 @@ class UndertowRemoteRpcTest {
       throw new UnsupportedOperationException();
     }
 
+    @SafeVarargs
+    public final <T> boolean isActiveBinding(
+        Class<T> type, Class<? extends java.lang.annotation.Annotation>... markers) {
+      return false;
+    }
+
     public void close() {}
   }
 
@@ -132,18 +138,19 @@ class UndertowRemoteRpcTest {
                     ? java.util.Optional.empty()
                     : java.util.Optional.ofNullable(instances.get(0));
     var cloudClient =
-        new com.jujin.freeway.cloud.internal.CloudHttpClientDefault(
+        new com.jujin.freeway.cloud.rpc.CloudHttpClientDefault(
             discovery,
             loadBalancer,
-            List.of(), // no propagators in this test
-            null,
-            null,
-            null, // no retry/breaker/rate-limit
-            com.jujin.freeway.cloud.rpc.TransportSecurity.NONE,
-            null, // no tracer
-            new com.jujin.freeway.commons.metrics.NoopMetrics(),
-            Duration.ofSeconds(5),
-            Duration.ofSeconds(2));
+            new com.jujin.freeway.cloud.rpc.CloudHttpClientDefault.Wiring(
+                List.of(), // no propagators in this test
+                null, // retryer -> built-in default fallback
+                null, // no breaker
+                null, // no rate limiter
+                com.jujin.freeway.cloud.rpc.TransportSecurity.NONE,
+                null, // no tracer
+                new com.jujin.freeway.commons.metrics.NoopMetrics(),
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(2)));
     caller = new RemoteCaller(cloudClient, new JsonCodecDefault());
   }
 

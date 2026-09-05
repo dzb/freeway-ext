@@ -38,7 +38,7 @@ import org.openjdk.jmh.annotations.State;
  * HealthFilter} &rarr; no-op route handler. Request timing is measured by {@code WebServer} itself
  * rather than a filter.
  *
- * <p>Uses a real {@link HttpContextDefault} (not a stub) so that filter overhead includes real
+ * <p>Uses a real {@link HttpContextImpl} (not a stub) so that filter overhead includes real
  * header/body/status operations.
  *
  * <p>Three request shapes exercise different filter code paths:
@@ -52,9 +52,9 @@ import org.openjdk.jmh.annotations.State;
 @State(Scope.Benchmark)
 public class FilterChainBenchmark {
 
-  private HttpContextDefault normalCtx;
-  private HttpContextDefault healthCtx;
-  private HttpContextDefault corsCtx;
+  private HttpContextImpl normalCtx;
+  private HttpContextImpl healthCtx;
+  private HttpContextImpl corsCtx;
   private RouteHandler chain;
 
   @Setup
@@ -70,7 +70,7 @@ public class FilterChainBenchmark {
     chain = ctx -> cors.doFilter(ctx, h);
 
     // Normal GET /ping — passes through all filters
-    normalCtx = new HttpContextDefault(json, coercer);
+    normalCtx = new HttpContextImpl(json, coercer);
     normalCtx.reset(
         "GET",
         "/ping",
@@ -85,7 +85,7 @@ public class FilterChainBenchmark {
         true);
 
     // Health check request — intercepted by HealthFilter
-    healthCtx = new HttpContextDefault(json, coercer);
+    healthCtx = new HttpContextImpl(json, coercer);
     healthCtx.reset(
         "GET",
         "/healthz",
@@ -100,7 +100,7 @@ public class FilterChainBenchmark {
         true);
 
     // CORS preflight — intercepted by CorsFilter
-    corsCtx = new HttpContextDefault(json, coercer);
+    corsCtx = new HttpContextImpl(json, coercer);
     corsCtx.reset(
         "OPTIONS",
         "/api/data",

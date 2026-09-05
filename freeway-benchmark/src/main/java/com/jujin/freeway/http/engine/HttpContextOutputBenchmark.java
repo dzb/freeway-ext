@@ -35,7 +35,7 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
 /**
- * JMH benchmark for {@link HttpContextDefault} response output paths.
+ * JMH benchmark for {@link HttpContextImpl} response output paths.
  *
  * <p>Covers plain-text, JSON, and not-found responses as well as request-body reading combined with
  * output and the {@code sendJson} convenience shortcut.
@@ -59,18 +59,18 @@ public class HttpContextOutputBenchmark {
     REQUEST_HEADERS.put("Accept", List.of("*/*"));
   }
 
-  private HttpContextDefault ctx;
+  private HttpContextImpl ctx;
   private OutputStream sink;
-  private HttpContextDefault bodyReadCtx;
-  private HttpContextDefault sendJsonCtx;
+  private HttpContextImpl bodyReadCtx;
+  private HttpContextImpl sendJsonCtx;
 
   @Setup
   public void setup() {
     sink = OutputStream.nullOutputStream();
-    ctx = new HttpContextDefault(JSON, COERCER);
+    ctx = new HttpContextImpl(JSON, COERCER);
 
     // Context pre-configured for body-read scenario (POST with body)
-    bodyReadCtx = new HttpContextDefault(JSON, COERCER);
+    bodyReadCtx = new HttpContextImpl(JSON, COERCER);
     bodyReadCtx.reset(
         "POST",
         "/api/data",
@@ -85,7 +85,7 @@ public class HttpContextOutputBenchmark {
         true);
 
     // Context pre-configured for sendJson convenience shortcut
-    sendJsonCtx = new HttpContextDefault(JSON, COERCER);
+    sendJsonCtx = new HttpContextImpl(JSON, COERCER);
     sendJsonCtx.reset(
         "GET",
         "/api/resource",

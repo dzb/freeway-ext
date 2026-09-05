@@ -29,9 +29,9 @@ import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
 /**
- * JMH benchmark for {@link HttpContextDefault} lookup methods.
+ * JMH benchmark for {@link HttpContextImpl} lookup methods.
  *
- * <p>Uses a real {@link HttpContextDefault} populated via {@code reset()} with realistic request
+ * <p>Uses a real {@link HttpContextImpl} populated via {@code reset()} with realistic request
  * headers and query parameters. This replaces the earlier custom {@code BenchContext} stub that did
  * not reflect the real O(1)-then-O(n) header lookup strategy.
  */
@@ -49,11 +49,11 @@ public class HttpContextLookupBenchmark {
           Map.entry("X-Forwarded-For", List.of("127.0.0.1")),
           Map.entry("Authorization", List.of("Bearer token")));
 
-  private HttpContextDefault ctx;
+  private HttpContextImpl ctx;
 
   @Setup
   public void setup() {
-    ctx = new HttpContextDefault(new JsonCodecDefault(), new CoercerDefault());
+    ctx = new HttpContextImpl(new JsonCodecDefault(), new CoercerDefault());
     ctx.reset(
         "GET",
         "/users/42",

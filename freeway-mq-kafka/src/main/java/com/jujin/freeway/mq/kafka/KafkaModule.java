@@ -16,7 +16,7 @@
 
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.commons.config.ConfigSpec;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
@@ -28,12 +28,12 @@ import com.jujin.freeway.ioc.symbol.SymbolSource;
 /** IoC module wiring the Kafka event sink and subscriber into the container. */
 public class KafkaModule implements ModuleEx {
 
-  private static final ConfigSpec<Integer> MAX_RETRIES =
-      ConfigSpec.of("freeway.kafka.max-retries", Integer.class, 1, Integer::parseInt);
-  private static final ConfigSpec<Long> RETRY_BACKOFF_MS =
-      ConfigSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
-  private static final ConfigSpec<Integer> CONCURRENCY =
-      ConfigSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
+  private static final SymbolSpec<Integer> MAX_RETRIES =
+      SymbolSpec.of("freeway.kafka.max-retries", Integer.class, 1, Integer::parseInt);
+  private static final SymbolSpec<Long> RETRY_BACKOFF_MS =
+      SymbolSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
+  private static final SymbolSpec<Integer> CONCURRENCY =
+      SymbolSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
 
   @Override
   public void bind(Binder binder) {

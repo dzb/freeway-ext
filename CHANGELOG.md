@@ -1,6 +1,21 @@
 # Changelog
 
+## 1.5.0
+
+### Changed
+
+- **aligned with Freeway core `1.5.0`** — `freeway-parent` and the
+  `freeway.version` property move to `1.5.0` for all adapters.
+  `freeway-mq-kafka` config typing migrates from the removed
+  `commons.config.ConfigSpec` to `ioc.symbol.SymbolSpec` (same
+  `of(key, type, default, parser)` / `key()` / `parse()` shape). Core's
+  engine/internal visibility narrowing and the Default/Impl naming
+  settlement touch no adapter API — adapters build against the public
+  surface only (`CoercerDefault`, `JsonCodecDefault`, `ExchangeMetaDefault`
+  keep their 1.4.0 names).
+
 ## 1.4.0
+
 
 ### Changed
 

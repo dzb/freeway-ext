@@ -81,7 +81,10 @@ silently dropped.
 
 The Jetty and Undertow adapters read the shared `freeway.http.ssl.*` keys of the
 built-in engine (same names, same defaults), so a TLS configuration written for
-`FreewayHttpEngine` works unchanged on either adapter:
+`FreewayHttpEngine` works unchanged on either adapter. All keys below resolve
+through the full config cascade (CLI, JVM properties, env, files) — `-D` flags
+in the example are just one tier. A malformed `max-frame-size` fails startup
+naming the key instead of silently falling back.
 
 | Property | Default | Applies to | Meaning |
 |----------|---------|------------|---------|

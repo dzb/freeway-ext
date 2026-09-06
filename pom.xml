@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.jujin8.freeway</groupId>
         <artifactId>freeway-parent</artifactId>
-        <version>1.5.0</version>
+        <version>1.5.1</version>
     </parent>
 
     <artifactId>freeway-ext</artifactId>
@@ -28,7 +28,7 @@
     </scm>
 
     <properties>
-        <freeway.version>1.5.0</freeway.version>
+        <freeway.version>1.5.1</freeway.version>
 
         <!-- Third-party dependency versions, centralized here so all modules
              stay in sync. Latest stable versions as of 2026-08. -->

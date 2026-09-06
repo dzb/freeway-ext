@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.5.1
+
+### Changed
+
+- **aligned with Freeway core `1.5.1`** — `freeway-parent` and the
+  `freeway.version` property move to `1.5.1` (root and all five adapter
+  modules). No adapter API changes were required: core 1.5.1 is fully
+  backward compatible (additive `HttpServerConfig` fields with defaults,
+  additive `Http2Connection` overload, docs-only `Extension.asMap` note).
+- **adapter knobs resolve through the config cascade** — both HTTP engines
+  and the Hikari pool take an injected `SymbolSource`, so `freeway.http.*`
+  and `freeway.db.pool.leak-detection` honor CLI, JVM properties, env and
+  files instead of JVM properties alone. Direct construction keeps a
+  system-properties-only fallback with identical behavior (no test changes).
+  Malformed `freeway.http.websocket.max-frame-size` now fails startup
+  naming the key instead of silently falling back.
+- **HikariCP foreign-release guard** — releasing a connection that belongs
+  to another pool fails with an actionable `SqlException` (closing it would
+  shut a foreign physical connection); mirrors core `PoolDefault`.
+- **modernized idioms** — explicit imports (no wildcards), `Thread.ofPlatform`
+  thread factories, named daemon Kafka workers, `Math.floorMod` key buckets,
+  collapsed `DatabaseStats` branches.
+
 ## 1.5.0
 
 ### Changed

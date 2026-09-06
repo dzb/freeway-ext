@@ -16,7 +16,6 @@
 
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
@@ -24,6 +23,7 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 
 /** IoC module wiring the Kafka event sink and subscriber into the container. */
 public class KafkaModule implements ModuleEx {

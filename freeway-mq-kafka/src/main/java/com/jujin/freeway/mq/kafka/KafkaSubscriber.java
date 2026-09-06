@@ -103,7 +103,14 @@ public class KafkaSubscriber implements AutoCloseable {
     this.concurrency = config.concurrency();
     this.origin = config.origin();
     this.suppressOwn = config.suppressOwn();
-    this.executor = concurrency > 1 ? Executors.newFixedThreadPool(concurrency) : null;
+    // Named daemon workers: an unclosed subscriber must never keep the JVM
+    // alive, and unnamed pool threads are undebuggable in a thread dump.
+    this.executor =
+        concurrency > 1
+            ? Executors.newFixedThreadPool(
+                concurrency,
+                Thread.ofPlatform().daemon().name("freeway-kafka-worker-", 0).factory())
+            : null;
   }
 
   private static KafkaConsumer<String, byte[]> createConsumer(KafkaConfig config) {
@@ -186,9 +193,7 @@ public class KafkaSubscriber implements AutoCloseable {
   /** Processes a poll batch, optionally parallelizing across keys. */
   private void processBatch(Iterable<ConsumerRecord<String, byte[]>> records) throws Exception {
     List<ConsumerRecord<String, byte[]>> batch = new ArrayList<>();
-    for (var record : records) {
-      batch.add(record);
-    }
+    records.forEach(batch::add);
     if (executor == null || batch.size() <= 1) {
       for (var record : batch) {
         if (!running) {
@@ -242,7 +247,7 @@ public class KafkaSubscriber implements AutoCloseable {
   }
 
   private int keyBucket(String key) {
-    return key == null ? 0 : (key.hashCode() & Integer.MAX_VALUE) % concurrency;
+    return key == null ? 0 : Math.floorMod(key.hashCode(), concurrency);
   }
 
   private boolean processWithPolicy(ConsumerRecord<String, byte[]> record) {

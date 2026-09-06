@@ -21,10 +21,13 @@ import com.jujin.freeway.db.Pool;
 import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.db.PooledConnection;
 import com.jujin.freeway.db.SqlException;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,11 +37,19 @@ public final class HikariPool implements Pool {
   private static final Logger LOG = LoggerFactory.getLogger(HikariPool.class);
 
   private final HikariDataSource ds;
-  private final HikariConfig config;
-  private final AtomicLong borrowCount = new AtomicLong(0);
-  private final AtomicLong borrowWaitNanos = new AtomicLong(0);
+  private final HikariConfig hikariConfig;
+  private final AtomicLong borrowCount = new AtomicLong();
+  private final AtomicLong borrowWaitNanos = new AtomicLong();
 
   public HikariPool(PoolConfig config) {
+    this(config, systemProperties());
+  }
+
+  /**
+   * Container path: {@code SymbolSource} is a container builtin, so the leak-detection knob
+   * resolves through the full cascade instead of JVM properties alone.
+   */
+  public HikariPool(PoolConfig config, SymbolSource symbols) {
     HikariConfig hc = new HikariConfig();
     hc.setJdbcUrl(config.url());
     hc.setUsername(config.username());
@@ -54,7 +65,7 @@ public final class HikariPool implements Pool {
     // healthCheckTimeout maps to HikariCP's validation timeout: the maximum
     // time a borrowed connection may take to pass its validity test.
     hc.setValidationTimeout(config.healthCheckTimeout().toMillis());
-    String leakDetection = System.getProperty("freeway.db.pool.leak-detection");
+    String leakDetection = symbols.resolve("freeway.db.pool.leak-detection", null);
     if (leakDetection != null && !leakDetection.isBlank()) {
       try {
         hc.setLeakDetectionThreshold(Long.parseLong(leakDetection.trim()));
@@ -69,12 +80,39 @@ public final class HikariPool implements Pool {
     // PoolConfig fields without a HikariCP equivalent are intentionally not
     // mapped: cleanInterval (Hikari runs its own housekeeping) and
     // queryTimeout (JDBC statement level, not pool level).
-    this.config = hc;
+    this.hikariConfig = hc;
     try {
       this.ds = new HikariDataSource(hc);
     } catch (RuntimeException ex) {
       throw new SqlException("Failed to initialize HikariCP pool", ex);
     }
+  }
+
+  /**
+   * Standalone path (tests, direct construction): system properties only, exactly the pre-cascade
+   * behavior.
+   */
+  private static SymbolSource systemProperties() {
+    return new SymbolSource() {
+      @Override
+      public String resolve(String name) {
+        String value = System.getProperty(name);
+        if (value == null) {
+          throw new UnknownSymbolException(name);
+        }
+        return value;
+      }
+
+      @Override
+      public String resolve(String name, String defaultValue) {
+        return System.getProperty(name, defaultValue);
+      }
+
+      @Override
+      public String expand(String input) {
+        return input;
+      }
+    };
   }
 
   @Override
@@ -92,8 +130,18 @@ public final class HikariPool implements Pool {
 
   @Override
   public void release(PooledConnection conn) {
+    Objects.requireNonNull(conn, "conn");
+    if (!(conn instanceof HkConn hk)) {
+      // Releasing a foreign connection here would close a physical
+      // connection owned by another pool out from under it — fail loudly
+      // instead. Mirrors PoolDefault's foreign-release guard.
+      throw new SqlException(
+          "Foreign PooledConnection rejected: "
+              + conn.getClass().getName()
+              + " does not belong to this HikariPool — release connections only to the pool that borrowed them");
+    }
     try {
-      conn.connection().close();
+      hk.connection().close();
     } catch (SQLException ex) {
       if (ds.isClosed()) {
         // Releasing a connection after pool shutdown is an expected
@@ -107,24 +155,23 @@ public final class HikariPool implements Pool {
 
   @Override
   public DatabaseStats stats() {
-    if (ds.isClosed()) {
-      return new DatabaseStats(
-          0,
-          0,
-          0,
-          0,
-          config.getMaximumPoolSize(),
-          0, // longLeased — HikariCP does not expose per-connection borrow duration
-          borrowCount.get(),
-          borrowWaitNanos.get());
+    int active = 0;
+    int idle = 0;
+    int total = 0;
+    int awaiting = 0;
+    if (!ds.isClosed()) {
+      var pool = ds.getHikariPoolMXBean();
+      active = pool.getActiveConnections();
+      idle = pool.getIdleConnections();
+      total = pool.getTotalConnections();
+      awaiting = pool.getThreadsAwaitingConnection();
     }
-    var pool = ds.getHikariPoolMXBean();
     return new DatabaseStats(
-        pool.getActiveConnections(),
-        pool.getIdleConnections(),
-        pool.getTotalConnections(),
-        pool.getThreadsAwaitingConnection(),
-        config.getMaximumPoolSize(),
+        active,
+        idle,
+        total,
+        awaiting,
+        hikariConfig.getMaximumPoolSize(),
         0, // longLeased — HikariCP does not expose per-connection borrow duration
         borrowCount.get(),
         borrowWaitNanos.get());
@@ -137,7 +184,7 @@ public final class HikariPool implements Pool {
 
   /** Package-private for tests: the configured leak-detection threshold in ms. */
   long leakDetectionThreshold() {
-    return config.getLeakDetectionThreshold();
+    return hikariConfig.getLeakDetectionThreshold();
   }
 
   private record HkConn(Connection connection) implements PooledConnection {}

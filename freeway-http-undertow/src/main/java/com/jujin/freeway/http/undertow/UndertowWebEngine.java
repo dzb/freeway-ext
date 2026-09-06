@@ -18,8 +18,16 @@ package com.jujin.freeway.http.undertow;
 
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.http.*;
-import com.jujin.freeway.http.websocket.*;
+import com.jujin.freeway.http.ExchangeHandler;
+import com.jujin.freeway.http.HttpConfigKeys;
+import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.HttpServerHandle;
+import com.jujin.freeway.http.MediaTypes;
+import com.jujin.freeway.http.websocket.WebSocketListener;
+import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -39,6 +47,7 @@ import java.nio.file.Path;
 import java.security.KeyStore;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -65,14 +74,52 @@ public final class UndertowWebEngine implements HttpEngine {
 
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
+  private final SymbolSource symbols;
   private final ThreadLocal<UndertowHttpContext> contextPool;
   private volatile long wsMaxMessageSize = -1;
 
   public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer) {
+    this(jsonCodec, coercer, systemProperties());
+  }
+
+  /**
+   * Container path: {@code SymbolSource} is a container builtin, so composed use resolves every
+   * knob below through the full cascade (CLI, JVM properties, env, files) instead of JVM properties
+   * alone.
+   */
+  public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
+    this.symbols = Objects.requireNonNull(symbols, "symbols");
     this.contextPool =
         ThreadLocal.withInitial(() -> new UndertowHttpContext(this.jsonCodec, this.coercer));
+  }
+
+  /**
+   * Standalone path (tests, benchmarks, direct construction): system properties only, exactly the
+   * pre-cascade behavior.
+   */
+  private static SymbolSource systemProperties() {
+    return new SymbolSource() {
+      @Override
+      public String resolve(String name) {
+        String value = System.getProperty(name);
+        if (value == null) {
+          throw new UnknownSymbolException(name);
+        }
+        return value;
+      }
+
+      @Override
+      public String resolve(String name, String defaultValue) {
+        return System.getProperty(name, defaultValue);
+      }
+
+      @Override
+      public String expand(String input) {
+        return input;
+      }
+    };
   }
 
   @Override
@@ -89,11 +136,12 @@ public final class UndertowWebEngine implements HttpEngine {
     // on I/O threads (faster for non-blocking handlers, dangerous if they
     // block).
     boolean dispatchIo =
-        !"false".equalsIgnoreCase(System.getProperty("freeway.http.undertow.dispatch-io", "true"));
+        !"false".equalsIgnoreCase(symbols.resolve("freeway.http.undertow.dispatch-io", "true"));
     // Same knob as the Jetty adapter: maximum WebSocket text/binary message
     // size in bytes; 0 or negative disables the limit. Undertow's default is
     // unlimited, which lets a remote client buffer unbounded messages (OOM).
-    this.wsMaxMessageSize = Long.getLong("freeway.http.websocket.max-frame-size", 65_536L);
+    this.wsMaxMessageSize =
+        parseMaxFrameSize(symbols.resolve("freeway.http.websocket.max-frame-size", "65536"));
     HttpHandler root =
         exchange -> {
           if (dispatchIo && exchange.isInIoThread()) {
@@ -109,7 +157,7 @@ public final class UndertowWebEngine implements HttpEngine {
     // dynamic encoding has no minimum-size gate, so it would compress small
     // responses the shared config says to leave alone.
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
-    boolean sslEnabled = Boolean.getBoolean(HttpConfigKeys.SSL_ENABLED);
+    boolean sslEnabled = Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_ENABLED, "false"));
     Undertow.Builder builder =
         Undertow.builder()
             .setHandler(gracefulShutdown)
@@ -141,7 +189,7 @@ public final class UndertowWebEngine implements HttpEngine {
       // mTLS / protocol / cipher constraints, keyed on the same
       // freeway.http.ssl.* options the built-in engine uses. XNIO applies
       // these socket options when the SSL engine is created.
-      if (Boolean.getBoolean(HttpConfigKeys.SSL_CLIENT_AUTH)) {
+      if (Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_CLIENT_AUTH, "false"))) {
         builder.setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED);
       }
       String protocols = prop(HttpConfigKeys.SSL_PROTOCOLS);
@@ -158,7 +206,7 @@ public final class UndertowWebEngine implements HttpEngine {
       // flag the built-in engine uses (default true). Undertow performs ALPN
       // itself on JDK 9+; h2c (cleartext) has no core knob and is not
       // enabled by this adapter.
-      if (!"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true"))) {
+      if (!"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true"))) {
         builder.setServerOption(UndertowOptions.ENABLE_HTTP2, true);
       }
     } else {
@@ -170,8 +218,7 @@ public final class UndertowWebEngine implements HttpEngine {
         "Freeway undertow web engine started on {}:{} (http2={})",
         config.host(),
         listenerPort(server),
-        sslEnabled
-            && !"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true")));
+        sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true")));
     return new UndertowHandle(server, gracefulShutdown, config.shutdownGrace(), config.host());
   }
 
@@ -182,7 +229,7 @@ public final class UndertowWebEngine implements HttpEngine {
    * client-auth/protocols/ciphers enforced via XNIO socket options (the JDK SSLContext itself is
    * configured with key/trust managers only).
    */
-  private static SSLContext sslContext() {
+  private SSLContext sslContext() {
     String keyStorePath = prop(HttpConfigKeys.SSL_KEY_STORE);
     char[] password = prop(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, "").toCharArray();
     try {
@@ -193,7 +240,7 @@ public final class UndertowWebEngine implements HttpEngine {
       }
       // JKS keystores may protect the key with a separate password; honor
       // freeway.http.ssl.key-password like the Jetty adapter does.
-      String keyPasswordProp = System.getProperty("freeway.http.ssl.key-password");
+      String keyPasswordProp = prop("freeway.http.ssl.key-password");
       char[] keyPassword = keyPasswordProp != null ? keyPasswordProp.toCharArray() : password;
       KeyManagerFactory kmf =
           KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -227,7 +274,7 @@ public final class UndertowWebEngine implements HttpEngine {
    * Resolves the keystore type: explicit {@code freeway.http.ssl.key-store-type} wins, else
    * inferred from the {@code .jks} extension, else PKCS12 (the built-in engine's default).
    */
-  private static String keyStoreType(String keyStorePath) {
+  private String keyStoreType(String keyStorePath) {
     String explicit = prop(HttpConfigKeys.SSL_KEY_STORE_TYPE);
     if (explicit != null && !explicit.isBlank()) {
       return explicit;
@@ -237,17 +284,30 @@ public final class UndertowWebEngine implements HttpEngine {
         : "PKCS12";
   }
 
-  private static String prop(String key) {
-    return System.getProperty(key);
+  private String prop(String key) {
+    return symbols.resolve(key, null);
   }
 
-  private static String prop(String key, String defaultValue) {
-    return System.getProperty(key, defaultValue);
+  private String prop(String key, String defaultValue) {
+    return symbols.resolve(key, defaultValue);
+  }
+
+  /**
+   * Parses the shared WebSocket max-frame-size knob. Malformed values fail startup naming the key
+   * instead of silently falling back the way {@code Long.getLong} did.
+   */
+  private static long parseMaxFrameSize(String raw) {
+    try {
+      return Long.parseLong(raw.trim());
+    } catch (NumberFormatException | NullPointerException ex) {
+      throw new IllegalArgumentException(
+          "freeway.http.websocket.max-frame-size must be a byte count, got: '" + raw + "'", ex);
+    }
   }
 
   /** Splits a comma-separated property value into trimmed, non-empty tokens. */
   private static String[] splitCommaSeparated(String value) {
-    return java.util.Arrays.stream(value.split(","))
+    return Arrays.stream(value.split(","))
         .map(String::trim)
         .filter(s -> !s.isEmpty())
         .toArray(String[]::new);

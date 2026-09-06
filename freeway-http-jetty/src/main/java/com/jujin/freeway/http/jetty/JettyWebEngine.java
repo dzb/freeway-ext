@@ -18,8 +18,16 @@ package com.jujin.freeway.http.jetty;
 
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.http.*;
-import com.jujin.freeway.http.websocket.*;
+import com.jujin.freeway.http.ExchangeHandler;
+import com.jujin.freeway.http.HttpConfigKeys;
+import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.HttpServerHandle;
+import com.jujin.freeway.http.MediaTypes;
+import com.jujin.freeway.http.websocket.WebSocketListener;
+import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -60,13 +68,51 @@ public final class JettyWebEngine implements HttpEngine {
 
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
+  private final SymbolSource symbols;
   private final ThreadLocal<JettyHttpContext> contextPool;
 
   public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer) {
+    this(jsonCodec, coercer, systemProperties());
+  }
+
+  /**
+   * Container path: {@code SymbolSource} is a container builtin, so composed use resolves every
+   * knob below through the full cascade (CLI, JVM properties, env, files) instead of JVM properties
+   * alone.
+   */
+  public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
+    this.symbols = Objects.requireNonNull(symbols, "symbols");
     this.contextPool =
         ThreadLocal.withInitial(() -> new JettyHttpContext(this.jsonCodec, this.coercer));
+  }
+
+  /**
+   * Standalone path (tests, benchmarks, direct construction): system properties only, exactly the
+   * pre-cascade behavior.
+   */
+  private static SymbolSource systemProperties() {
+    return new SymbolSource() {
+      @Override
+      public String resolve(String name) {
+        String value = System.getProperty(name);
+        if (value == null) {
+          throw new UnknownSymbolException(name);
+        }
+        return value;
+      }
+
+      @Override
+      public String resolve(String name, String defaultValue) {
+        return System.getProperty(name, defaultValue);
+      }
+
+      @Override
+      public String expand(String input) {
+        return input;
+      }
+    };
   }
 
   @Override
@@ -97,7 +143,8 @@ public final class JettyWebEngine implements HttpEngine {
     }
 
     ServerWebSocketContainer webSocketContainer = ServerWebSocketContainer.ensure(server);
-    long maxFrameSize = Long.getLong("freeway.http.websocket.max-frame-size", 65_536L);
+    long maxFrameSize =
+        parseMaxFrameSize(symbols.resolve("freeway.http.websocket.max-frame-size", "65536"));
     if (maxFrameSize > 0) {
       webSocketContainer.setMaxTextMessageSize(maxFrameSize);
       webSocketContainer.setMaxBinaryMessageSize(maxFrameSize);
@@ -164,50 +211,50 @@ public final class JettyWebEngine implements HttpEngine {
    * {@code freeway.http.http2} toggle remains for h2c (cleartext HTTP/2); it is ignored when TLS is
    * enabled.
    */
-  private static ServerConnector buildConnector(Server server, HttpServerConfig config) {
-    boolean sslEnabled = Boolean.getBoolean(HttpConfigKeys.SSL_ENABLED);
+  private ServerConnector buildConnector(Server server, HttpServerConfig config) {
+    boolean sslEnabled = Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_ENABLED, "false"));
     boolean alpnHttp2 =
-        sslEnabled
-            && !"false".equalsIgnoreCase(System.getProperty(HttpConfigKeys.SSL_HTTP2, "true"));
-    boolean h2c = !sslEnabled && Boolean.getBoolean("freeway.http.http2");
+        sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true"));
+    boolean h2c =
+        !sslEnabled && Boolean.parseBoolean(symbols.resolve("freeway.http.http2", "false"));
     if (!sslEnabled && !h2c) {
       return new ServerConnector(server);
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
-      ssl.setKeyStorePath(System.getProperty(HttpConfigKeys.SSL_KEY_STORE));
-      ssl.setKeyStorePassword(System.getProperty(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, ""));
-      String keyStoreType = System.getProperty(HttpConfigKeys.SSL_KEY_STORE_TYPE);
+      ssl.setKeyStorePath(symbols.resolve(HttpConfigKeys.SSL_KEY_STORE, null));
+      ssl.setKeyStorePassword(symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, ""));
+      String keyStoreType = symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_TYPE, null);
       if (keyStoreType != null && !keyStoreType.isBlank()) {
         ssl.setKeyStoreType(keyStoreType);
       }
-      String trustStorePath = System.getProperty(HttpConfigKeys.SSL_TRUST_STORE);
+      String trustStorePath = symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE, null);
       if (trustStorePath != null) {
         ssl.setTrustStorePath(trustStorePath);
-        ssl.setTrustStorePassword(System.getProperty(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, ""));
-        String trustStoreType = System.getProperty(HttpConfigKeys.SSL_TRUST_STORE_TYPE);
+        ssl.setTrustStorePassword(symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, ""));
+        String trustStoreType = symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE_TYPE, null);
         if (trustStoreType != null && !trustStoreType.isBlank()) {
           ssl.setTrustStoreType(trustStoreType);
         }
       }
-      if (Boolean.getBoolean(HttpConfigKeys.SSL_CLIENT_AUTH)) {
+      if (Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_CLIENT_AUTH, "false"))) {
         ssl.setNeedClientAuth(true);
       }
-      String protocols = System.getProperty(HttpConfigKeys.SSL_PROTOCOLS);
+      String protocols = symbols.resolve(HttpConfigKeys.SSL_PROTOCOLS, null);
       if (protocols != null && !protocols.isBlank()) {
         ssl.setIncludeProtocols(splitCommaSeparated(protocols));
       }
-      String ciphers = System.getProperty(HttpConfigKeys.SSL_CIPHERS);
+      String ciphers = symbols.resolve(HttpConfigKeys.SSL_CIPHERS, null);
       if (ciphers != null && !ciphers.isBlank()) {
         ssl.setIncludeCipherSuites(splitCommaSeparated(ciphers));
       }
       // Jetty extensions kept from the pre-refactor adapter: separate key
       // manager password and certificate alias selection.
-      String keyPassword = System.getProperty("freeway.http.ssl.key-password");
+      String keyPassword = symbols.resolve("freeway.http.ssl.key-password", null);
       if (keyPassword != null) {
         ssl.setKeyManagerPassword(keyPassword);
       }
-      String alias = System.getProperty("freeway.http.ssl.key-alias");
+      String alias = symbols.resolve("freeway.http.ssl.key-alias", null);
       if (alias != null) {
         ssl.setCertAlias(alias);
       }
@@ -239,6 +286,19 @@ public final class JettyWebEngine implements HttpEngine {
         .map(String::trim)
         .filter(s -> !s.isEmpty())
         .toArray(String[]::new);
+  }
+
+  /**
+   * Parses the shared WebSocket max-frame-size knob. Malformed values fail startup naming the key
+   * instead of silently falling back the way {@code Long.getLong} did.
+   */
+  private static long parseMaxFrameSize(String raw) {
+    try {
+      return Long.parseLong(raw.trim());
+    } catch (NumberFormatException | NullPointerException ex) {
+      throw new IllegalArgumentException(
+          "freeway.http.websocket.max-frame-size must be a byte count, got: '" + raw + "'", ex);
+    }
   }
 
   private boolean handleWebSocket(

@@ -20,6 +20,7 @@ import com.jujin.freeway.db.Pool;
 import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
 
 /** IoC module that installs HikariCP as the primary connection pool. */
 public final class HikariPoolModule implements ModuleEx {
@@ -31,7 +32,7 @@ public final class HikariPoolModule implements ModuleEx {
         .to(
             container -> {
               PoolConfig config = container.get(PoolConfig.class);
-              return new HikariPool(config);
+              return new HikariPool(config, container.get(SymbolSource.class));
             })
         .id("hikari")
         .primary();

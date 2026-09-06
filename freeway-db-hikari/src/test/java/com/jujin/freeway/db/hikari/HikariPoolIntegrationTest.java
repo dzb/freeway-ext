@@ -326,4 +326,23 @@ class HikariPoolIntegrationTest {
     pool.close();
     assertDoesNotThrow(pool::close, "second close should not throw");
   }
+
+  @Test
+  void releaseForeignConnectionFailsWithSqlException() {
+    // Closing a foreign connection here would shut a physical connection
+    // owned by another pool out from under it — fail loudly instead.
+    // Mirrors PoolDefault's foreign-release guard.
+    PoolConfig config = PoolConfig.defaults(newDb(), "sa", "");
+    HikariPool pool = new HikariPool(config);
+    try {
+      PooledConnection foreign = () -> null;
+      SqlException e = assertThrows(SqlException.class, () -> pool.release(foreign));
+      assertTrue(
+          e.getMessage().contains("Foreign PooledConnection"),
+          "message must name the contract violation, got: " + e.getMessage());
+      assertThrows(NullPointerException.class, () -> pool.release(null));
+    } finally {
+      pool.close();
+    }
+  }
 }

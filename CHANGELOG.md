@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.5.2-SNAPSHOT
+
+### Changed
+
+- **aligned with Freeway core `1.5.2-SNAPSHOT`** — `freeway-parent` and the
+  `freeway.version` property move together to `1.5.2-SNAPSHOT` (root and all
+  five adapter modules). The engine RPC tests compile only against the 1.5.2
+  API, so the parent and the dependency version cannot drift apart.
+- **RPC endpoints are declared, not built per mapping** — core 1.5.2 replaces
+  the per-mapping endpoint factory with an `RpcExport` data declaration served
+  by a contributed wildcard route, and drops the call bus from the RPC path:
+  `RpcEndpoint.route(export, handler, codec)` takes the handler instance and
+  stays container-free for standalone assembly. The Jetty and Undertow RPC
+  tests therefore feed a `RouteIndex` directly, naming their export and
+  dropping the fake container and the bus entirely.
+- **no adapter code changes** — the four adapters keep their public surface;
+  only the version pins and the two engine RPC tests are touched.
+- **spotless** — the two reworked RPC tests are re-flowed to
+  google-java-format 1.36.1, the format `verify` enforces.
+
 ## 1.5.1
 
 ### Changed

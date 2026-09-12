@@ -18,17 +18,15 @@ import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.ioc.CallBus;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Design-doc phase D: the remote-CallBus bridge works over the Undertow engine. The server side
- * registers CallBus handlers and exports them via {@link RpcEndpoint}; the client drives {@link
- * RemoteCaller} against the container's own registry so the whole exchange is engine-real but
- * self-contained.
+ * Design-doc phase D: remote invocation works over the Undertow engine. The server side exports a
+ * handler through {@link RpcEndpoint}; the client drives {@link RemoteCaller} against the
+ * container's own registry so the whole exchange is engine-real but self-contained.
  */
 class JettyRemoteRpcTest {
 
@@ -38,7 +36,7 @@ class JettyRemoteRpcTest {
     }
   }
 
-  /** Handlers must be public: CallBus reflective dispatch honors access rules. */
+  /** Handlers must be public: reflective dispatch honors access rules. */
   public static class Handlers {
     public String greet(String name) {
       return "hi " + name;
@@ -55,49 +53,6 @@ class JettyRemoteRpcTest {
 
   private WebServer server;
   private RemoteCaller caller;
-  private CallBus bus;
-
-  /** Minimal Container serving exactly what CallBus construction needs. */
-  static class NoopContainer implements com.jujin.freeway.ioc.Container {
-    private final com.jujin.freeway.commons.metrics.Metrics metrics =
-        new com.jujin.freeway.commons.metrics.NoopMetrics();
-
-    @SuppressWarnings("unchecked")
-    public <T> T get(Class<T> type) {
-      if (type == com.jujin.freeway.commons.metrics.Metrics.class) return (T) metrics;
-      throw new UnsupportedOperationException(String.valueOf(type));
-    }
-
-    public <T> T get(Class<T> type, String id) {
-      return get(type);
-    }
-
-    @SafeVarargs
-    public final <T> T get(
-        Class<T> type, Class<? extends java.lang.annotation.Annotation>... markers) {
-      return get(type);
-    }
-
-    public <T> com.jujin.freeway.ioc.extension.Extension<T> extension(Class<T> entryType) {
-      throw new UnsupportedOperationException();
-    }
-
-    public <T> T create(Class<T> type) {
-      throw new UnsupportedOperationException();
-    }
-
-    @SafeVarargs
-    public final <T> boolean isActiveBinding(
-        Class<T> type, Class<? extends java.lang.annotation.Annotation>... markers) {
-      return false;
-    }
-
-    public java.util.List<com.jujin.freeway.ioc.ModuleEx> modules() {
-      return java.util.List.of();
-    }
-
-    public void close() {}
-  }
 
   @AfterEach
   void stop() {
@@ -105,13 +60,14 @@ class JettyRemoteRpcTest {
   }
 
   private void start() {
-    bus = new CallBus(new NoopContainer());
-    bus.register("user", new Handlers());
-
     var routes =
-        new RouteIndex(List.of(RpcEndpoint.route(
-            RpcExport.of("user", JettyRemoteRpcTest.Handlers.class), bus,
-            new JsonCodecDefault())), List.of());
+        new RouteIndex(
+            List.of(
+                RpcEndpoint.route(
+                    RpcExport.of("user", JettyRemoteRpcTest.Handlers.class),
+                    new Handlers(),
+                    new JsonCodecDefault())),
+            List.of());
     var pipeline =
         new RequestComponents(
             routes,

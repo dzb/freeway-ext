@@ -9,6 +9,7 @@ import com.jujin.freeway.cloud.rpc.CloudException;
 import com.jujin.freeway.cloud.rpc.RemoteCaller;
 import com.jujin.freeway.cloud.rpc.RemoteInvocationException;
 import com.jujin.freeway.cloud.rpc.RpcEndpoint;
+import com.jujin.freeway.cloud.rpc.RpcExport;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
@@ -91,6 +92,10 @@ class UndertowRemoteRpcTest {
       return false;
     }
 
+    public java.util.List<com.jujin.freeway.ioc.ModuleEx> modules() {
+      return java.util.List.of();
+    }
+
     public void close() {}
   }
 
@@ -104,7 +109,9 @@ class UndertowRemoteRpcTest {
     bus.register("user", new Handlers());
 
     var routes =
-        new RouteIndex(List.of(RpcEndpoint.of("user", bus, new JsonCodecDefault())), List.of());
+        new RouteIndex(List.of(RpcEndpoint.route(
+            RpcExport.of("user", UndertowRemoteRpcTest.Handlers.class), bus,
+            new JsonCodecDefault())), List.of());
     var pipeline =
         new RequestComponents(
             routes,

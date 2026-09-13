@@ -556,7 +556,7 @@ CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端�
 
 明确不抽的（写进 §6）：`*Handle` 的 record（差异是各自的优雅停机 API）、TLS 助手、404 体、
 `readTimeout=0` 拼法、每请求 dispatch、WS 帧上限拒绝时机。验证：core `mvn -o clean test` 全绿
-（http 418→431 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
+（http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 
 ## 6. 建议保留的有意差异
 

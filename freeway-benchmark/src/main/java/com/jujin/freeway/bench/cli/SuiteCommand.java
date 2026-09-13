@@ -20,6 +20,7 @@ import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
+import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
@@ -74,16 +75,9 @@ public final class SuiteCommand implements Command {
     int requests = ctx.getInt("requests", 2000);
     int warmup = ctx.getInt("warmup", 200);
     int runs = ctx.getInt("runs", 3);
-    var modeStr = ctx.get("mode", "keepalive");
-    if (modeStr.equalsIgnoreCase("long")) modeStr = "keepalive";
-    var modeLabel = modeStr.toLowerCase(Locale.ROOT);
-    var benchMode =
-        switch (modeLabel) {
-          case "short" -> BenchRunner.Mode.SHORT;
-          case "ws", "websocket" -> BenchRunner.Mode.WS;
-          default -> BenchRunner.Mode.KEEPALIVE;
-        };
-    if (benchMode == BenchRunner.Mode.WS) {
+    var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
+    var modeLabel = mode.label();
+    if (mode.webSocket()) {
       if (scenarios.stream().noneMatch(s -> s.equalsIgnoreCase("ws_echo"))) {
         throw new UsageException("--mode=ws requires --scenario=ws_echo");
       }
@@ -134,7 +128,7 @@ public final class SuiteCommand implements Command {
             int port = harness.port();
             for (int r = 0; r < runs; r++) {
               done++;
-              var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, benchMode);
+              var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
               scores[r] = ir.rps();
               iterationResults.add(ir);
 

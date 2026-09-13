@@ -17,22 +17,15 @@
 package com.jujin.freeway.bench.run;
 
 import com.jujin.freeway.bench.harness.ServerHarness;
-import com.jujin.freeway.bench.model.Result;
-import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
- * Isolated benchmark runner using separate JVM processes for server and client. Each measurement
- * run spawns a fresh server + client pair — zero cross-contamination.
+ * Isolated benchmark entry point: one JVM per role. {@code bench.role=server} starts the engine and
+ * waits, {@code bench.role=client} measures against it and prints a {@code RESULT} line, and the
+ * default role orchestrates {@code bench.runs} fresh server+client pairs — zero cross-contamination
+ * between the measured target and the measurement harness.
  *
- * <p>Use this for final performance claims where process-level isolation matters. For day-to-day
- * iteration, use the CLI ({@code bench run}) instead.
+ * <p>The class only owns role dispatch and the two subprocess entry points; the fork loop lives in
+ * {@link ForkedRunner} and every process/classpath detail in {@link BenchProcesses}.
  *
  * <pre>
  * mvn -f freeway-benchmark/pom.xml -am process-classes
@@ -44,108 +37,43 @@ import java.util.List;
  */
 public final class BenchFork {
 
-  private static final String MAIN_CLASS = BenchFork.class.getName();
+  private BenchFork() {}
 
   public static void main(String[] args) throws Exception {
-    String role = p("bench.role", "suite");
+    String role = BenchProcesses.prop("bench.role", "suite");
     if ("server".equalsIgnoreCase(role)) {
-      runServer(p("bench.engine", "freeway"), p("bench.mode", "keepalive"));
+      runServer(
+          BenchProcesses.prop("bench.engine", "freeway"),
+          BenchProcesses.prop("bench.mode", "keepalive"));
       return;
     }
     if ("client".equalsIgnoreCase(role)) {
       runClient(
-          p("bench.engine", "freeway"),
-          p("bench.mode", "keepalive"),
-          ip("bench.port", 0),
-          ip("bench.requests", 2000),
-          ip("bench.concurrency", 2),
-          ip("bench.warmup", 200));
+          BenchProcesses.prop("bench.engine", "freeway"),
+          BenchProcesses.prop("bench.mode", "keepalive"),
+          BenchProcesses.intProp("bench.port", 0),
+          BenchProcesses.intProp("bench.requests", 2000),
+          BenchProcesses.intProp("bench.concurrency", 2),
+          BenchProcesses.intProp("bench.warmup", 200));
       return;
     }
 
-    // Suite mode: orchestrate fork cycles
-    String engine = p("bench.engine", "freeway");
-    String mode = p("bench.mode", "keepalive");
-    int requests = ip("bench.requests", 20_000);
-    int concurrency =
-        ip("bench.concurrency", Math.max(1, Runtime.getRuntime().availableProcessors()));
-    int warmup = ip("bench.warmup", 2_000);
-    int runs = ip("bench.runs", 3);
-    int pause = ip("bench.pauseMillis", 3000);
-
-    System.out.printf(
-        "=== %s mode=%s requests=%d concurrency=%d runs=%d ===%n",
-        engine, mode, requests, concurrency, runs);
-
-    List<Result> results = new ArrayList<>();
-    for (int i = 0; i < runs; i++) {
-      Result r = runFork(engine, mode, requests, concurrency, warmup, i);
-      results.add(r);
-      System.out.printf("[run %d/%d] %s%n", i + 1, runs, r);
-      if (i + 1 < runs && pause > 0) Thread.sleep(pause);
-    }
-    if (runs > 1) System.out.printf("[median] %s%n", Result.median(results));
-  }
-
-  // --- fork orchestration ---
-
-  private static Result runFork(
-      String engine, String mode, int requests, int concurrency, int warmup, int runIdx)
-      throws Exception {
-    Path serverLog = Files.createTempFile("bench-server-", ".log");
-    Process server =
-        new ProcessBuilder(
-                javaBin(),
-                "-cp",
-                classpath(),
-                "-Dbench.role=server",
-                "-Dbench.engine=" + engine,
-                "-Dbench.mode=" + mode,
-                MAIN_CLASS)
-            .redirectErrorStream(true)
-            .redirectOutput(serverLog.toFile())
-            .start();
-    try {
-      int port = awaitReady(server, serverLog, Duration.ofSeconds(30));
-      Path clientLog = Files.createTempFile("bench-client-", ".log");
-      Process client =
-          new ProcessBuilder(
-                  javaBin(),
-                  "-cp",
-                  classpath(),
-                  "-Dbench.role=client",
-                  "-Dbench.engine=" + engine,
-                  "-Dbench.mode=" + mode,
-                  "-Dbench.port=" + port,
-                  "-Dbench.requests=" + requests,
-                  "-Dbench.concurrency=" + concurrency,
-                  "-Dbench.warmup=" + warmup,
-                  MAIN_CLASS)
-              .redirectErrorStream(true)
-              .redirectOutput(clientLog.toFile())
-              .start();
-      try {
-        int exit = client.waitFor();
-        if (exit != 0)
-          throw new RuntimeException("Client exit " + exit + "\n" + readAllSafe(clientLog));
-        return parseResult(readAllSafe(clientLog));
-      } finally {
-        client.destroyForcibly();
-        deleteSafe(clientLog);
-      }
-    } finally {
-      server.destroyForcibly();
-      deleteSafe(serverLog);
-    }
+    ForkedRunner.run(
+        BenchProcesses.prop("bench.engine", "freeway"),
+        BenchProcesses.prop("bench.mode", "keepalive"),
+        BenchProcesses.intProp("bench.requests", 20_000),
+        BenchProcesses.intProp(
+            "bench.concurrency", Math.max(1, Runtime.getRuntime().availableProcessors())),
+        BenchProcesses.intProp("bench.warmup", 2_000),
+        BenchProcesses.intProp("bench.runs", 3),
+        BenchProcesses.intProp("bench.pauseMillis", 3000));
   }
 
   // --- server / client subprocess entry points ---
 
   private static void runServer(String engine, String mode) throws Exception {
     var eng = ServerHarness.Engine.fromString(engine);
-    // mode selects the scenario too: ws requires the WS_ECHO scenario,
-    // which ServerHarness only supports for freeway/undertow-native/jetty-native.
-    var scn = scenarioFor(mode);
+    var scn = BenchMode.of(mode).scenario();
     try (var h = ServerHarness.start(eng, scn)) {
       System.out.println("READY port=" + h.port() + " engine=" + engine + " scenario=" + scn);
       System.out.flush();
@@ -156,136 +84,10 @@ public final class BenchFork {
   private static void runClient(
       String engine, String mode, int port, int requests, int concurrency, int warmup)
       throws Exception {
-    var benchMode = resolveMode(mode);
-    var ir = BenchRunner.run(port, concurrency, requests, warmup, scenarioFor(mode), benchMode);
-    var r = toResult(engine, mode, requests, ir);
-    System.out.println("RESULT " + r);
-  }
-
-  private static ServerHarness.Scenario scenarioFor(String mode) {
-    return "ws".equalsIgnoreCase(mode) || "websocket".equalsIgnoreCase(mode)
-        ? ServerHarness.Scenario.WS_ECHO
-        : ServerHarness.Scenario.PING;
-  }
-
-  // --- helpers ---
-
-  private static int awaitReady(Process p, Path log, Duration timeout)
-      throws IOException, InterruptedException {
-    long deadline = System.nanoTime() + timeout.toNanos();
-    while (System.nanoTime() < deadline) {
-      if (Files.exists(log)) {
-        try {
-          String content = new String(Files.readAllBytes(log), StandardCharsets.ISO_8859_1);
-          for (String line : content.lines().toList()) {
-            if (line.startsWith("READY ")) {
-              String port = line.substring(line.indexOf('=') + 1).split("\\s")[0];
-              return Integer.parseInt(port);
-            }
-          }
-        } catch (IOException ignored) {
-        }
-      }
-      if (!p.isAlive()) throw new RuntimeException("Server died: " + readAllSafe(log));
-      Thread.sleep(100);
-    }
-    throw new RuntimeException("Server not ready: " + readAllSafe(log));
-  }
-
-  private static String readAllSafe(Path log) {
-    try {
-      return new String(Files.readAllBytes(log), StandardCharsets.ISO_8859_1);
-    } catch (IOException e) {
-      return "(unreadable: " + e.getMessage() + ")";
-    }
-  }
-
-  private static Result parseResult(String output) {
-    for (String line : output.lines().toList())
-      if (line.startsWith("RESULT ")) return Result.fromLine(line);
-    throw new RuntimeException("No RESULT line in output:\n" + output);
-  }
-
-  private static BenchRunner.Mode resolveMode(String mode) {
-    if ("ws".equalsIgnoreCase(mode) || "websocket".equalsIgnoreCase(mode))
-      return BenchRunner.Mode.WS;
-    if ("short".equalsIgnoreCase(mode)) return BenchRunner.Mode.SHORT;
-    return BenchRunner.Mode.KEEPALIVE;
-  }
-
-  private static Result toResult(
-      String engine, String mode, int requests, BenchRunner.IterationResult ir) {
-    return new Result(
-        engine,
-        mode,
-        requests,
-        requests - ir.errors(),
-        ir.errors(),
-        ir.rps(),
-        ir.p50us(),
-        ir.p95us(),
-        ir.p99us());
-  }
-
-  private static String p(String k, String d) {
-    String v = System.getProperty(k);
-    return v != null && !v.isBlank() ? v : d;
-  }
-
-  private static int ip(String k, int d) {
-    String v = System.getProperty(k);
-    return v == null || v.isBlank() ? d : Integer.parseInt(v.trim());
-  }
-
-  private static String javaBin() {
-    return ProcessHandle.current().info().command().orElse("java");
-  }
-
-  private static void deleteSafe(Path file) {
-    for (int i = 0; i < 5; i++) {
-      try {
-        Files.deleteIfExists(file);
-        return;
-      } catch (IOException e) {
-        try {
-          Thread.sleep(100);
-        } catch (InterruptedException ignored) {
-          Thread.currentThread().interrupt();
-          return;
-        }
-      }
-    }
-  }
-
-  private static String classpath() {
-    String override = System.getProperty("bench.classpath");
-    if (override != null && !override.isBlank()) return override;
-    for (String p :
-        List.of("freeway-benchmark/target/benchmark.classpath", "target/benchmark.classpath")) {
-      Path f = Path.of(p);
-      if (Files.isRegularFile(f)) {
-        try {
-          String deps = Files.readString(f).trim();
-          String classes = f.getParent().resolve("classes").toString();
-          return classes + File.pathSeparator + deps;
-        } catch (IOException ignored) {
-        }
-      }
-    }
-    // Fallback: derive the classpath from this class's own code source so
-    // BenchFork also works when launched from an arbitrary working directory.
-    try {
-      var location =
-          Path.of(BenchFork.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-      if (Files.isDirectory(location)) {
-        Path cpFile = location.getParent().resolve("benchmark.classpath");
-        if (Files.isRegularFile(cpFile)) {
-          String deps = Files.readString(cpFile).trim();
-          return location + File.pathSeparator + deps;
-        }
-      }
-    } catch (Exception ignored) {
-    }
-    return System.getProperty("java.class.path");
+    var benchMode = BenchMode.of(mode);
+    var ir =
+        BenchRunner.run(
+            port, concurrency, requests, warmup, benchMode.scenario(), benchMode.clientMode());
+    System.out.println("RESULT " + ForkedRunner.toResult(engine, mode, requests, ir));
   }
 }

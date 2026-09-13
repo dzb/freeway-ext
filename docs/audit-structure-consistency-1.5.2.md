@@ -584,6 +584,16 @@ SslContextFactory，**Undertow 删掉自写的 40 行 JSSE 构建**（改调 `Ss
 失败**；现在它内部接 `CoercerDefault`，与容器链一致。两个适配器的配置测试也改用 testkit 里共享的
 `Symbols.of(Map)`（同样按容器语义解析 spec），因为原来各自手写的 double 同样只实现了字符串读取。
 
+**（2026-09-13 又一轮：`BenchFork` 按角色拆分 + mode 映射单点化）** §4.5 的两项一次落地：
+① `BenchFork`（291 行、四种角色）拆成 `BenchFork`（93 行，角色分发 + server/client 子进程入口）、
+`ForkedRunner`（132 行，run 循环/间隔/中位数）、`BenchProcesses`（143 行，JVM 与 classpath 发现、
+`READY` 握手、日志读取与清理）；② 审计说的"mode→Mode→Scenario 映射抄了三遍且默认值互不相同"
+收敛为 `BenchMode`——三个入口共用拼写、别名（`long`）、标签与 forked 场景约定，未知拼写
+（`--mode=wl`）不再静默按 keepalive 测，而是命名 `--mode` 的用法错误（CLI 侧）/子进程直接失败
+（fork 侧）。该模块此前对这段代码零测试，现在新增 `BenchModeTest`(4) 与 `BenchProcessesTest`(3)。
+验证：真实 fork 跑通两轮 + median；CLI `--mode=ws --scenario=ws_echo` 跑通；两条拒绝路径实跑；
+benchmark 模块 16 例、ext 全量全绿。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

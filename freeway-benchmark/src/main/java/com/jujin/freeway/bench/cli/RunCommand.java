@@ -20,6 +20,7 @@ import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
+import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -63,7 +64,6 @@ public final class RunCommand implements Command {
     var engine = ctx.get("engine", "freeway");
     var scenario = ctx.get("scenario", "ping");
     var modeStr = ctx.get("mode", "keepalive");
-    if (modeStr.equalsIgnoreCase("long")) modeStr = "keepalive";
     int concurrency = ctx.getInt("concurrency", 32);
     int requests = ctx.getInt("requests", 5000);
     int warmup = ctx.getInt("warmup", 500);
@@ -78,13 +78,8 @@ public final class RunCommand implements Command {
             value -> ServerHarness.Scenario.valueOf(value.toUpperCase(Locale.ROOT)),
             ServerHarness.Scenario.PING);
 
-    var modeLabel = modeStr.toLowerCase(Locale.ROOT);
-    var benchMode =
-        switch (modeLabel) {
-          case "short" -> BenchRunner.Mode.SHORT;
-          case "ws", "websocket" -> BenchRunner.Mode.WS;
-          default -> BenchRunner.Mode.KEEPALIVE;
-        };
+    var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
+    var modeLabel = mode.label();
 
     System.out.printf(
         "bench run --engine=%s --scenario=%s --concurrency=%d "
@@ -114,7 +109,7 @@ public final class RunCommand implements Command {
 
       for (int r = 0; r < runs; r++) {
         System.out.printf("  run %d/%d ...%n", r + 1, runs);
-        var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, benchMode);
+        var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
         scores[r] = ir.rps();
 
         System.out.printf(

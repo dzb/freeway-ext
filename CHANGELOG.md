@@ -4,6 +4,16 @@
 
 ### Changed
 
+- **benchmark: `BenchFork` split by role, and one definition of `--mode`** — the entry class carried
+  four jobs in one 291-line file (suite orchestration, fork lifecycle, subprocess entry points,
+  classpath discovery). It is now `BenchFork` (93 lines: role dispatch + the server/client child
+  bodies), `ForkedRunner` (run loop, pause, median), `BenchProcesses` (JVM/classpath discovery,
+  `READY` handshake, log read/cleanup) — and the mode→client-mode→scenario mapping that used to be
+  copied in `RunCommand`, `SuiteCommand` and `BenchFork` (with differing defaults and a silent
+  fallback) is one type, `BenchMode`. An unknown spelling (`--mode=wl`) now fails naming the flag
+  instead of quietly measuring `keepalive`. The benchmark module gains its first tests for this
+  code: `BenchModeTest` (aliases, spellings, WS→scenario, rejection) and `BenchProcessesTest`
+  (the `READY port=` handshake). Verified by a real two-run fork and a CLI `--mode=ws` run.
 - **both engines read TLS from one place, and Undertow stops hand-rolling JSSE** — the adapters each
   resolved the `freeway.http.ssl.*` keys and re-implemented the tri-state activation; Undertow also
   carried its own `KeyStore`/`KeyManagerFactory`/`SSLContext` builder that silently lacked what the

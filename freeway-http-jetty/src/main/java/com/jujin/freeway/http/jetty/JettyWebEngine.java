@@ -28,7 +28,6 @@ import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
-import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -73,7 +72,7 @@ public final class JettyWebEngine implements HttpEngine {
   private final ThreadLocal<JettyHttpContext> contextPool;
 
   public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer) {
-    this(jsonCodec, coercer, systemProperties());
+    this(jsonCodec, coercer, SymbolSource.systemProperties());
   }
 
   /**
@@ -87,33 +86,6 @@ public final class JettyWebEngine implements HttpEngine {
     this.symbols = Objects.requireNonNull(symbols, "symbols");
     this.contextPool =
         ThreadLocal.withInitial(() -> new JettyHttpContext(this.jsonCodec, this.coercer));
-  }
-
-  /**
-   * Standalone path (tests, benchmarks, direct construction): system properties only, exactly the
-   * pre-cascade behavior.
-   */
-  private static SymbolSource systemProperties() {
-    return new SymbolSource() {
-      @Override
-      public String resolve(String name) {
-        String value = System.getProperty(name);
-        if (value == null) {
-          throw new UnknownSymbolException(name);
-        }
-        return value;
-      }
-
-      @Override
-      public String resolve(String name, String defaultValue) {
-        return System.getProperty(name, defaultValue);
-      }
-
-      @Override
-      public String expand(String input) {
-        return input;
-      }
-    };
   }
 
   @Override

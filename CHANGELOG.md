@@ -4,6 +4,20 @@
 
 ### Changed
 
+- **the adapters now share three core seams instead of carrying their own copies** — a normalized
+  diff of the two HTTP adapters showed three areas that contain no engine API at all: they existed
+  because core lacked support for its own public surface. `Compression` (`acceptsGzip` + `gzip`)
+  replaces the per-adapter Accept-Encoding/q-value/gzip code and the built-in engine's copy, so all
+  three engines decide compression the same way. `AbstractWebSocketSession` replaces the
+  request-identification half of both adapter sessions (and of the built-in engine's session):
+  correlation id, start time, principal, attributes, method/path/path-variables/query/headers with
+  immutable snapshots. `SymbolSource.systemProperties()` replaces the standalone system-property
+  source that Jetty, Undertow and HikariCP each declared (22 identical lines ×3). The two adapter
+  WebSocket sessions shrink from 232 and 348 lines to 124 and 240, and the shared `closeReason`
+  helper now truncates on a UTF-8 code-point boundary — the old byte cut could re-encode to 125
+  bytes, over the 123-byte close-frame limit. Engine-specific behaviour is deliberately untouched:
+  the transports, per-request dispatch, response mapping, TLS and the documented divergences
+  (404 bodies, `readTimeout=0`, header budgets, WS frame limits) stay in each adapter.
 - **benchmark: the JMH protocol defaults live in the code, not only in the document** — the
   protocol declares 2 forks, 5×1s warmup, 5×1s measurement and `thrpt`, but no benchmark class
   carried a single strategy annotation, so a plain JMH invocation used JMH's own defaults, and the

@@ -19,12 +19,12 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.AbstractHttpContext;
+import com.jujin.freeway.http.Compression;
 import com.jujin.freeway.http.HttpResponse;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.MediaTypes;
 import com.jujin.freeway.http.engine.ResponseFraming;
 import com.jujin.freeway.http.sse.SseEmitter;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -35,7 +35,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.zip.GZIPOutputStream;
 import javax.net.ssl.SSLSession;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.io.EndPoint;
@@ -273,7 +272,7 @@ final class JettyHttpContext extends AbstractHttpContext {
         data.length,
         acceptsGzip(),
         compressibleContentType())) {
-      body = gzip(data);
+      body = Compression.gzip(data);
       setHeader("Content-Encoding", "gzip");
       addVary("Accept-Encoding");
     }
@@ -292,53 +291,12 @@ final class JettyHttpContext extends AbstractHttpContext {
     return this;
   }
 
-  /**
-   * True when the client explicitly accepts gzip (same semantics as the built-in engine: an absent
-   * Accept-Encoding header is treated as "no preference" and does not compress).
-   */
   private boolean acceptsGzip() {
-    String acceptEncoding = request.getHeaders().get(HttpHeader.ACCEPT_ENCODING);
-    if (acceptEncoding == null) {
-      return false;
-    }
-    for (String part : acceptEncoding.split(",")) {
-      String token = part.trim();
-      int q = token.indexOf(';');
-      String name = q < 0 ? token : token.substring(0, q).trim();
-      if ("gzip".equalsIgnoreCase(name)) {
-        if (q < 0) {
-          return true;
-        }
-        return !qValueIsZero(token.substring(q + 1));
-      }
-    }
-    return false;
-  }
-
-  private static boolean qValueIsZero(String params) {
-    for (String part : params.split(";")) {
-      String[] kv = part.trim().split("=", 2);
-      if (kv.length == 2 && "q".equals(kv[0].trim())) {
-        try {
-          return Double.parseDouble(kv[1].trim()) == 0.0;
-        } catch (NumberFormatException e) {
-          return false;
-        }
-      }
-    }
-    return false;
+    return Compression.acceptsGzip(request.getHeaders().get(HttpHeader.ACCEPT_ENCODING));
   }
 
   private boolean compressibleContentType() {
     return MediaTypes.isCompressibleContentType(response.getHeaders().get(HttpHeader.CONTENT_TYPE));
-  }
-
-  private static byte[] gzip(byte[] data) throws IOException {
-    var out = new ByteArrayOutputStream(Math.max(32, data.length / 2));
-    try (var gzip = new GZIPOutputStream(out)) {
-      gzip.write(data);
-    }
-    return out.toByteArray();
   }
 
   private static Map<String, List<String>> parseQueryParams(Request request) {

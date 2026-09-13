@@ -22,7 +22,6 @@ import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.db.PooledConnection;
 import com.jujin.freeway.db.SqlException;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
@@ -82,7 +81,7 @@ public final class HikariPool implements Pool {
   private final AtomicLong borrowWaitNanos = new AtomicLong();
 
   public HikariPool(PoolConfig config) {
-    this(config, systemProperties());
+    this(config, SymbolSource.systemProperties());
   }
 
   /**
@@ -127,33 +126,6 @@ public final class HikariPool implements Pool {
     } catch (RuntimeException ex) {
       throw new SqlException("Failed to initialize HikariCP pool", ex);
     }
-  }
-
-  /**
-   * Standalone path (tests, direct construction): system properties only, exactly the pre-cascade
-   * behavior.
-   */
-  private static SymbolSource systemProperties() {
-    return new SymbolSource() {
-      @Override
-      public String resolve(String name) {
-        String value = System.getProperty(name);
-        if (value == null) {
-          throw new UnknownSymbolException(name);
-        }
-        return value;
-      }
-
-      @Override
-      public String resolve(String name, String defaultValue) {
-        return System.getProperty(name, defaultValue);
-      }
-
-      @Override
-      public String expand(String input) {
-        return input;
-      }
-    };
   }
 
   @Override

@@ -535,8 +535,28 @@ README 的示例改为无策略参数的合规调用，并删掉与协议矛盾�
 CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端点，开着就是每引擎都在测与场景无关的
 每请求开销），并在代码注释里写明理由。顺带修掉 core 的一处文档错误：`WebServerBuilder` 的示例写的是
 `WebServer.builder()`，而 core 并没有这个方法（core 提交 `593ac00c`）。
-验证：三条装配路径实跑（freeway ping、freeway ws_echo、undertow-adapter ping 均 0 错误），
-`ServerHarnessTest` 与 benchmark 全量测试通过。
+
+**（2026-09-13 又一轮：按"是否含引擎 API"切出三块共享缝隙）** 对两个适配器做了归一化 diff +
+方法级配对后，把不含引擎 API、且**内置引擎也各有一份**的三块下沉 core（§4.3 的一致性结论与
+§6「各自实现」不冲突——这三块不是适配器之间的重复，而是 core 缺支撑）：
+
+- `Compression`（`freeway-http`）：`acceptsGzip(List/String)` + `gzip(byte[])`，放在 `MediaTypes`
+  旁边。内置引擎 `HttpContextImpl` 的 `acceptsGzip`/`qValueIsZero`/`gzip` 与两个适配器的同名
+  方法（方法级 100%/94% 相同）全部改为调用它；语义统一为"缺头不压缩、`gzip` 开、`gzip;q=0` 拒、
+  `q` 名大小写不敏感、畸形 q 视为接受"。core 新增 `CompressionTest` 7 例。
+- `AbstractWebSocketSession`（`freeway-http.websocket`）：会话的请求标识 + 元数据半边
+  （约 91 行连续逐字相同的那段）。core 的 `WebSocketSessionImpl`、Jetty/Undertow 会话三处改继承；
+  两个适配器会话从 232/348 行降到 124/240 行。core 新增 `AbstractWebSocketSessionTest` 6 例
+  （大小写不敏感的头查找、快照不可变、空集合、correlationId 兜底、closeReason 截断）。
+- `SymbolSource.systemProperties()`（`freeway-ioc`）：Jetty/Undertow/HikariCP 三份 22 行相同实现
+  合并为一处；core 新增 2 例测试。
+
+顺带修掉一个真实缺陷：三处共享的 `closeReason` 原先按字节硬切 123 字节，切在多字节字符中间会产生
+替换字符、回编码后 3 字节，实测截断结果 125 字节——超过关闭帧 123 字节上限。现在回退到码点边界。
+
+明确不抽的（写进 §6）：`*Handle` 的 record（差异是各自的优雅停机 API）、TLS 助手、404 体、
+`readTimeout=0` 拼法、每请求 dispatch、WS 帧上限拒绝时机。验证：core `mvn -o clean test` 全绿
+（http 418→431 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 
 ## 6. 建议保留的有意差异
 

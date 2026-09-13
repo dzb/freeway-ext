@@ -16,9 +16,8 @@
 
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.http.ExchangeMetaDefault;
 import com.jujin.freeway.http.websocket.WebSocketListener;
-import com.jujin.freeway.http.websocket.WebSocketSession;
+import com.jujin.freeway.http.websocket.AbstractWebSocketSession;
 import io.undertow.websockets.core.AbstractReceiveListener;
 import io.undertow.websockets.core.BufferedBinaryMessage;
 import io.undertow.websockets.core.BufferedTextMessage;
@@ -40,7 +39,7 @@ import org.slf4j.LoggerFactory;
 import org.xnio.IoUtils;
 
 /** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
-final class UndertowWebSocketSession implements WebSocketSession {
+final class UndertowWebSocketSession extends AbstractWebSocketSession {
   private static final Logger LOG = LoggerFactory.getLogger(UndertowWebSocketSession.class);
   private static final WebSocketCallback<Void> SEND_CALLBACK =
       new WebSocketCallback<>() {
@@ -56,12 +55,6 @@ final class UndertowWebSocketSession implements WebSocketSession {
       };
 
   private final WebSocketChannel channel;
-  private final ExchangeMetaDefault exchangeMeta;
-  private final String method;
-  private final String path;
-  private final Map<String, String> pathVariables;
-  private final Map<String, List<String>> queryParams;
-  private final Map<String, List<String>> headers;
   private final long maxMessageSize;
   private final Object sendLock = new Object();
   private volatile boolean localCloseRequested;
@@ -77,12 +70,7 @@ final class UndertowWebSocketSession implements WebSocketSession {
       Map<String, List<String>> headers,
       long maxMessageSize) {
     this.channel = Objects.requireNonNull(channel, "channel");
-    this.exchangeMeta = new ExchangeMetaDefault(correlationId);
-    this.method = Objects.requireNonNull(method, "method");
-    this.path = Objects.requireNonNull(path, "path");
-    this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
-    this.queryParams = queryParams == null ? Map.of() : Map.copyOf(queryParams);
-    this.headers = headers == null ? Map.of() : Map.copyOf(headers);
+    super(correlationId, method, path, pathVariables, queryParams, headers);
     this.maxMessageSize = maxMessageSize;
   }
 
@@ -183,93 +171,6 @@ final class UndertowWebSocketSession implements WebSocketSession {
   }
 
   @Override
-  public String method() {
-    return method;
-  }
-
-  @Override
-  public String path() {
-    return path;
-  }
-
-  @Override
-  public Optional<String> pathVar(String name) {
-    return Optional.ofNullable(pathVariables.get(name));
-  }
-
-  @Override
-  public Map<String, String> pathVars() {
-    return pathVariables;
-  }
-
-  @Override
-  public Optional<String> queryParam(String name) {
-    List<String> values = queryParams.get(name);
-    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
-  }
-
-  @Override
-  public List<String> queryParams(String name) {
-    return queryParams.getOrDefault(name, List.of());
-  }
-
-  @Override
-  public Map<String, List<String>> queryParams() {
-    return queryParams;
-  }
-
-  @Override
-  public Optional<String> header(String name) {
-    List<String> values = headers.get(name.toLowerCase(Locale.ROOT));
-    return values != null && !values.isEmpty() ? Optional.of(values.get(0)) : Optional.empty();
-  }
-
-  @Override
-  public List<String> headers(String name) {
-    return headers.getOrDefault(name.toLowerCase(Locale.ROOT), List.of());
-  }
-
-  @Override
-  public Map<String, List<String>> headers() {
-    return headers;
-  }
-
-  @Override
-  public String correlationId() {
-    return exchangeMeta.correlationId();
-  }
-
-  @Override
-  public Instant startTime() {
-    return exchangeMeta.startTime();
-  }
-
-  @Override
-  public Object principal() {
-    return exchangeMeta.principal();
-  }
-
-  @Override
-  public void setPrincipal(Object principal) {
-    exchangeMeta.setPrincipal(principal);
-  }
-
-  @Override
-  public Object attribute(String key) {
-    return exchangeMeta.attribute(key);
-  }
-
-  @Override
-  public void setAttribute(String key, Object value) {
-    exchangeMeta.setAttribute(key, value);
-  }
-
-  @Override
-  public Map<String, Object> attributes() {
-    return exchangeMeta.attributes();
-  }
-
-  @Override
   public boolean isOpen() {
     return channel.isOpen();
   }
@@ -310,15 +211,6 @@ final class UndertowWebSocketSession implements WebSocketSession {
     WebSockets.sendClose(code, closeReason(reason), channel, SEND_CALLBACK);
   }
 
-  /** RFC 6455 caps close-frame payloads at 125 bytes (reason <= 123 bytes). */
-  static String closeReason(String reason) {
-    if (reason == null) return "";
-    byte[] bytes = reason.getBytes(StandardCharsets.UTF_8);
-    if (bytes.length <= 123) return reason;
-    // May split a multi-byte character; a replacement char in the reason is
-    // acceptable for an informational payload.
-    return new String(bytes, 0, 123, StandardCharsets.UTF_8);
-  }
 
   @Override
   public void flush() throws IOException {

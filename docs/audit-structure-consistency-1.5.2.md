@@ -515,6 +515,16 @@ engine/scenario、非法 `--output` 扩展名）改为 `UsageException`：一行
 四类用法错误实跑确认无 stack trace 且退出码为 1，`BenchCliTest` 6 例覆盖命令名集合、表格渲染、
 坏 flag 与 `--output` 扩展名。
 
+**（2026-09-13 又一轮：JMH 策略注解与协议对齐）** §4.5 的"8 个 JMH 类没有任何策略注解，协议文档
+声称的默认值无处落地，README 示例的 `-f 0` 又与协议矛盾"已修：8 个类统一声明
+`@BenchmarkMode(Mode.Throughput)`、`@OutputTimeUnit(SECONDS)`、`@Warmup(iterations=5, time=1)`、
+`@Measurement(iterations=5, time=1)`、`@Fork(2)`——即 `BENCHMARK_PROTOCOL.md` §3 的那组默认值；
+协议文档补上"这些默认值就在类注解里，无参调用即合规，命令行可覆盖，覆盖后的数字仅供参考"，
+README 的示例改为无策略参数的合规调用，并删掉与协议矛盾的 `-f 0 -wi 5 -i 5` 示例（改为显式的
+本地迭代说明 + "仅供参照"）。验证：无参实跑打印 `# Fork: 1 of 2` → `2 of 2`、
+`Warmup: 5 iterations, 1 s each`、`Measurement: 5 iterations, 1 s each`、`Benchmark mode: Throughput`；
+`-f 0 -wi 1 -i 1` 实跑确认命令行仍可覆盖；`-l` 列出 32 个基准方法（8 个类全在）。
+
 **（2026-09-13 又一轮：ServerHarness 改走 WebServerBuilder）** §4.5 里"绕过 `WebServer.builder()`"
 一项已落地：`freewayWith(...)` 改为 `WebServerBuilder.builder()` + `.engine(...)/.config(...)/
 .cors(disabled)/.health(disabled)` + 逐条 `.route(...)/.webSocketGroup(...)`。收益有两条，都是

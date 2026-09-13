@@ -19,10 +19,17 @@ package com.jujin.freeway.http.engine;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Measurement;
+import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Warmup;
 
 /**
  * JMH benchmark for the HTTP/1.1 request parser.
@@ -30,6 +37,11 @@ import org.openjdk.jmh.annotations.State;
  * <p>Lives in the core {@code http.engine} package on purpose: {@link Http1xParser} and its {@code
  * ParsedRequest} are package-private, and parsing the real parser is the point of the benchmark.
  */
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.SECONDS)
+@Warmup(iterations = 5, time = 1)
+@Measurement(iterations = 5, time = 1)
+@Fork(2)
 @State(Scope.Thread)
 public class Http1xParserBenchmark {
 

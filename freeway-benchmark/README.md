@@ -94,13 +94,19 @@ Supported engines:
 
 ## JMH Microbenchmarks
 
-Run the microbenchmarks through the JMH launcher:
+Run the microbenchmarks through the JMH launcher. Every benchmark class carries the protocol
+defaults from [BENCHMARK_PROTOCOL.md](BENCHMARK_PROTOCOL.md) §3 as annotations (2 forks, 5×1s
+warmup, 5×1s measurement, `thrpt`), so a plain invocation is already protocol-conformant:
 
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
   -Dexec.mainClass=org.openjdk.jmh.Main \
-  -Dexec.args='-bm thrpt -f 0 -wi 5 -i 5 com.jujin.freeway.http.engine.Http1xParserBenchmark'
+  -Dexec.args='com.jujin.freeway.bench.jmh.RouteIndexBenchmark'
 ```
+
+For quick local iteration, override the annotations explicitly — `-f 0 -wi 1 -i 1` runs in the
+host VM with one second of each phase. Those numbers are reference only, never decision-grade:
+the protocol requires the annotated defaults, and a report must record the options it used.
 
 Useful benchmark classes:
 
@@ -122,9 +128,10 @@ benchmark class belongs to `com.jujin.freeway.bench.*` — nothing in this modul
 The microbenchmarks are the decision-grade inputs. The HTTP black-box benchmarks
 are for local validation and release gating, not for final performance claims.
 
-If you want forked JMH runs (`-f > 0`), run them with an explicit benchmark
-classpath. The plain `exec:java` sample above is the zero-fork path; it avoids
-classpath drift and is the safest default for local iteration.
+Forked JMH runs (`-f > 0`, the default) re-launch the JVM from the benchmark
+classpath, so the module writes `target/benchmark.classpath` during
+`process-classes`; run `mvn -f freeway-benchmark/pom.xml -am process-classes`
+first if the forks fail to start.
 
 ## ServerHarness API
 

@@ -23,10 +23,17 @@ import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import org.openjdk.jmh.annotations.Benchmark;
+import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Measurement;
+import org.openjdk.jmh.annotations.Mode;
+import org.openjdk.jmh.annotations.OutputTimeUnit;
 import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
+import org.openjdk.jmh.annotations.Warmup;
 
 /**
  * JMH benchmark for {@link HttpContextImpl} lookup methods.
@@ -36,6 +43,11 @@ import org.openjdk.jmh.annotations.State;
  * not reflect the real O(1)-then-O(n) header lookup strategy. It lives in the core {@code
  * http.engine} package because {@code reset()} is package-private.
  */
+@BenchmarkMode(Mode.Throughput)
+@OutputTimeUnit(TimeUnit.SECONDS)
+@Warmup(iterations = 5, time = 1)
+@Measurement(iterations = 5, time = 1)
+@Fork(2)
 @State(Scope.Thread)
 public class HttpContextLookupBenchmark {
 

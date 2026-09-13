@@ -51,6 +51,20 @@ Default JMH settings for freeway microbenchmarks:
 Use `avgt` only when you are explicitly investigating latency-like cost per operation.
 If the benchmark is allocation-sensitive, add `-prof gc`.
 
+These defaults live on the benchmark classes themselves (`@BenchmarkMode`,
+`@OutputTimeUnit`, `@Warmup`, `@Measurement`, `@Fork`), so a plain invocation with no
+strategy options follows the protocol:
+
+```bash
+mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
+  -Dexec.mainClass=org.openjdk.jmh.Main \
+  -Dexec.args='com.jujin.freeway.bench.jmh.RouteIndexBenchmark'
+```
+
+Command-line options still override the annotations (`-f`, `-wi`, `-i`, `-bm`), which is how
+local iteration is done. A run whose options differ from the block above does not follow this
+protocol: its numbers are reference only, and the recorded options must say so.
+
 Rules:
 
 - run candidate and baseline with identical JMH options

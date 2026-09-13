@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **benchmark: the JMH protocol defaults live in the code, not only in the document** — the
+  protocol declares 2 forks, 5×1s warmup, 5×1s measurement and `thrpt`, but no benchmark class
+  carried a single strategy annotation, so a plain JMH invocation used JMH's own defaults, and the
+  README's example (`-f 0 -wi 5 -i 5`) contradicted the protocol in the other direction. All eight
+  benchmark classes now declare `@BenchmarkMode(Mode.Throughput)`, `@OutputTimeUnit(SECONDS)`,
+  `@Warmup(5×1s)`, `@Measurement(5×1s)` and `@Fork(2)`, which a plain `org.openjdk.jmh.Main`
+  invocation obeys; command-line flags still override them for local iteration, and the README says
+  plainly that such a run is reference-only.
 - **benchmark harness: assembled by `WebServerBuilder`, so the measured server is the standalone
   one** — `ServerHarness` built its Freeway servers with the raw `WebServer` constructor and a fake
   `event -> {}` sink, which is not the noop sentinel: `WebServer` therefore kept

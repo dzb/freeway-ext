@@ -16,8 +16,11 @@
 
 package com.jujin.freeway.bench.cli;
 
+import com.jujin.freeway.bench.event.BenchEvent;
+import com.jujin.freeway.bench.event.BenchEventListener;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
+import com.jujin.freeway.ioc.EventSubscriber;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 import java.util.LinkedHashMap;
@@ -40,6 +43,12 @@ public final class CliModule implements ModuleEx {
     cmds.add(new HistoryCommand());
     cmds.add(new SuiteCommand());
     cmds.add(new JmhCommand());
+    // The commands publish BenchEvents; this subscriber is the module's consumer for them (and the
+    // ordering anchor an embedder would use to add its own).
+    binder
+        .contribute(EventSubscriber.class)
+        .add("bench-progress", EventSubscriber.of(BenchEvent.class, BenchEventListener::onEvent));
+
     // AppRuntime no longer exposes the container; capture it at startup
     // so the CLI dispatcher can reach extension points.
     binder.contribute(RuntimeHook.class).add(c -> CliModule.container = c);

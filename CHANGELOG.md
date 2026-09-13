@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **benchmark: the run events have a consumer** — `RunCommand` and `SuiteCommand` publish
+  `RunStarted`/`ResultCollected`/`RunCompleted`, but nothing in the module subscribed, so the
+  EventBus showcase was publish-only. `BenchEventListener` now consumes them (DEBUG: the console
+  already prints the same progress) and is registered under the `bench-progress` id, which is also
+  the ordering anchor an embedder adds its own subscriber after. `BenchEventListenerTest` proves
+  delivery through the CLI's own container: all three subtypes reach a contributed subscriber.
+  Two other audit low items were already gone: the Undertow `wsMaxMessageSize` engine field and the
+  `responded()`/`completionCallback()` helpers no longer exist anywhere in the module.
 - **benchmark: `bench jmh` puts the microbenchmarks in the same tables as the HTTP runs** — the
   protocol calls the JMH microbenchmarks the decision-grade input, but nothing connected them to the
   CLI: they were a console table, and `BenchmarkResult`'s `score_error`/`unit`/`mode` columns were

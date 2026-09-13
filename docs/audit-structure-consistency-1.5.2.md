@@ -622,6 +622,13 @@ JMH 的单迭代 score error 是 NaN（列 NOT NULL）→ 记为 0；`--include`
 另去掉 JMH 自带的 `jmh-result.text` 落盘（成绩进库与终端即可）。测试：`JmhCommandTest` 2 例
 （真实 JMH 跑到入库的端到端 3 行断言 + 无匹配用法错误）。
 
+**（2026-09-13 又一轮：`bench/event` 补上订阅者 + 两条低项核实）** 审计 §4.5 的"`bench/event` 或补
+订阅者"落地为前者：新增 `BenchEventListener`（DEBUG 级，控制台本就打印同样的进度）并在 `CliModule`
+以 id `bench-progress` 注册，命令里的 publish 从此有消费者，也是嵌入方追加订阅的排序锚点；
+`BenchEventListenerTest` 用 CLI 自己的容器证明三种事件都能被贡献的订阅者收到。同期核实两条 P3：
+`wsMaxMessageSize` 在引擎/会话中**已无任何出现**（早前轮次已清理），`responded()`/`completionCallback()`
+同（全模块 grep 无命中）——两项均可从清单移除。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

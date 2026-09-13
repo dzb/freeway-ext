@@ -29,6 +29,11 @@ For the vast majority of applications, this is all you need.
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH-based micro-benchmarks for HTTP, WebSocket, and DB adapters | [JMH](https://github.com/openjdk/jmh) 1.37 |
 
+`freeway-http-adapter-testkit` is not an application dependency: it holds the contract tests
+every HTTP engine adapter must satisfy (gzip, transport context, remote invocation). Each adapter
+depends on it at test scope and supplies only its engine, so a contract change lands in one place
+instead of one copy per adapter.
+
 ## Kafka security note
 
 The Kafka subscriber only deserializes messages whose `X-Event-Type` header is on

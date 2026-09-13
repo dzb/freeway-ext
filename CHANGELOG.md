@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **one copy of every engine contract test** — the two adapters carried near-identical copies of
+  three contract suites (`*CompressionTest` and `*RemoteRpcTest` were byte-identical after renaming
+  the engine, `*ContextContractTest` differed by a javadoc line break). A new
+  `freeway-http-adapter-testkit` module holds them once: `EngineFixture` (config, pipeline, resource
+  lookup), `Pipelines`/`HttpClients` helpers, and the `CompressionContract`, `ContextContract` and
+  `RemoteRpcContract` suites. Each adapter's test class is now a ~35-line subclass that names its
+  engine, so the contract cannot drift between engines and a new adapter gets the whole suite for
+  three small classes. ~994 lines of duplicated test code become 86; the suite still runs per
+  adapter (jetty 27, undertow 28). The remaining near-copies (`*WebEngineContractTest` 69%,
+  `*WebSocketProbeTest` 62%, `*EngineConfigTest` 85%) stay separate: their differences are the
+  engine-specific parts (h2c, WS frame limits, adapter-only config keys).
 - **the adapters now share three core seams instead of carrying their own copies** — a normalized
   diff of the two HTTP adapters showed three areas that contain no engine API at all: they existed
   because core lacked support for its own public surface. `Compression` (`acceptsGzip` + `gzip`)
@@ -86,7 +97,7 @@
   loudly instead of losing silently).
 - **aligned with Freeway core `1.5.2-SNAPSHOT`** — `freeway-parent` and the
   `freeway.version` property move together to `1.5.2-SNAPSHOT` (root and all
-  five adapter modules). The engine RPC tests compile only against the 1.5.2
+  five adapter modules, plus the new testkit). The engine RPC tests compile only against the 1.5.2
   API, so the parent and the dependency version cannot drift apart.
 - **RPC endpoints are declared, not built per mapping** — core 1.5.2 replaces
   the per-mapping endpoint factory with an `RpcExport` data declaration served

@@ -1,156 +1,35 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.jetty;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import com.jujin.freeway.cloud.rpc.CloudException;
-import com.jujin.freeway.cloud.rpc.RemoteCaller;
-import com.jujin.freeway.cloud.rpc.RemoteInvocationException;
-import com.jujin.freeway.cloud.rpc.RpcEndpoint;
-import com.jujin.freeway.cloud.rpc.RpcExport;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
-import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthFilter;
-import com.jujin.freeway.http.route.RouteIndex;
-import java.time.Duration;
-import java.util.List;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.Test;
+import com.jujin.freeway.http.testkit.RemoteRpcContract;
 
-/**
- * Design-doc phase D: remote invocation works over the Undertow engine. The server side exports a
- * handler through {@link RpcEndpoint}; the client drives {@link RemoteCaller} against the
- * container's own registry so the whole exchange is engine-real but self-contained.
- */
-class JettyRemoteRpcTest {
+/** Jetty runs the shared remote-invocation contract. */
+class JettyRemoteRpcTest extends RemoteRpcContract {
 
-  static class BizFailure extends RuntimeException {
-    BizFailure(String m) {
-      super(m);
-    }
+  @Override
+  protected com.jujin.freeway.http.HttpEngine newEngine() {
+    return new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
   }
 
-  /** Handlers must be public: reflective dispatch honors access rules. */
-  public static class Handlers {
-    public String greet(String name) {
-      return "hi " + name;
-    }
-
-    public int add(int a, int b) {
-      return a + b;
-    }
-
-    public String boom() {
-      throw new BizFailure("overdrawn");
-    }
-  }
-
-  private WebServer server;
-  private RemoteCaller caller;
-
-  @AfterEach
-  void stop() {
-    if (server != null) server.close();
-  }
-
-  private void start() {
-    var routes =
-        new RouteIndex(
-            List.of(
-                RpcEndpoint.route(
-                    RpcExport.of("user", JettyRemoteRpcTest.Handlers.class),
-                    new Handlers(),
-                    new JsonCodecDefault())),
-            List.of());
-    var pipeline =
-        new RequestComponents(
-            routes,
-            new com.jujin.freeway.http.websocket.WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
-
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
-    server = new WebServer(engine, config, event -> {}, pipeline);
-    server.start();
-
-    // RemoteCaller needs CloudHttpClient; build a minimal standalone stack:
-    var discovery =
-        (com.jujin.freeway.cloud.discovery.ServiceDiscovery)
-            serviceId ->
-                List.of(
-                    com.jujin.freeway.cloud.discovery.ServiceInstance.of(
-                        serviceId,
-                        "i1",
-                        com.jujin.freeway.cloud.discovery.Endpoint.of(
-                            "http", "127.0.0.1", server.port()),
-                        java.util.Map.of()));
-    var loadBalancer =
-        (com.jujin.freeway.cloud.discovery.LoadBalancer)
-            instances ->
-                instances.isEmpty()
-                    ? java.util.Optional.empty()
-                    : java.util.Optional.ofNullable(instances.get(0));
-    var cloudClient =
-        new com.jujin.freeway.cloud.rpc.CloudHttpClientDefault(
-            discovery,
-            loadBalancer,
-            new com.jujin.freeway.cloud.rpc.CloudHttpClientDefault.Wiring(
-                List.of(), // no propagators in this test
-                null, // retryer -> built-in default fallback
-                null, // no breaker
-                null, // no rate limiter
-                com.jujin.freeway.cloud.rpc.TransportSecurity.NONE,
-                null, // no tracer
-                new com.jujin.freeway.commons.metrics.NoopMetrics(),
-                Duration.ofSeconds(5),
-                Duration.ofSeconds(2)));
-    caller = new RemoteCaller(cloudClient, new JsonCodecDefault());
-  }
-
-  @Test
-  void roundTripOverUndertow() {
-    start();
-    assertEquals("hi bob", caller.invoke("target", "user", "greet", List.of("bob"), String.class));
-  }
-
-  @Test
-  void primitiveArgsSurviveTheWire() {
-    start();
-    assertEquals(42, caller.invoke("target", "user", "add", List.of(2, 40), Integer.class));
-  }
-
-  @Test
-  void businessFailureMapsToNonRetryableWithRemoteClass() {
-    start();
-    CloudException ex =
-        assertThrows(
-            CloudException.class,
-            () -> caller.invoke("target", "user", "boom", List.of(), String.class));
-    assertFalse(ex.retryable());
-    Object cause = ex.getCause();
-    assertTrue(
-        cause instanceof RemoteInvocationException,
-        "cause must be the rebuilt remote exception, got: " + cause);
-    assertEquals(BizFailure.class.getName(), ((RemoteInvocationException) cause).remoteClass());
-  }
-
-  @Test
-  void unknownTopicIs404() {
-    start();
-    CloudException ex =
-        assertThrows(
-            CloudException.class,
-            () -> caller.invoke("target", "user", "missing", List.of(), String.class));
-    assertEquals(404, ex.status());
+  @Override
+  protected String engineName() {
+    return "jetty";
   }
 }

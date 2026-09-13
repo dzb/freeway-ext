@@ -555,7 +555,17 @@ CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端�
 替换字符、回编码后 3 字节，实测截断结果 125 字节——超过关闭帧 123 字节上限。现在回退到码点边界。
 
 明确不抽的（写进 §6）：`*Handle` 的 record（差异是各自的优雅停机 API）、TLS 助手、404 体、
-`readTimeout=0` 拼法、每请求 dispatch、WS 帧上限拒绝时机。验证：core `mvn -o clean test` 全绿
+`readTimeout=0` 拼法、每请求 dispatch、WS 帧上限拒绝时机。**（2026-09-13 又一轮：契约测试重复治理）** §5 P2 的"契约测试粒度与命名对齐"中重复度最高的三套已收敛：
+新增 `freeway-http-adapter-testkit` 模块（不进应用依赖，仅测试用），内含 `EngineFixture`
+（配置/装配/资源查找）、`Pipelines`/`HttpClients` 工具与三个契约基类 `CompressionContract`、
+`ContextContract`、`RemoteRpcContract`；两个适配器的对应测试类各自变成 ~35 行的子类，只声明自己的
+引擎。适配器测试 **+86 / −994 行**，测试计数不变（jetty 27 / undertow 28）。
+逆向校验：把共享 `Pipelines` 里的 CORS 改成启用后，**两个适配器**的契约测试同时转红
+（各 1 failure + 12 errors，`-fae` 下可见），证明两边确实在跑共享代码而不是各自留了副本。
+剩余近似对（`*WebEngineContractTest` 68.7%、`*WebSocketProbeTest` 62.4%、`*EngineConfigTest` 85%）
+不合并：差异正是引擎特有部分（h2c、WS 帧上限拒绝时机、适配器专属配置键），写进 §6。
+
+验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 
 ## 6. 建议保留的有意差异

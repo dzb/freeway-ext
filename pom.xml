@@ -158,6 +158,7 @@
     </dependencyManagement>
 
     <modules>
+        <module>freeway-http-adapter-testkit</module>
         <module>freeway-http-jetty</module>
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>

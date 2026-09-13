@@ -31,6 +31,15 @@ final class KafkaHeaders {
   static final String EVENT_ORIGIN = "X-Event-Origin";
   static final String EVENT_CHANNEL = "X-Event-Channel";
   static final String EVENT_ID = "X-Event-Id";
+
+  /**
+   * The local dispatch topic the event was published under. The wire topic is the adapter's
+   * configured topic (one bridge topic, not one Kafka topic per local topic), so the subscriber
+   * needs this header to re-publish under the original name. Absent for records produced before the
+   * header existed — those fall back to the Kafka topic name.
+   */
+  static final String EVENT_TOPIC = "X-Event-Topic";
+
   static final String DLQ_ORIGINAL_TOPIC = "X-DLQ-Original-Topic";
   static final String DLQ_ORIGINAL_OFFSET = "X-DLQ-Original-Offset";
   static final String DLQ_REASON = "X-DLQ-Reason";

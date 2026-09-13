@@ -648,6 +648,23 @@ event -> {}, pipeline)`（`JettyWebEngineContractTest` 5、`UndertowHttpContract
 `RequestComponents`，迁移需要逐个把 fixture 改成 `Pipelines` + builder 形态——是纯测试侧一致性工作，
 不影响发布行为，留作下一轮（每迁一个文件都要跑该模块全绿）。
 
+**（2026-09-13 又一轮：Kafka 跨 JVM 链路排查与修复）** 用户要求"装 Kafka、跑 cloud 集成测试、
+让跨 JVM 的 event 走 Kafka"，由此查出并修掉一个真实缺陷：`KafkaEventSink` 把记录写进**本地分发
+topic**（字符串 topic 如 `orders.created`，class 分发则是事件的简单类名），而 `KafkaSubscriber` 只
+poll 配置的 `freeway.kafka.topics`——生产与消费永远不在同一个 topic 上，跨 JVM 事件不可能送达
+（实测：bus 路径写出的记录落在 `freeway-xjvm.greet`/`Probe`，而订阅方只看 `freeway-xjvm`，offset 0；
+绕开 bus 直接 `sink.send("freeway-xjvm", …)` 才落盘，证明 sink 与 broker 本身正常）。修复：sink 写配置的
+桥接 topic 并在新头 `X-Event-Topic` 里带上本地 topic，subscriber 用该头恢复本地 topic（无头时回落
+Kafka topic 名，兼容旧生产者）。**两条 JVM 实测通过**：A 发布 class 事件与字符串 topic 事件，
+B 的本地订阅者分别收到 `XjvmOrder[orderId=order-42, amount=7]` 与 `hello-from-jvm-A`。
+
+同时查出两个必须跟进的问题：① `KafkaEventSinkIntegrationTest` 是**假阳性**——它断言的同 JVM
+`bus.subscribe(...)` 由发布时的同步本地分发满足，broker 上一条记录都没有也会通过（这也解释了为什么
+四个用例在"4 skipped → 0 skipped"后依然全绿却证明不了 wire）；要改成两个 bus/两个容器才算真验证。
+② `freeway.kafka.allowed-event-types` 为空时**静默丢弃所有消费记录**（含字符串 topic 事件，其类型头是
+`java.lang.String`），实测就是它让第一次跨 JVM 尝试收不到任何东西；应在启动时告警并在文档写明
+"桥接哪些类型就要列哪些（字符串 topic 也要列 java.lang.String）"。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

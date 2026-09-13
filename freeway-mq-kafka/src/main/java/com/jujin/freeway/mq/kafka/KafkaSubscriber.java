@@ -396,7 +396,13 @@ public class KafkaSubscriber implements AutoCloseable {
           if (classChannel(record)) {
             bus.publishInbound(event, id);
           } else {
-            bus.publishInbound(record.topic(), event, id);
+            // The producer writes to the bridge topic and stamps the local topic; without the
+            // header (an older producer) the Kafka topic name is the local topic.
+            String localTopic = header(record, KafkaHeaders.EVENT_TOPIC);
+            bus.publishInbound(
+                localTopic != null && !localTopic.isBlank() ? localTopic : record.topic(),
+                event,
+                id);
           }
         });
   }

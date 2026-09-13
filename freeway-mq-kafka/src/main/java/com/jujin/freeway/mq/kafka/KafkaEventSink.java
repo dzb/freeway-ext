@@ -22,6 +22,7 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.EventSink;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.List;
 import java.util.Properties;
 import java.util.UUID;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -54,6 +55,7 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
   private final Producer<String, byte[]> producer;
   private final JsonCodec codec;
   private final String origin;
+  private final List<String> bridgeTopics;
 
   public KafkaEventSink(KafkaConfig config) {
     this(config, new JsonCodecDefault());
@@ -68,6 +70,7 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     this.producer = producer;
     this.codec = codec;
     this.origin = config.origin();
+    this.bridgeTopics = config.topics();
   }
 
   private static Producer<String, byte[]> createProducer(KafkaConfig config) {
@@ -125,7 +128,12 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     // EventBus.Keyed key -> Kafka record key: per-aggregate ordering on the
     // broker and per-key parallel consumption on the subscriber side.
     String key = (event instanceof EventBus.Keyed k) ? k.key() : null;
-    var record = new ProducerRecord<String, byte[]>(topic, key, bytes);
+    // The wire topic is the adapter's configured bridge topic: the subscriber polls exactly that
+    // list, so publishing under the local dispatch topic (a string topic like "orders.created", or
+    // the event's simple class name for class dispatch) would never be consumed. The local topic
+    // travels in a header instead, and the subscriber re-publishes under it.
+    String wireTopic = bridgeTopics.isEmpty() ? topic : bridgeTopics.getFirst();
+    var record = new ProducerRecord<String, byte[]>(wireTopic, key, bytes);
     KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_TYPE, event.getClass().getName());
     KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ORIGIN, origin);
     KafkaHeaders.put(
@@ -133,6 +141,7 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     // The bus-minted id: one identity shared by every transport this event
     // was dispatched over, so consumers can correlate/dedupe copies.
     KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ID, eventId);
+    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_TOPIC, topic);
     try {
       producer.send(
           record,

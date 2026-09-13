@@ -4,6 +4,21 @@
 
 ### Changed
 
+- **kafka: the bridge now writes the topic the subscriber actually polls** — the sink produced to
+  the *local dispatch topic* (a string topic such as `orders.created`, or the event's simple class
+  name for class dispatch) while `KafkaSubscriber` polls the configured `freeway.kafka.topics` list,
+  so a cross-JVM event could never be delivered: the record landed in a topic nobody consumed. The
+  sink now produces to the configured bridge topic and stamps the local topic in a new
+  `X-Event-Topic` header; the subscriber re-publishes inbound topic events under that header
+  (falling back to the Kafka topic name for records from an older producer), so class dispatch
+  keeps using the type header and string topics keep their name across the bridge. Verified with
+  two JVMs against a real broker: JVM A publishes, JVM B's local subscribers receive both the class
+  event and the string-topic event. Two follow-ups are recorded in the audit: the
+  `KafkaEventSinkIntegrationTest` passes without the broker carrying anything (its assertions are
+  satisfied by the synchronous local dispatch in the same JVM — it needs a second bus to be a real
+  wire test), and an empty `freeway.kafka.allowed-event-types` silently drops every consumed record
+  (including string-topic payloads, whose type header is `java.lang.String`), which deserves a
+  startup warning.
 - **testkit: the engine contracts now start their servers the way an application does** —
   `EngineFixture` built its test servers with the raw `WebServer` constructor and an `event -> {}`
   sink, which is not the noop sentinel: `WebServer` therefore kept publishing an event object per

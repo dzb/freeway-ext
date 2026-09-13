@@ -108,13 +108,11 @@ final class UndertowWebSocketSession implements WebSocketSession {
               @Override
               protected void onFullTextMessage(
                   WebSocketChannel channel, BufferedTextMessage message) throws IOException {
+                // The cap is enforced while Undertow fills the buffer
+                // (getMaxTextBufferSize below): an oversized message fails the
+                // read with a 1009 close and never reaches this listener, so
+                // there is nothing to re-check here.
                 String text = message.getData();
-                if (maxMessageSize > 0) {
-                  int bytes = text.getBytes(StandardCharsets.UTF_8).length;
-                  if (bytes > maxMessageSize) {
-                    rejectOversized(channel, bytes);
-                  }
-                }
                 try {
                   UndertowWebSocketSession.this.listener.onText(text);
                 } catch (Exception ex) {
@@ -134,9 +132,6 @@ final class UndertowWebSocketSession implements WebSocketSession {
                   long total = 0;
                   for (ByteBuffer buffer : buffers) {
                     total += buffer.remaining();
-                  }
-                  if (maxMessageSize > 0 && total > maxMessageSize) {
-                    rejectOversized(channel, total);
                   }
                   ByteBuffer merged = WebSockets.mergeBuffers(buffers);
                   data = new byte[merged.remaining()];
@@ -349,20 +344,5 @@ final class UndertowWebSocketSession implements WebSocketSession {
     if (!channel.isOpen()) {
       throw new IOException("WebSocket channel is closed");
     }
-  }
-
-  /**
-   * Rejects a message that exceeds the configured limit: sends a 1009 close frame (matching the
-   * Jetty adapter) and fails the receive so the channel breaks. Note: Undertow 2.4 buffers the full
-   * message before the receive listeners run, so the cap cannot bound the transient buffering
-   * itself; it guarantees the message never reaches application code.
-   */
-  private void rejectOversized(WebSocketChannel channel, long actual) throws IOException {
-    WebSockets.sendClose(
-        new CloseMessage(1009, "Message size exceeds limit " + maxMessageSize),
-        channel,
-        SEND_CALLBACK);
-    throw new IOException(
-        "Message of " + actual + " bytes exceeds WebSocket limit " + maxMessageSize);
   }
 }

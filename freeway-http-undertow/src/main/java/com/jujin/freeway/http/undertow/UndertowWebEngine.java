@@ -178,10 +178,15 @@ public final class UndertowWebEngine implements HttpEngine {
             // and per-connection memory abuse. Map the shared Freeway config
             // (readTimeout, backlog, socket buffers) onto Undertow's options;
             // maxConnections and writeTimeout have no Undertow equivalent.
-            .setServerOption(UndertowOptions.IDLE_TIMEOUT, (int) config.readTimeout().toMillis())
-            .setServerOption(
-                UndertowOptions.REQUEST_PARSE_TIMEOUT, (int) config.readTimeout().toMillis())
-            .setServerOption(UndertowOptions.MAX_HEADER_SIZE, 64 * 1024)
+            // Freeway's contract is "0 disables the timeout"; Undertow spells
+            // disabled as a negative value for both of these, and 0 means
+            // "already expired" for the parse timeout — a slow or segmented
+            // request header would be dropped on the floor.
+            .setServerOption(UndertowOptions.IDLE_TIMEOUT, readTimeoutMillis(config))
+            .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, readTimeoutMillis(config))
+            // The built-in engine's HTTP/1 parser budget (Http1xParser): the same
+            // request must not be accepted by one engine and rejected by another.
+            .setServerOption(UndertowOptions.MAX_HEADER_SIZE, 8192)
             .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, config.maxBodySize())
             .setServerOption(UndertowOptions.MULTIPART_MAX_ENTITY_SIZE, config.maxBodySize());
     if (config.backlog() > 0) {
@@ -285,6 +290,15 @@ public final class UndertowWebEngine implements HttpEngine {
    * Resolves the keystore type: explicit {@code freeway.http.ssl.key-store-type} wins, else
    * inferred from the {@code .jks} extension, else PKCS12 (the built-in engine's default).
    */
+  /**
+   * The shared {@code freeway.http.server.read-timeout} in Undertow's vocabulary: milliseconds for
+   * a positive timeout, {@code -1} (never expire) when Freeway says {@code 0 disables}.
+   */
+  private static int readTimeoutMillis(HttpServerConfig config) {
+    long millis = config.readTimeout().toMillis();
+    return millis <= 0 ? -1 : (int) Math.min(millis, Integer.MAX_VALUE);
+  }
+
   private String keyStoreType(String keyStorePath) {
     String explicit = prop(HttpConfigKeys.SSL_KEY_STORE_TYPE);
     if (explicit != null && !explicit.isBlank()) {

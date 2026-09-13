@@ -50,6 +50,12 @@ import org.slf4j.LoggerFactory;
  * Consumes Freeway events from Kafka topics and publishes them on the {@link EventBus}.
  * Deserialization is restricted to the configured allowlist; poison messages follow the configured
  * policy.
+ *
+ * <p><b>The allowlist is the contract for what this node accepts.</b> It must name every bridged
+ * event class; an event whose {@code X-Event-Type} header is not listed is rejected as poison
+ * (warn-logged, never delivered). String-topic events carry {@code java.lang.String} as their type,
+ * so bridging them requires that entry too — and an <em>empty</em> allowlist accepts nothing at
+ * all, which looks exactly like "the broker is silent". The subscriber warns about that at startup.
  */
 public class KafkaSubscriber implements AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(KafkaSubscriber.class);
@@ -98,6 +104,14 @@ public class KafkaSubscriber implements AutoCloseable {
     // Parse once here — this runs per message on the hot path otherwise.
     this.topics = config.topics();
     this.allowedEventTypes = config.allowedEventTypes();
+    if (this.allowedEventTypes.isEmpty()) {
+      // Everything consumed with a type header would now be dropped as poison, and the
+      // symptom is "no events arrive" rather than an error — say so once, loudly.
+      LOG.warn(
+          "freeway.kafka.allowed-event-types is empty — every consumed record with a type header"
+              + " (including string-topic events, whose type is java.lang.String) will be rejected"
+              + " as poison; list every bridged event type to receive anything");
+    }
     this.consumer = consumer;
     this.dlqProducer = dlqProducer;
     this.concurrency = config.concurrency();

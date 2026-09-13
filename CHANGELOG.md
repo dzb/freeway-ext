@@ -4,6 +4,16 @@
 
 ### Changed
 
+- **kafka: the bridge contract is now tested by the wire, not by a local shortcut** — the real-broker
+  contract test used one bus for both sides, so its `bus.subscribe(...)` assertions were satisfied by
+  the synchronous local dispatch at publish time: it passed with the broker carrying nothing (and
+  kept passing while the bridge was writing to topics nobody polled). It now runs the publisher and
+  the subscriber in **two containers** with distinct origins, so an assertion on the subscriber bus
+  can only pass if the record crossed the broker. Reverse-checked: pointing the subscriber at a
+  different topic fails all four cases (the old version passed that too). The subscriber also warns
+  at startup when `freeway.kafka.allowed-event-types` is empty — nothing is accepted in that state,
+  which is indistinguishable from "the broker is silent", and string-topic events need
+  `java.lang.String` in the list because that is their type header.
 - **kafka: the bridge now writes the topic the subscriber actually polls** — the sink produced to
   the *local dispatch topic* (a string topic such as `orders.created`, or the event's simple class
   name for class dispatch) while `KafkaSubscriber` polls the configured `freeway.kafka.topics` list,

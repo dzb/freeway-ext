@@ -38,34 +38,48 @@ class KafkaEventSinkIntegrationTest {
     }
   }
 
-  private static Container container;
-  private static KafkaConfig config;
+  private static Container pubContainer;
+  private static Container subContainer;
   private static EventBus bus;
+  private static EventBus subBus;
   private static KafkaEventSink sink;
   private static KafkaSubscriber subscriber;
   private static final String TOPIC = "freeway-integration";
 
   @BeforeAll
   static void setUp() throws Exception {
-    config =
+    // The two sides live in separate containers (and could be separate JVMs): the
+    // publisher bus has no subscriber, the subscriber bus never publishes. An
+    // assertion on the subscriber bus can therefore only pass if the record
+    // crossed the broker — the earlier single-bus version passed on the
+    // synchronous local dispatch alone and proved nothing about the wire.
+    var publisherConfig =
         KafkaConfig.of(
-            BROKER, // bootstrapServers
-            "freeway-it", // groupId
-            "it-producer", // clientId
-            TOPIC, // topics
-            "", // allowedEventTypes (defaults to Map-only for untyped)
-            "skip", // poisonPolicy
-            "", // propertiesRaw
-            "", // dlqTopic
-            1, // maxRetries
-            1000, // retryBackoffMs
-            1, // concurrency
-            true); // suppressOwn
-    container = Freeway.create();
-    bus = container.get(EventBus.class);
-    sink = new KafkaEventSink(config, new JsonCodecDefault());
+            BROKER, "freeway-it-pub", "it-producer", TOPIC, "", "skip", "", "", 1, 1000, 1, true);
+    // A subscriber origin distinct from the producer's: with suppress-own on, a
+    // shared origin would drop every bridged record as "own".
+    var subscriberConfig =
+        KafkaConfig.of(
+            BROKER,
+            "freeway-it-sub",
+            "it-consumer",
+            TOPIC,
+            String.join(
+                ",", OrderCreated.class.getName(), KeyedOrder.class.getName(), "java.lang.String"),
+            "skip",
+            "",
+            "",
+            1,
+            1000,
+            1,
+            true);
+    pubContainer = Freeway.create();
+    subContainer = Freeway.create();
+    bus = pubContainer.get(EventBus.class);
+    subBus = subContainer.get(EventBus.class);
+    sink = new KafkaEventSink(publisherConfig, new JsonCodecDefault());
     bus.addEventSink(sink);
-    subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault());
+    subscriber = new KafkaSubscriber(subscriberConfig, subBus, new JsonCodecDefault());
     subscriber.start();
     // Allow the consumer group to join and the topic to be created.
     Thread.sleep(2000);
@@ -75,14 +89,15 @@ class KafkaEventSinkIntegrationTest {
   static void tearDown() throws Exception {
     if (subscriber != null) subscriber.close();
     if (sink != null) sink.close();
-    if (container != null) container.close();
+    if (pubContainer != null) pubContainer.close();
+    if (subContainer != null) subContainer.close();
   }
 
   @Test
   void topicEventCrossesTheBroker() throws Exception {
     var received = new CountDownLatch(1);
     var payload = new AtomicReference<String>();
-    bus.subscribe(
+    subBus.subscribe(
         TOPIC + ".greet",
         value -> {
           payload.set(String.valueOf(value));
@@ -100,7 +115,7 @@ class KafkaEventSinkIntegrationTest {
   void classEventRoundTripsThroughKafka() throws Exception {
     var received = new CountDownLatch(1);
     var event = new AtomicReference<OrderCreated>();
-    bus.subscribe(
+    subBus.subscribe(
         OrderCreated.class,
         e -> {
           event.set(e);
@@ -117,7 +132,7 @@ class KafkaEventSinkIntegrationTest {
   void keyedEventsCarryThePartitionKey() throws Exception {
     var received = new CountDownLatch(1);
     var event = new AtomicReference<KeyedOrder>();
-    bus.subscribe(
+    subBus.subscribe(
         KeyedOrder.class,
         e -> {
           event.set(e);
@@ -131,13 +146,23 @@ class KafkaEventSinkIntegrationTest {
 
   @Test
   void suppressOwnKeepsLocalEventsFromLooping() throws Exception {
-    // Local dispatch fires at publish time (synchronous); the broker loop
-    // must NOT deliver a second copy. Count deliveries: exactly one.
-    var deliveries = new java.util.concurrent.atomic.AtomicInteger();
-    bus.subscribe(TOPIC + ".loop", v -> deliveries.incrementAndGet());
+    // Local dispatch fires at publish time (synchronous) — one delivery on the
+    // publisher bus. With a distinct subscriber origin, the record must cross
+    // to the other bus exactly once, and must not come back as a second copy.
+    var localDeliveries = new java.util.concurrent.atomic.AtomicInteger();
+    var remoteDeliveries = new java.util.concurrent.atomic.AtomicInteger();
+    var crossed = new CountDownLatch(1);
+    bus.subscribe(TOPIC + ".loop", v -> localDeliveries.incrementAndGet());
+    subBus.subscribe(
+        TOPIC + ".loop",
+        v -> {
+          remoteDeliveries.incrementAndGet();
+          crossed.countDown();
+        });
     bus.publish(TOPIC + ".loop", "no-self");
-    Thread.sleep(2500); // give the broker loop time to re-deliver if broken
-    assertEquals(
-        1, deliveries.get(), "own events must be suppressed at the broker loop (origin header)");
+    assertTrue(crossed.await(15, TimeUnit.SECONDS), "the bridge must deliver to the other bus");
+    Thread.sleep(2500); // give a broken loop time to deliver extra copies
+    assertEquals(1, localDeliveries.get(), "local dispatch happens exactly once");
+    assertEquals(1, remoteDeliveries.get(), "the bridged copy arrives exactly once");
   }
 }

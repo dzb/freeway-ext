@@ -629,6 +629,19 @@ JMH 的单迭代 score error 是 NaN（列 NOT NULL）→ 记为 0；`--include`
 `wsMaxMessageSize` 在引擎/会话中**已无任何出现**（早前轮次已清理），`responded()`/`completionCallback()`
 同（全模块 grep 无命中）——两项均可从清单移除。
 
+**（2026-09-13 又一轮：core「有意保留」三项复核）** 对 §6 之外被刻意保留的三项做了证据复核：
+① `WebServer` 构造器阶梯：包私有 5 参构造器（只多一个 `readinessProbe`）**无任何调用者**——core 的
+`HttpModule`、`WebServerBuilder` 都直接走 6 参，4 参供外部适配器/测试使用；已删除（core 提交），
+阶梯由 4/5/6 收成 4/6。② `HttpContextImpl.reset` 的 10 参：调用点只有两个（`Http1xSession`、
+`Http2Session`），且十项全是必需值、方法本身是包私有，改参数记录会在每请求复用路径上多一次分配，
+而"3 个以上可选输入用参数记录"的规则针对的是公开装配面——**保留**。③ `ServiceRegistry.drainWindow()`：
+`RegistryLifecycleHook` 读取、`RegistryDrainTest` 覆写，是 SPI 上的"默认实现让自定义注册表免实现"的
+既定形态——**保留**。
+另发现一处新的可简化点（未做，留给下一轮）：两个适配器的**测试**里约有 15 处直接
+`new WebServer(engine, config, event -> {}, pipeline)`，绕过了 `WebServerBuilder`，因而既拿不到 NOOP
+sink 哨兵（`publishEvents` 恒 true）也没有默认错误处理器，且各自重复声明 disabled CORS/health 管线；
+testkit 的 `EngineFixture` 是收口点（需把 `Pipelines` 从"返回 RequestComponents"改为"喂给 builder 的各部分"）。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

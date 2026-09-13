@@ -39,7 +39,10 @@ import org.openjdk.jmh.annotations.State;
  * rather than a filter.
  *
  * <p>Uses a real {@link HttpContextImpl} (not a stub) so that filter overhead includes real
- * header/body/status operations.
+ * header/body/status operations. It therefore lives in the core {@code http.engine} package: a
+ * reused pooled context is only reachable through the package-private {@link
+ * HttpContextImpl#reset(String, String, String, String, String, String, String, String, Object[],
+ * Object[])}.
  *
  * <p>Three request shapes exercise different filter code paths:
  *

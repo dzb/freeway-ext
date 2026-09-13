@@ -54,7 +54,7 @@ when you need process-level isolation for final performance claims.
 
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
-  -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchFork \
+  -Dexec.mainClass=com.jujin.freeway.bench.run.BenchFork \
   -Dbench.engine=freeway -Dbench.mode=keepalive \
   -Dbench.requests=20000 -Dbench.concurrency=32 -Dbench.warmup=2000 -Dbench.runs=3
 ```
@@ -68,7 +68,7 @@ java --add-opens=java.base/java.lang=ALL-UNNAMED \
      -cp "$(cat freeway-benchmark/target/benchmark.classpath);freeway-benchmark/target/classes" \
      -Dbench.engine=freeway -Dbench.requests=20000 -Dbench.concurrency=32 \
      -Dbench.warmup=2000 -Dbench.runs=3 \
-     com.jujin.freeway.benchmarks.BenchFork
+     com.jujin.freeway.bench.run.BenchFork
 ```
 
 Supported engines:
@@ -92,14 +92,20 @@ mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
 
 Useful benchmark classes:
 
+- `com.jujin.freeway.bench.jmh.JsonCodecBenchmark` — JSON serialization/deserialization
+- `com.jujin.freeway.bench.jmh.RouteIndexBenchmark` — route matching (exact, param, wildcard)
+- `com.jujin.freeway.bench.jmh.MultipartFormBenchmark` — multipart form parsing
 - `com.jujin.freeway.http.engine.Http1xParserBenchmark` — HTTP/1.1 request parsing
 - `com.jujin.freeway.http.engine.HttpContextOutputBenchmark` — response output (text, JSON, not-found)
 - `com.jujin.freeway.http.engine.HttpContextLookupBenchmark` — header/query/param lookup
 - `com.jujin.freeway.http.engine.FilterChainBenchmark` — full filter chain (cors → health)
-- `com.jujin.freeway.http.engine.JsonCodecBenchmark` — JSON serialization/deserialization
 - `com.jujin.freeway.http.engine.ws.WebSocketFrameBenchmark` — WebSocket frame read/write/construct
-- `com.jujin.freeway.http.route.RouteIndexBenchmark` — route matching (exact, param, wildcard)
-- `com.jujin.freeway.http.body.MultipartFormBenchmark` — multipart form parsing
+
+The last five deliberately live in the core `com.jujin.freeway.http.*` packages: they measure the
+real engine internals (`HttpContextImpl.reset`, `Http1xParser`, `WebSocketFrame.read/write`) and
+those are package-private, so a white-box package is the only way to reach them. Every other
+benchmark class belongs to `com.jujin.freeway.bench.*` — nothing in this module owns a
+`com.jujin.freeway.http` package.
 
 The microbenchmarks are the decision-grade inputs. The HTTP black-box benchmarks
 are for local validation and release gating, not for final performance claims.

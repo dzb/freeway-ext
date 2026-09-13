@@ -14,8 +14,10 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.http.route;
+package com.jujin.freeway.bench.jmh;
 
+import com.jujin.freeway.http.route.Route;
+import com.jujin.freeway.http.route.RouteIndex;
 import java.util.ArrayList;
 import java.util.List;
 import org.openjdk.jmh.annotations.Benchmark;

@@ -24,6 +24,12 @@ import org.openjdk.jmh.annotations.Scope;
 import org.openjdk.jmh.annotations.Setup;
 import org.openjdk.jmh.annotations.State;
 
+/**
+ * JMH benchmark for the HTTP/1.1 request parser.
+ *
+ * <p>Lives in the core {@code http.engine} package on purpose: {@link Http1xParser} and its {@code
+ * ParsedRequest} are package-private, and parsing the real parser is the point of the benchmark.
+ */
 @State(Scope.Thread)
 public class Http1xParserBenchmark {
 

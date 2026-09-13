@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.benchmarks;
+package com.jujin.freeway.bench.model;
 
 import java.util.Comparator;
 import java.util.List;

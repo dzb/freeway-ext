@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.http.engine;
+package com.jujin.freeway.bench.jmh;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import java.util.ArrayList;

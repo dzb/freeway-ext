@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.bench.cli;
+package com.jujin.freeway.bench.run;
 
-import com.jujin.freeway.benchmarks.ServerHarness;
-import com.jujin.freeway.benchmarks.client.Http11Client;
-import com.jujin.freeway.benchmarks.client.WsClient;
+import com.jujin.freeway.bench.client.Http11Client;
+import com.jujin.freeway.bench.client.WsClient;
+import com.jujin.freeway.bench.harness.ServerHarness;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -312,7 +312,7 @@ public final class BenchRunner {
   }
 
   /** Computes population standard deviation from an array of scores. */
-  static double stddev(double[] values) {
+  public static double stddev(double[] values) {
     if (values.length <= 1) return 0;
     double sum = 0;
     for (double v : values) sum += v;

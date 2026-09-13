@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.benchmarks;
+package com.jujin.freeway.bench.run;
 
-import com.jujin.freeway.bench.cli.BenchRunner;
+import com.jujin.freeway.bench.harness.ServerHarness;
+import com.jujin.freeway.bench.model.Result;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -36,14 +37,14 @@ import java.util.List;
  * <pre>
  * mvn -f freeway-benchmark/pom.xml -am process-classes
  * mvn -f freeway-benchmark/pom.xml exec:java \
- *   -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchFork \
+ *   -Dexec.mainClass=com.jujin.freeway.bench.run.BenchFork \
  *   -Dbench.engine=freeway -Dbench.mode=keepalive \
  *   -Dbench.requests=20000 -Dbench.concurrency=32 -Dbench.runs=3
  * </pre>
  */
 public final class BenchFork {
 
-  private static final String MAIN_CLASS = "com.jujin.freeway.benchmarks.BenchFork";
+  private static final String MAIN_CLASS = BenchFork.class.getName();
 
   public static void main(String[] args) throws Exception {
     String role = p("bench.role", "suite");

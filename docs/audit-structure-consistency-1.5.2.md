@@ -100,6 +100,22 @@ core 包（依赖包私有的 `HttpContextImpl.reset`、`Http1xParser`、`WebSoc
 另外 `bench.cli` ↔ `benchmarks` 是**双向依赖**（`BenchFork` → `bench.cli.BenchRunner`，
 `BenchRunner` → `benchmarks.ServerHarness/client.*`），说明这不是分层而是同一次迁移留下的两半。
 
+> **（2026-09-13 已落地）** `benchmarks.*` 整个包并入 `bench.*`：`ServerHarness` →
+> `bench.harness`、`Http11Client`/`WsClient` → `bench.client`、`Result` → `bench.model`（与
+> `BenchmarkRun`/`BenchmarkResult` 同处结果模型）、`BenchFork` → `bench.run`，同时把
+> `BenchRunner` 从 `bench.cli` 移到 `bench.run`——依赖因此变成
+> `cli → run → harness/client → model` 单向，CLI 不再是"复用测量逻辑"的必经之路。
+> 三个只用 public API 的 JMH 类迁到 `bench.jmh`（逐个核对：`RouteIndex` 是 public 类 + public
+> 构造器 + public `RouteMatch`、`MultipartForm.parse` public、`JsonCodecDefault` public）；
+> 其余 5 个留在 core 包，并在每个类的 javadoc 写明必须留下的包私有依赖
+> （`HttpContextImpl.reset`、`Http1xParser`/`ParsedRequest`、`WebSocketFrame.read/write`），
+> README 的 JMH 清单同步说明"这个模块不拥有任何 `com.jujin.freeway.http` 包"。
+> `BenchFork.MAIN_CLASS` 由硬编码字符串改为 `BenchFork.class.getName()`，改包后再不会失配。
+> 迁移顺带暴露一处包外访问：`BenchRunner.stddev` 原是包私有、被两个 CLI 命令使用，现转 public。
+> 验证不是只看编译：JMH 两类实跑通过（迁移后的 `bench.jmh.JsonCodecBenchmark` 与白盒的
+> `http.engine.Http1xParser`/`HttpContextOutput`），`BenchFork` 真实 fork 跑通一轮
+> （500 请求 ok=500 errors=0）。
+
 **3.1.2 超过 500 行的类**
 
 `ServerHarness`（569）、`JettyWebEngine`（553）、`KafkaSubscriber`（520）。三者的共同形态是

@@ -28,9 +28,10 @@ import org.openjdk.jmh.annotations.State;
 /**
  * JMH benchmark for {@link WebSocketFrame} read, write, and construction.
  *
- * <p>Covers text, binary, and close frame types across small and large payload sizes. Placed in the
- * {@code ws} package to access package-private {@link WebSocketFrame#read(java.io.InputStream)} and
- * {@link WebSocketFrame#write(java.io.OutputStream)} methods.
+ * <p>Covers text, binary, and close frame types across small and large payload sizes. It lives in
+ * the core {@code http.engine.ws} package on purpose: {@link
+ * WebSocketFrame#read(java.io.InputStream)} and {@link WebSocketFrame#write(java.io.OutputStream)}
+ * are package-private.
  */
 @State(Scope.Thread)
 public class WebSocketFrameBenchmark {

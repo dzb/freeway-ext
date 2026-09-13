@@ -4,6 +4,19 @@
 
 ### Changed
 
+- **benchmark: one package root, and the dependency runs one way** — the module carried two homes
+  (`com.jujin.freeway.bench.*` and `com.jujin.freeway.benchmarks.*`) with a cycle between them:
+  `BenchFork` imported `bench.cli.BenchRunner` while `BenchRunner` imported
+  `benchmarks.ServerHarness`/`client.*`. Now `ServerHarness` is `bench.harness`, `Http11Client` and
+  `WsClient` are `bench.client`, `Result` sits in `bench.model` beside the other result types, and
+  both `BenchFork` and `BenchRunner` are in `bench.run` — reusing the measurement loop no longer
+  means depending on the CLI package. Three JMH classes that only use public API move to
+  `bench.jmh`; the five that need package-private engine internals stay in their core packages on
+  purpose, each saying so in its javadoc, and the README explains why this module owns no
+  `com.jujin.freeway.http` package. `BenchFork`'s subprocess main class is derived from its own
+  class now instead of a hardcoded string, and `BenchRunner.stddev` is public because two commands
+  use it across the new boundary. `com.jujin.freeway.benchmarks.*`, `bench.cli.BenchRunner` and the
+  three old JMH class names are gone — update `exec.mainClass` and any JMH class argument.
 - **hikari: `invalidate` destroys, and the HikariCP divergences are stated** — core `1.5.2` adds
   `Pool.invalidate(PooledConnection)`, the pool-level way to say "destroy this connection, do not
   recycle it"; the adapter implements it with `HikariDataSource.evictConnection`, which removes the

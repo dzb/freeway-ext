@@ -14,14 +14,14 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.benchmarks;
+package com.jujin.freeway.bench.harness;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.benchmarks.ServerHarness.Engine;
-import com.jujin.freeway.benchmarks.ServerHarness.Scenario;
+import com.jujin.freeway.bench.harness.ServerHarness.Engine;
+import com.jujin.freeway.bench.harness.ServerHarness.Scenario;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;

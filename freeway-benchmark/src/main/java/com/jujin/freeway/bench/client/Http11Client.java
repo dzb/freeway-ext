@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.benchmarks.client;
+package com.jujin.freeway.bench.client;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;

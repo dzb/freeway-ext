@@ -18,7 +18,7 @@ mvn -pl freeway-http-undertow -am test
 
 # 4. Run benchmarks (fork-based, from project root)
 mvn -f freeway-benchmark/pom.xml exec:java \
-  -Dexec.mainClass=com.jujin.freeway.benchmarks.BenchFork \
+  -Dexec.mainClass=com.jujin.freeway.bench.run.BenchFork \
   -Dbench.engine=freeway -Dbench.requests=20000 -Dbench.concurrency=32 -Dbench.runs=3
 ```
 

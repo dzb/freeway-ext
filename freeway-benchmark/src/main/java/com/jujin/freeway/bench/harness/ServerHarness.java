@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.benchmarks;
+package com.jujin.freeway.bench.harness;
 
-import com.jujin.freeway.benchmarks.client.Http11Client;
+import com.jujin.freeway.bench.client.Http11Client;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;

@@ -17,9 +17,10 @@
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.event.BenchEvent;
+import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.benchmarks.ServerHarness;
+import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.db.Database;

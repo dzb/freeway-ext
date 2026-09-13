@@ -33,7 +33,8 @@ import org.openjdk.jmh.annotations.State;
  *
  * <p>Uses a real {@link HttpContextImpl} populated via {@code reset()} with realistic request
  * headers and query parameters. This replaces the earlier custom {@code BenchContext} stub that did
- * not reflect the real O(1)-then-O(n) header lookup strategy.
+ * not reflect the real O(1)-then-O(n) header lookup strategy. It lives in the core {@code
+ * http.engine} package because {@code reset()} is package-private.
  */
 @State(Scope.Thread)
 public class HttpContextLookupBenchmark {

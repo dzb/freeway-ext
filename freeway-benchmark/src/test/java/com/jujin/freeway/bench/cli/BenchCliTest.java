@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.bench.db.BenchDbModule;
 import com.jujin.freeway.bench.model.BenchmarkResult;
+import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.db.Database;

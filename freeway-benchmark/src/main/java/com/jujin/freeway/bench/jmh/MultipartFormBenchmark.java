@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.http.body;
+package com.jujin.freeway.bench.jmh;
 
+import com.jujin.freeway.http.body.MultipartForm;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.openjdk.jmh.annotations.Benchmark;

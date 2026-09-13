@@ -38,7 +38,8 @@ import org.openjdk.jmh.annotations.State;
  * JMH benchmark for {@link HttpContextImpl} response output paths.
  *
  * <p>Covers plain-text, JSON, and not-found responses as well as request-body reading combined with
- * output and the {@code sendJson} convenience shortcut.
+ * output and the {@code sendJson} convenience shortcut. It lives in the core {@code http.engine}
+ * package because the pooled context is only populated through the package-private {@code reset()}.
  */
 @State(Scope.Thread)
 public class HttpContextOutputBenchmark {

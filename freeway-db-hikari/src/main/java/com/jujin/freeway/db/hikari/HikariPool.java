@@ -27,17 +27,57 @@ import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Collections;
 import java.util.Objects;
+import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** HikariCP-backed {@link Pool} implementation. */
+/**
+ * HikariCP-backed {@link Pool} implementation.
+ *
+ * <p>{@link #release(PooledConnection)} closes the HikariCP proxy, which rolls back an open
+ * transaction, resets the connection state and recycles the connection — HikariCP's own definition
+ * of a healthy return. {@link #invalidate(PooledConnection)} is the destroy path: it calls {@code
+ * HikariDataSource.evictConnection}, which removes the entry from the pool and physically closes
+ * the connection, so a connection whose state could not be restored never reaches another borrower.
+ *
+ * <p>Some {@link PoolConfig} knobs behave differently under HikariCP than under {@code
+ * PoolDefault}:
+ *
+ * <ul>
+ *   <li><b>Durations are normalized.</b> HikariCP logs a warning and rewrites values below its own
+ *       floors: {@code maxLifetime} below 30s becomes 30min, {@code maxIdleTime} below 10s becomes
+ *       10min (and is disabled when it is at or above {@code maxLifetime}, or when the pool is
+ *       fixed-size), and a leak-detection threshold below 2s or above {@code maxLifetime} is
+ *       disabled. {@code connectionTimeout} and {@code healthCheckTimeout} below 250ms are rejected
+ *       by {@code HikariConfig} with an {@code IllegalArgumentException} naming the floor. {@code
+ *       PoolDefault} honors every value exactly as configured.
+ *   <li><b>{@code cleanInterval} is not mapped</b> — HikariCP runs its own housekeeping.
+ * </ul>
+ *
+ * <p>{@link DatabaseStats#longLeased()} is always 0: HikariCP does not expose per-connection borrow
+ * durations, so leak detection is configured through {@code freeway.db.pool.leak-detection}
+ * (HikariCP's own threshold) instead of being reported here. {@link #close()} delegates to {@code
+ * HikariDataSource.close()} and does not wait for borrowed connections to return; HikariCP aborts
+ * them itself.
+ */
 public final class HikariPool implements Pool {
   private static final Logger LOG = LoggerFactory.getLogger(HikariPool.class);
 
   private final HikariDataSource ds;
-  private final HikariConfig hikariConfig;
+
+  /**
+   * Handles already destroyed by {@link #invalidate(PooledConnection)}. HikariCP's proxy must not
+   * be closed after its pool entry was evicted (the entry's connection is gone and the reset path
+   * throws), so {@link #release(PooledConnection)} has to recognize the handle and become a no-op.
+   * Weak keys: an entry disappears once the caller drops the handle.
+   */
+  private final Set<PooledConnection> invalidated =
+      Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+
   private final AtomicLong borrowCount = new AtomicLong();
   private final AtomicLong borrowWaitNanos = new AtomicLong();
 
@@ -50,6 +90,8 @@ public final class HikariPool implements Pool {
    * resolves through the full cascade instead of JVM properties alone.
    */
   public HikariPool(PoolConfig config, SymbolSource symbols) {
+    Objects.requireNonNull(config, "config");
+    Objects.requireNonNull(symbols, "symbols");
     HikariConfig hc = new HikariConfig();
     hc.setJdbcUrl(config.url());
     hc.setUsername(config.username());
@@ -80,7 +122,6 @@ public final class HikariPool implements Pool {
     // PoolConfig fields without a HikariCP equivalent are intentionally not
     // mapped: cleanInterval (Hikari runs its own housekeeping) and
     // queryTimeout (JDBC statement level, not pool level).
-    this.hikariConfig = hc;
     try {
       this.ds = new HikariDataSource(hc);
     } catch (RuntimeException ex) {
@@ -140,6 +181,12 @@ public final class HikariPool implements Pool {
               + conn.getClass().getName()
               + " does not belong to this HikariPool — release connections only to the pool that borrowed them");
     }
+    if (invalidated.contains(hk)) {
+      // Already destroyed by invalidate(): HikariCP's evicted pool entry has
+      // no connection left, so closing the proxy would throw from its reset
+      // path. Cleanup that invalidates and then releases must be a no-op.
+      return;
+    }
     try {
       hk.connection().close();
     } catch (SQLException ex) {
@@ -151,6 +198,27 @@ public final class HikariPool implements Pool {
         LOG.warn("Failed to release connection back to HikariCP", ex);
       }
     }
+  }
+
+  @Override
+  public void invalidate(PooledConnection conn) {
+    Objects.requireNonNull(conn, "conn");
+    if (!(conn instanceof HkConn hk)) {
+      throw new SqlException(
+          "Foreign PooledConnection rejected: "
+              + conn.getClass().getName()
+              + " does not belong to this HikariPool — invalidate connections only to the pool that borrowed them");
+    }
+    // Mark before evicting: a cleanup path that releases afterwards must see
+    // the handle as destroyed.
+    invalidated.add(hk);
+    if (ds.isClosed()) {
+      // Pool already shut down: HikariCP closed the physical connection.
+      return;
+    }
+    // evictConnection destroys the physical connection; the proxy's close()
+    // (release) would only roll back and recycle it.
+    ds.evictConnection(hk.connection());
   }
 
   @Override
@@ -171,7 +239,7 @@ public final class HikariPool implements Pool {
         idle,
         total,
         awaiting,
-        hikariConfig.getMaximumPoolSize(),
+        ds.getMaximumPoolSize(),
         0, // longLeased — HikariCP does not expose per-connection borrow duration
         borrowCount.get(),
         borrowWaitNanos.get());
@@ -184,7 +252,7 @@ public final class HikariPool implements Pool {
 
   /** Package-private for tests: the configured leak-detection threshold in ms. */
   long leakDetectionThreshold() {
-    return hikariConfig.getLeakDetectionThreshold();
+    return ds.getLeakDetectionThreshold();
   }
 
   private record HkConn(Connection connection) implements PooledConnection {}

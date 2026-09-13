@@ -4,6 +4,26 @@
 
 ### Changed
 
+- **hikari: `invalidate` destroys, and the HikariCP divergences are stated** — core `1.5.2` adds
+  `Pool.invalidate(PooledConnection)`, the pool-level way to say "destroy this connection, do not
+  recycle it"; the adapter implements it with `HikariDataSource.evictConnection`, which removes the
+  entry and physically closes the connection. Previously the framework could only close the handle,
+  and under HikariCP that means rollback + state reset + recycle — a connection whose state could
+  not be restored would go back into the pool with `autoCommit` still off. Because HikariCP's proxy
+  must not be closed after its entry was evicted (its reset path throws), `release` now recognizes
+  an invalidated handle and becomes a no-op, which is what the `Pool` contract promises for the
+  invalidate-then-release cleanup order. The class javadoc also records the two `PoolConfig`
+  divergences (HikariCP rewrites durations below its own floors and ignores `cleanInterval`), the
+  always-zero `longLeased`, and that `close()` does not drain. The adapter tests went from 13 cases
+  with tautological assertions to 19 with real ones, and `HikariPoolModule` itself (primary-vs-plain
+  pool selection, the leak-detection symbol cascade) now has coverage.
+- **kafka: the module is `final` and its runtime hook is namespaced** — `KafkaModule` was the only
+  adapter module that was neither `final` nor hook-prefixed: the runtime hook id `"kafka-sink"` is
+  now `KafkaModule.LIFECYCLE_HOOK` = `"freeway.kafka.lifecycle"`, matching core's
+  `freeway.<module>.<thing>` ids; rename the id in any `before/after` ordering that referenced the
+  old string. The javadoc states why its bindings carry no `.id()/.primary()` (`KafkaEventSink` and
+  `KafkaSubscriber` have no framework default to outrank, so an application's own binding must fail
+  loudly instead of losing silently).
 - **aligned with Freeway core `1.5.2-SNAPSHOT`** — `freeway-parent` and the
   `freeway.version` property move together to `1.5.2-SNAPSHOT` (root and all
   five adapter modules). The engine RPC tests compile only against the 1.5.2

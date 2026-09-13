@@ -18,22 +18,39 @@ package com.jujin.freeway.db.hikari;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.db.*;
+import com.jujin.freeway.db.Database;
+import com.jujin.freeway.db.DatabaseBuilder;
+import com.jujin.freeway.db.DatabaseStats;
+import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.db.PooledConnection;
+import com.jujin.freeway.db.SqlException;
+import com.jujin.freeway.db.dialect.H2Dialect;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Proxy;
+import java.sql.Connection;
+import java.sql.Driver;
+import java.sql.DriverManager;
+import java.sql.DriverPropertyInfo;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
 
 class HikariPoolIntegrationTest {
@@ -56,7 +73,9 @@ class HikariPoolIntegrationTest {
       DatabaseStats stats = db.stats();
       assertEquals(config.maxSize(), stats.maxSize(), "maxSize should match config from HikariCP");
 
-      assertTrue(stats.idle() >= 0, "idle connections reported by HikariCP");
+      assertTrue(
+          stats.idle() >= 1,
+          "the connection ping borrowed must be back in the idle set, got idle=" + stats.idle());
       assertEquals(0, stats.active(), "no active connections after ping returns to pool");
     }
   }
@@ -132,7 +151,7 @@ class HikariPoolIntegrationTest {
     CountDownLatch start = new CountDownLatch(1);
     CountDownLatch done = new CountDownLatch(threads);
     AtomicInteger success = new AtomicInteger(0);
-    List<PooledConnection> connections = new ArrayList<>();
+    List<Throwable> failures = new ArrayList<>();
 
     for (int i = 0; i < threads; i++) {
       Thread.ofVirtual()
@@ -141,19 +160,14 @@ class HikariPoolIntegrationTest {
                 try {
                   start.await();
                   PooledConnection conn = pool.borrow();
-                  synchronized (connections) {
-                    connections.add(conn);
-                  }
                   success.incrementAndGet();
-                  // hold the connection briefly
+                  // hold the connection briefly, then always give it back
                   Thread.sleep(200);
-                  synchronized (connections) {
-                    if (connections.contains(conn)) {
-                      connections.remove(conn);
-                      pool.release(conn);
-                    }
+                  pool.release(conn);
+                } catch (Throwable t) {
+                  synchronized (failures) {
+                    failures.add(t);
                   }
-                } catch (Exception ignored) {
                 } finally {
                   done.countDown();
                 }
@@ -162,10 +176,12 @@ class HikariPoolIntegrationTest {
 
     start.countDown();
     assertTrue(done.await(10, TimeUnit.SECONDS));
-    assertTrue(success.get() >= 3, "at least maxSize connections should succeed");
+    assertEquals(List.of(), failures, "every borrower must get a connection and release it");
+    assertEquals(
+        threads, success.get(), "borrows queue instead of failing while below the timeout");
 
     DatabaseStats stats = pool.stats();
-    assertTrue(stats.maxSize() <= 3);
+    assertEquals(3, stats.maxSize());
     pool.close();
   }
 
@@ -204,10 +220,8 @@ class HikariPoolIntegrationTest {
             });
 
     assertTrue(done.await(10, TimeUnit.SECONDS));
-    assertNotNull(failure.get(), "second borrow should fail when pool is exhausted");
-    assertTrue(
-        failure.get() instanceof SqlException || failure.get().getCause() != null,
-        "failure should be SqlException or have a cause");
+    SqlException exhaustion = assertInstanceOf(SqlException.class, failure.get());
+    assertNotNull(exhaustion.getCause(), "the HikariCP timeout must be the cause, not swallowed");
 
     pool.release(first);
     pool.close();
@@ -293,7 +307,7 @@ class HikariPoolIntegrationTest {
     PooledConnection c1 = pool.borrow();
     assertEquals(1, pool.stats().active());
     assertTrue(pool.stats().borrowCount() >= 1, "borrowCount should track successful borrows");
-    assertTrue(pool.stats().borrowWaitNanos() >= 0, "borrowWaitNanos should be accumulated");
+    assertTrue(pool.stats().borrowWaitNanos() > 0, "borrowWaitNanos should be accumulated");
     PooledConnection c2 = pool.borrow();
     assertEquals(2, pool.stats().active());
 
@@ -344,5 +358,218 @@ class HikariPoolIntegrationTest {
     } finally {
       pool.close();
     }
+  }
+
+  @Test
+  void invalidateDestroysInsteadOfRecycling() throws Exception {
+    // release(): HikariCP recycles — the connection stays in the pool. The
+    // pool is sized 1/0 so the contrast is unambiguous.
+    PoolConfig config = singleConnectionConfig(newDb());
+    HikariPool pool = new HikariPool(config);
+    try {
+      PooledConnection recycled = pool.borrow();
+      pool.release(recycled);
+      assertEquals(1, pool.stats().idle(), "a released connection must be recycled");
+      assertEquals(1, pool.stats().total());
+
+      // invalidate(): HikariCP evicts — the entry leaves the pool and the
+      // physical connection is closed, so nothing is handed out again.
+      PooledConnection doomed = pool.borrow();
+      pool.invalidate(doomed);
+      assertEquals(0, awaitTotal(pool, 0), "an invalidated connection must leave the pool");
+      assertEquals(0, pool.stats().idle());
+
+      // ...and the pool still works: the next borrow dials a fresh connection.
+      PooledConnection fresh = pool.borrow();
+      assertTrue(fresh.connection().isValid(1));
+      pool.release(fresh);
+      assertEquals(1, pool.stats().idle());
+    } finally {
+      pool.close();
+    }
+  }
+
+  @Test
+  void repeatedInvalidateAndReleaseAfterInvalidateAreNoOps() {
+    PoolConfig config = singleConnectionConfig(newDb());
+    HikariPool pool = new HikariPool(config);
+    try {
+      PooledConnection conn = pool.borrow();
+      pool.invalidate(conn);
+      // Both are cleanup paths: neither may throw nor resurrect the entry.
+      assertDoesNotThrow(() -> pool.invalidate(conn));
+      assertDoesNotThrow(() -> pool.release(conn));
+      assertEquals(0, awaitTotal(pool, 0));
+    } finally {
+      pool.close();
+    }
+  }
+
+  @Test
+  void invalidateRejectsForeignAndNullHandles() {
+    PoolConfig config = singleConnectionConfig(newDb());
+    HikariPool pool = new HikariPool(config);
+    try {
+      PooledConnection held = pool.borrow();
+      assertThrows(NullPointerException.class, () -> pool.invalidate(null));
+
+      PooledConnection foreign = () -> null;
+      SqlException e = assertThrows(SqlException.class, () -> pool.invalidate(foreign));
+      assertTrue(
+          e.getMessage().contains("Foreign PooledConnection"),
+          "message must name the contract violation, got: " + e.getMessage());
+      assertEquals(1, pool.stats().active(), "a rejected handle must leave the pool untouched");
+      pool.release(held);
+    } finally {
+      pool.close();
+    }
+  }
+
+  @Test
+  void invalidateAfterCloseIsNoOp() {
+    PoolConfig config = singleConnectionConfig(newDb());
+    HikariPool pool = new HikariPool(config);
+    PooledConnection conn = pool.borrow();
+    pool.close();
+    assertDoesNotThrow(() -> pool.invalidate(conn), "cleanup after shutdown must not throw");
+  }
+
+  @Test
+  void databaseInvalidatesConnectionWhoseStateCannotBeRestored() throws Exception {
+    // The adapter-level payoff of Pool.invalidate: a connection whose
+    // autoCommit cannot be restored must be destroyed, not recycled with
+    // autoCommit still off. Under HikariCP the old "close the handle"
+    // approach only rolled back and recycled it.
+    AtomicBoolean failRestore = new AtomicBoolean();
+    Driver driver = restoreFailingDriver("jdbc:freeway-hikari-restore:", failRestore);
+    DriverManager.registerDriver(driver);
+    try {
+      PoolConfig config = singleConnectionConfig("jdbc:freeway-hikari-restore:tx");
+      HikariPool pool = new HikariPool(config);
+      Database db =
+          new DatabaseBuilder().config(config).pool(pool).dialect(new H2Dialect()).build();
+      try (db) {
+        db.execute("create table t (id int)");
+
+        // Healthy path: the connection is recycled, never invalidated.
+        db.transaction(() -> db.execute("insert into t values (1)"));
+        assertEquals(1, pool.stats().idle(), "a restored connection must be recycled");
+
+        failRestore.set(true);
+        db.transaction(() -> db.execute("insert into t values (2)"));
+
+        assertEquals(
+            0,
+            awaitTotal(pool, 0),
+            "an unrestorable connection must be destroyed, not left in the pool");
+
+        // The pool is still usable: a fresh connection replaces the destroyed one.
+        failRestore.set(false);
+        assertTrue(db.ping());
+      } finally {
+        pool.close();
+      }
+    } finally {
+      DriverManager.deregisterDriver(driver);
+    }
+  }
+
+  private static PoolConfig singleConnectionConfig(String url) {
+    return new PoolConfig(
+        url,
+        "sa",
+        "",
+        1,
+        0,
+        Duration.ofSeconds(5),
+        Duration.ofMinutes(30),
+        Duration.ofMinutes(10),
+        Duration.ofSeconds(30),
+        null,
+        Duration.ofSeconds(5),
+        Duration.ofSeconds(30));
+  }
+
+  /** HikariCP evicts asynchronously; poll until the pool reports {@code expected}. */
+  private static int awaitTotal(HikariPool pool, int expected) {
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    int total = pool.stats().total();
+    while (total != expected && System.nanoTime() < deadline) {
+      try {
+        Thread.sleep(10);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+      total = pool.stats().total();
+    }
+    return total;
+  }
+
+  /**
+   * Serves real H2 connections wrapped in a proxy that can fail {@code setAutoCommit(true)} on
+   * demand — the failure that makes {@code Database} destroy instead of recycle.
+   */
+  private static Driver restoreFailingDriver(String urlPrefix, AtomicBoolean failRestore) {
+    return new Driver() {
+      @Override
+      public Connection connect(String url, Properties info) throws SQLException {
+        if (!acceptsURL(url)) {
+          return null;
+        }
+        Connection delegate =
+            new org.h2.Driver().connect(url.replace(urlPrefix, "jdbc:h2:mem:"), new Properties());
+        return restoreFailingProxy(delegate, failRestore);
+      }
+
+      @Override
+      public boolean acceptsURL(String url) {
+        return url != null && url.startsWith(urlPrefix);
+      }
+
+      @Override
+      public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+        return new DriverPropertyInfo[0];
+      }
+
+      @Override
+      public int getMajorVersion() {
+        return 1;
+      }
+
+      @Override
+      public int getMinorVersion() {
+        return 0;
+      }
+
+      @Override
+      public boolean jdbcCompliant() {
+        return false;
+      }
+
+      @Override
+      public Logger getParentLogger() {
+        return Logger.getLogger("test");
+      }
+    };
+  }
+
+  private static Connection restoreFailingProxy(Connection delegate, AtomicBoolean failRestore) {
+    InvocationHandler handler =
+        (proxy, method, args) -> {
+          if ("setAutoCommit".equals(method.getName())
+              && Boolean.TRUE.equals(args[0])
+              && failRestore.get()) {
+            throw new SQLException("autoCommit restore exploded");
+          }
+          try {
+            return method.invoke(delegate, args);
+          } catch (InvocationTargetException e) {
+            throw e.getCause();
+          }
+        };
+    return (Connection)
+        Proxy.newProxyInstance(
+            Connection.class.getClassLoader(), new Class<?>[] {Connection.class}, handler);
   }
 }

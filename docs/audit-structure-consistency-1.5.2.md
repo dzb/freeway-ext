@@ -365,6 +365,10 @@ core 的"物理销毁"意图在 Hikari 下变成"回滚 + 重置状态 + 回收"
 （`HikariDataSource extends HikariConfig`）；两个公开构造器缺 `Objects.requireNonNull`；
 测试里通配 import 违反 CHANGELOG 声明的 explicit-imports 约定。
 
+> **（2026-09-13 已落地）** ①、② 与本节中等/低项的处理见 §5 末尾的本轮更新说明；
+> 唯一未采纳的是"provider lambda 退化为 `.to(HikariPool.class)`"——`HikariPool` 有两个公开
+> 构造器，显式 lambda 才能点明容器路径要走 `SymbolSource` 级联。
+
 ### 4.5 freeway-benchmark
 
 **P0 见 §2。**
@@ -466,6 +470,21 @@ hikari 配置保真度告警与 `close()` 语义声明；benchmark 补测试。
 
 **P3（低）**：死代码清理（`responded()`、`completionCallback()`、未用局部变量与重载、
 `bench/event` 或补订阅者）、`Locale.ROOT`、空值判空、`ORDER BY`、javadoc 措辞等。
+
+**（2026-09-13 又一轮：hikari 语义差异落地）** §4.4 的三项建议已实现：core 新增
+`Pool.invalidate(PooledConnection)`（`PoolDefault` 物理销毁 + 释放配额；`Database.transaction`
+的状态复原与 `BatchQuery` 的 autoCommit 复原两条路径改走它），适配器用
+`HikariDataSource.evictConnection` 实现销毁语义；`release` 对已 invalidate 的句柄变为空操作
+——HikariCP 在条目被驱逐后关闭代理会在其 reset 路径抛 NPE，这一现象在测试里真实复现过，因此
+这不是防御性代码而是契约要求。§4.4 的中项：时长改写/`cleanInterval` 不映射/`longLeased` 恒 0/
+`close()` 不排空全部写入类 javadoc；测试从 13 例（含恒真断言与被吞异常）补到 19 例，其中
+`HikariPoolModule` 的主绑定选择与 leak-detection 级联、非法值命名键、invalidate 的销毁/幂等、
+以及 Database 端到端销毁路径此前零覆盖。低项一并清理：删掉冗余 `hikariConfig` 字段
+（`HikariDataSource` 本身就是配置）、两个公开构造器补 `requireNonNull`、测试去掉通配 import。
+同轮完成 §5 P2 的模块类命名/注册统一：`KafkaModule` 改 `public final`，hook id
+`"kafka-sink"` → `KafkaModule.LIFECYCLE_HOOK = "freeway.kafka.lifecycle"`（对齐 core 的
+`freeway.<module>.<thing>` 惯例），并在 javadoc 写明"适配器自有类型不标 `.primary()`"的理由。
+剩余 P2/P3 不变。
 
 ## 6. 建议保留的有意差异
 

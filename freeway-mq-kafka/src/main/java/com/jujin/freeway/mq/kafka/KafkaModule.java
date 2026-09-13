@@ -24,8 +24,23 @@ import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
-/** IoC module wiring the Kafka event sink and subscriber into the container. */
-public class KafkaModule implements ModuleEx {
+/**
+ * IoC module wiring the Kafka event sink and subscriber into the container.
+ *
+ * <p>Its bindings carry no {@code .id(...)}/{@code .primary()}: {@code KafkaEventSink} and {@code
+ * KafkaSubscriber} have no framework-provided default to step aside for, so a plain binding is the
+ * honest one — an application that binds its own sink gets the duplicate-binding error instead of
+ * being silently outranked. Adapters that substitute a core role do the opposite: {@code
+ * HikariPool} binds {@code Pool} with {@code .id("hikari").primary()} so the built-in default steps
+ * aside.
+ *
+ * <p>Lifecycle (attach the sink to the {@code EventBus}, start and close the subscriber) is
+ * contributed as the {@value #LIFECYCLE_HOOK} runtime hook.
+ */
+public final class KafkaModule implements ModuleEx {
+
+  /** Runtime-hook id for the Kafka sink/subscriber lifecycle. */
+  public static final String LIFECYCLE_HOOK = "freeway.kafka.lifecycle";
 
   @Override
   public void bind(Binder binder) {
@@ -49,7 +64,7 @@ public class KafkaModule implements ModuleEx {
     binder
         .contribute(RuntimeHook.class)
         .add(
-            "kafka-sink",
+            LIFECYCLE_HOOK,
             new RuntimeHook() {
               @Override
               public void start(Container container) {

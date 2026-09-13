@@ -27,6 +27,7 @@ import com.jujin.freeway.http.MediaTypes;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
@@ -157,7 +158,17 @@ public final class UndertowWebEngine implements HttpEngine {
     // dynamic encoding has no minimum-size gate, so it would compress small
     // responses the shared config says to leave alone.
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
-    boolean sslEnabled = Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_ENABLED, "false"));
+    // The shared three-state semantics: an explicit true/false wins (false is
+    // the kill switch suppressing a configured keystore), unset falls to
+    // keystore presence, and an unreadable value fails naming the key. The
+    // WebServer reports the same verdict through secure(), so the adapter must
+    // not disagree with it.
+    String configuredKeyStore = prop(HttpConfigKeys.SSL_KEY_STORE);
+    boolean sslEnabled =
+        SymbolSpec.activated(
+            HttpConfigKeys.SSL_ENABLED,
+            symbols.resolve(HttpConfigKeys.SSL_ENABLED, null),
+            configuredKeyStore != null && !configuredKeyStore.isBlank());
     Undertow.Builder builder =
         Undertow.builder()
             .setHandler(gracefulShutdown)

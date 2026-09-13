@@ -35,6 +35,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -46,6 +47,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.zip.GZIPOutputStream;
+import javax.net.ssl.SSLSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +74,11 @@ final class UndertowHttpContext extends AbstractHttpContext {
   /** Reinitializes all per-request state for object reuse. */
   void reset(HttpServerExchange exchange, String correlationId) {
     this.exchange = Objects.requireNonNull(exchange, "exchange");
+    // Clear the previous request's principal/attributes and roll a fresh
+    // correlation id before the incoming one is applied: this object is pooled
+    // per thread, so request N+1 would otherwise inherit request N's
+    // authentication context, attributes and start time.
+    resetExchangeMeta();
     setCorrelationId(correlationId);
     this.queryParams = null; // lazy — PING never accesses
     this.method = exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
@@ -89,6 +96,22 @@ final class UndertowHttpContext extends AbstractHttpContext {
     if (compression != null) {
       this.compression = compression;
     }
+  }
+
+  @Override
+  public boolean isSecure() {
+    return exchange.isSecure();
+  }
+
+  @Override
+  public SSLSession sslSession() {
+    return exchange.getConnection().getSslSession();
+  }
+
+  @Override
+  public String remoteAddress() {
+    InetSocketAddress source = exchange.getSourceAddress();
+    return source != null ? source.getHostString() : "";
   }
 
   @Override

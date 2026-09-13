@@ -25,6 +25,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-http</artifactId>
         </dependency>

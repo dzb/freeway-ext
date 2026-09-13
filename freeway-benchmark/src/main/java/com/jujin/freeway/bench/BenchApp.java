@@ -61,9 +61,8 @@ public final class BenchApp {
             .start();
     int exitCode = 0;
     try {
-      if (!CliModule.dispatch(CliModule.container(), args)) {
-        exitCode = 1;
-      }
+      // The contract: 0 = success, 1 = usage/internal error, 2 = a gate failed.
+      exitCode = CliModule.dispatch(CliModule.container(), args);
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
       e.printStackTrace();

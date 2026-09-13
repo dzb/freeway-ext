@@ -159,7 +159,7 @@ public final class CompareCommand implements Command {
 
       String flag = "";
       if (f != null && t != null) {
-        double rpsDelta = (t.score() - f.score()) / f.score();
+        double rpsDelta = f.score() > 0 ? (t.score() - f.score()) / f.score() : 0;
         double p95Delta = f.p95us() > 0 ? (double) (t.p95us() - f.p95us()) / f.p95us() : 0;
         double p99Delta = f.p99us() > 0 ? (double) (t.p99us() - f.p99us()) / f.p99us() : 0;
 
@@ -200,6 +200,7 @@ public final class CompareCommand implements Command {
 
     // Print regression summary
     if (!regressions.isEmpty()) {
+      ctx.exitCode(2); // the gate: a regression must be visible to CI, not just in the log
       System.out.println();
       System.out.println("⚠  **REGRESSIONS DETECTED:**");
       for (var r : regressions) {

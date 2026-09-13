@@ -29,8 +29,33 @@ public interface Command {
   /** Execute this command. */
   void run(Context ctx) throws Exception;
 
-  /** Runtime context injected by the CLI dispatcher. */
-  record Context(Container container, String command, Map<String, String> args) {
+  /**
+   * Runtime context injected by the CLI dispatcher. Carries the process exit code so a command can
+   * fail a gate: {@code 0} is success, and the highest code any command records wins.
+   */
+  final class Context {
+    private final Container container;
+    private final String command;
+    private final Map<String, String> args;
+    private int exitCode;
+
+    public Context(Container container, String command, Map<String, String> args) {
+      this.container = container;
+      this.command = command;
+      this.args = Map.copyOf(args);
+    }
+
+    public Container container() {
+      return container;
+    }
+
+    public String command() {
+      return command;
+    }
+
+    public Map<String, String> args() {
+      return args;
+    }
 
     /** Returns the value for a key, or the default if absent. */
     public String get(String key, String defaultValue) {
@@ -41,6 +66,16 @@ public interface Command {
     public int getInt(String key, int defaultValue) {
       String v = args.get(key);
       return v != null ? Integer.parseInt(v) : defaultValue;
+    }
+
+    /** Records a non-zero exit code for the process (usage error, failed gate). */
+    public void exitCode(int code) {
+      this.exitCode = Math.max(this.exitCode, code);
+    }
+
+    /** The process exit code this command asks for; {@code 0} when it never set one. */
+    public int exitCode() {
+      return exitCode;
     }
   }
 }

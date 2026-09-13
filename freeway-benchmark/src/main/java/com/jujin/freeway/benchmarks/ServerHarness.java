@@ -169,8 +169,7 @@ public final class ServerHarness implements AutoCloseable {
     }
     return switch (engine) {
       case FREEWAY -> freeway(scenario);
-      case JDK_NATIVE -> bare("sun.net.httpserver.DefaultHttpServerProvider", scenario);
-      case ROBAHO_NATIVE -> bare("robaho.net.httpserver.DefaultHttpServerProvider", scenario);
+      case JDK_NATIVE, ROBAHO_NATIVE -> bare(engine, scenario);
       case UNDERTOW_NATIVE -> undertow(scenario);
       case UNDERTOW_ADAPTER -> undertowAdapter(scenario);
       case JETTY_ADAPTER -> jettyAdapter(scenario);
@@ -321,8 +320,32 @@ public final class ServerHarness implements AutoCloseable {
   // Engine: JDK HttpServer / Robaho (both share the bare HttpServer API)
   // ---------------------------------------------------------------
 
-  private static ServerHarness bare(String providerClass, Scenario scenario) throws Exception {
-    System.setProperty("com.sun.net.httpserver.HttpServerProvider", providerClass);
+  /**
+   * The provider the JVM has already resolved. {@code com.sun.net.httpserver.HttpServer} caches it
+   * in a static field after the first lookup, so a later request for a different provider is
+   * silently ignored — the second engine would be measured with the first engine's code and
+   * mislabeled. One provider per JVM, enforced loudly.
+   */
+  private static String installedProvider;
+
+  private static synchronized ServerHarness bare(Engine engine, Scenario scenario)
+      throws Exception {
+    String providerClass =
+        engine == Engine.JDK_NATIVE
+            ? "sun.net.httpserver.DefaultHttpServerProvider"
+            : "robaho.net.httpserver.DefaultHttpServerProvider";
+    if (installedProvider == null) {
+      System.setProperty("com.sun.net.httpserver.HttpServerProvider", providerClass);
+      installedProvider = engine.label();
+    } else if (!installedProvider.equals(engine.label())) {
+      throw new IllegalStateException(
+          "The JDK HttpServer provider is fixed once per JVM (already using '"
+              + installedProvider
+              + "'), so '"
+              + engine.label()
+              + "' would be measured with the wrong server. Run each bare engine in its own"
+              + " invocation (one --engines value).");
+    }
     var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
     server.createContext("/", bareHandler(scenario));

@@ -60,10 +60,11 @@ public final class CliModule implements ModuleEx {
    * Dispatches the first CLI argument to the matching Command. Called by {@link
    * com.jujin.freeway.bench.BenchApp} after the container starts.
    *
-   * @return {@code true} when a command ran, {@code false} when the command name was unknown
-   *     (caller should exit non-zero)
+   * @return the process exit code: {@code 0} when the command ran and asked for no failure, {@code
+   *     1} for a usage error (no/unknown command), otherwise the code the command recorded (see
+   *     {@link Command.Context#exitCode(int)})
    */
-  public static boolean dispatch(Container container, String[] args) throws Exception {
+  public static int dispatch(Container container, String[] args) throws Exception {
     if (args.length == 0) {
       System.out.println("Usage: bench <command> [--key=value ...]");
       System.out.println("Commands:");
@@ -72,7 +73,7 @@ public final class CliModule implements ModuleEx {
       System.out.println("  list     Show recent benchmark runs");
       System.out.println("  compare  Compare two benchmark runs");
       System.out.println("  history  Show performance trend over time");
-      return true;
+      return 1;
     }
 
     String commandName = args[0];
@@ -99,11 +100,11 @@ public final class CliModule implements ModuleEx {
     for (var cmd : commands) {
       if (cmd.getClass().getSimpleName().equalsIgnoreCase(commandName + "Command")) {
         cmd.run(ctx);
-        return true;
+        return ctx.exitCode();
       }
     }
 
     System.err.println("Unknown command: " + commandName);
-    return false;
+    return 1;
   }
 }

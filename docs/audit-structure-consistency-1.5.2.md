@@ -565,6 +565,13 @@ CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端�
 剩余近似对（`*WebEngineContractTest` 68.7%、`*WebSocketProbeTest` 62.4%、`*EngineConfigTest` 85%）
 不合并：差异正是引擎特有部分（h2c、WS 帧上限拒绝时机、适配器专属配置键），写进 §6。
 
+**（2026-09-13 又一轮：`JettyWebSocketBridge` 提为顶层）** §5 P2 的一项已落地：`JettyWebEngine`
+里 110 行的嵌套 `JettyWebSocketBridge` 独立成文件，引擎 568→427 行，只剩 transport 启停与
+升级路由。提取时暴露一个真实约束并写进类 javadoc：Jetty 的帧工厂用反射解析 listener 生命周期
+方法，**类必须是 public**，包私有会直接 `IllegalAccessException`、升级 500——两个真实 socket 的
+WS probe 测试第一次就抓到了它（这也是审计说的"需要真实 WS 跑"才能验证）。验证：jetty 27 例全绿
+（含两个 raw-socket WS probe），ext 全量全绿。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

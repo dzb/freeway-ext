@@ -4,6 +4,14 @@
 
 ### Changed
 
+- **jetty: the WebSocket bridge is its own class** — `JettyWebEngine` carried a 110-line nested
+  `JettyWebSocketBridge` (upgrade negotiation, frame plumbing, error/close mapping), which made the
+  engine file 568 lines and hid the fact that the bridge is a separate collaborator. It is now
+  `JettyWebSocketBridge.java`; the engine drops to 427 lines and only starts/stops the transport
+  and routes the upgrade. Extraction surfaced a real constraint that is now documented on the
+  class: Jetty resolves the listener's lifecycle methods reflectively and fails with
+  `IllegalAccessException` when the listener class is not `public`, so the bridge must stay
+  `public` — the raw-socket WebSocket probe tests caught exactly that on the first attempt.
 - **one copy of every engine contract test** — the two adapters carried near-identical copies of
   three contract suites (`*CompressionTest` and `*RemoteRpcTest` were byte-identical after renaming
   the engine, `*ContextContractTest` differed by a javadoc line break). A new

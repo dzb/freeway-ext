@@ -24,7 +24,6 @@ import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
-import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
@@ -49,7 +48,6 @@ import org.eclipse.jetty.server.handler.GracefulHandler;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
-import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
 import org.eclipse.jetty.websocket.server.WebSocketCreator;
 import org.slf4j.Logger;
@@ -423,117 +421,6 @@ public final class JettyWebEngine implements HttpEngine {
           throw new IllegalStateException("Failed to stop Jetty server", ex);
         }
         LOG.info("Freeway jetty web engine stopped");
-      }
-    }
-  }
-
-  /** WebSocket endpoint bridge between Jetty and the Freeway listener API. */
-  public static final class JettyWebSocketBridge implements Session.Listener.AutoDemanding {
-    private final WebSocketMatch match;
-    private final String correlationId;
-    private final String method;
-    private final String path;
-    private final Map<String, String> pathVariables;
-    private final Map<String, List<String>> queryParams;
-    private final Map<String, List<String>> headers;
-    private volatile WebSocketListener appListener = WebSocketListener.NOOP;
-    private volatile JettyWebSocketSession session;
-
-    JettyWebSocketBridge(
-        WebSocketMatch match,
-        String correlationId,
-        String method,
-        String path,
-        Map<String, String> pathVariables,
-        Map<String, List<String>> queryParams,
-        Map<String, List<String>> headers) {
-      this.match = Objects.requireNonNull(match, "match");
-      // Null is fine: ExchangeMetaDefault auto-generates when blank.
-      this.correlationId = correlationId;
-      this.method = Objects.requireNonNull(method, "method");
-      this.path = Objects.requireNonNull(path, "path");
-      this.pathVariables = pathVariables == null ? Map.of() : Map.copyOf(pathVariables);
-      this.queryParams = queryParams == null ? Map.of() : Map.copyOf(queryParams);
-      this.headers = headers == null ? Map.of() : Map.copyOf(headers);
-    }
-
-    @Override
-    public void onWebSocketOpen(Session session) {
-      JettyWebSocketSession wsSession =
-          new JettyWebSocketSession(
-              session, correlationId, method, path, pathVariables, queryParams, headers);
-      this.session = wsSession;
-      try {
-        appListener = match.endpoint().open(wsSession);
-        if (appListener == null) {
-          appListener = WebSocketListener.NOOP;
-        }
-        appListener.onOpen(wsSession);
-      } catch (Exception ex) {
-        throw new IllegalStateException("WebSocket endpoint failed", ex);
-      }
-    }
-
-    @Override
-    public void onWebSocketText(String message) {
-      try {
-        appListener.onText(message);
-      } catch (Exception ex) {
-        onWebSocketError(ex);
-        closeWithError(ex);
-      }
-    }
-
-    @Override
-    public void onWebSocketBinary(
-        ByteBuffer payload, org.eclipse.jetty.websocket.api.Callback callback) {
-      try {
-        byte[] data;
-        if (payload == null) {
-          data = new byte[0];
-        } else {
-          ByteBuffer copy = payload.slice();
-          data = new byte[copy.remaining()];
-          copy.get(data);
-        }
-        appListener.onBinary(data);
-        callback.succeed();
-      } catch (Exception ex) {
-        onWebSocketError(ex);
-        callback.fail(ex);
-      }
-    }
-
-    @Override
-    public void onWebSocketClose(
-        int statusCode, String reason, org.eclipse.jetty.websocket.api.Callback callback) {
-      try {
-        appListener.onClose(statusCode, reason, session != null && !session.localCloseRequested());
-        callback.succeed();
-      } catch (Exception ex) {
-        callback.fail(ex);
-      }
-    }
-
-    @Override
-    public void onWebSocketError(Throwable cause) {
-      try {
-        appListener.onError(cause);
-      } catch (Exception ex) {
-        LOG.warn("Jetty websocket listener failed while handling error", ex);
-      }
-    }
-
-    private void closeWithError(Throwable cause) {
-      if (session == null || !session.isOpen()) {
-        return;
-      }
-      try {
-        session.close(
-            1011,
-            cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
-      } catch (Exception ex) {
-        LOG.warn("Jetty websocket session failed to close after error", ex);
       }
     }
   }

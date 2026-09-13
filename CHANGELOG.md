@@ -42,6 +42,23 @@
   2 when it reports regressions (contract: 0 = success, 1 = usage error), and a zero-score baseline
   no longer yields ±Infinity. The three Freeway-engine assembly methods collapse into one path, and
   the module has tests for the first time (the provider guard plus a ping smoke test).
+- **undertow: `read-timeout=0` means "no deadline", and the header budget matches the built-in
+  engine** — the shared contract says `0` disables the timeout, but Undertow reads `0` as "already
+  expired" for the request-parse timeout, so a slow or segmented request header was dropped
+  mid-request; both socket timeouts now take Undertow's spelling of disabled (`-1`). `MAX_HEADER_SIZE`
+  drops from a hardcoded 64 KiB to the built-in engine's 8192, so the same request is no longer
+  accepted by one engine and rejected by the other — the comment claiming it "maps the shared
+  config" is gone with it. Both are pinned by a raw-socket test that fails on the old mapping.
+- **jetty: `close()` keeps the interruption visible** — it swallowed `InterruptedException` (from the
+  graceful-shutdown await) without restoring the interrupt flag; Undertow's close already did.
+- **undertow: unreachable WebSocket oversize checks removed** — the cap is enforced while Undertow
+  fills the buffer (the `getMaxTextBufferSize()`/`getMaxBinaryBufferSize()` overrides), so an
+  oversized message fails the read with a 1009 close and never reaches the listener; the manual
+  re-checks (plus a javadoc claiming Undertow cannot bound the buffering) could not run. The 1009
+  contract stays pinned by `UndertowFrameProbeTest`.
+- **benchmark: `Scenario.valueOf(scenario.toUpperCase(Locale.ROOT))`** — under a Turkish locale
+  `"ping"` would have uppercased to `"PİNG"` and failed to resolve; the two CLI call sites now spell
+  the locale out, matching the rest of the module.
 - **benchmark follows the `HttpContextImpl.reset` signature** — core 1.5.2
   narrowed the reset call, so the three HTTP benchmarks drop the position
   argument that no longer exists. Without this the benchmark module does not

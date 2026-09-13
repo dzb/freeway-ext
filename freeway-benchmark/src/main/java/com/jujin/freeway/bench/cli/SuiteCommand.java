@@ -114,7 +114,7 @@ public final class SuiteCommand implements Command {
     for (var engine : engines) {
       var eng = ServerHarness.Engine.fromString(engine);
       for (var scenario : scenarios) {
-        var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase());
+        var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
         for (int concurrency : concurrencies) {
           // Create run record
           var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);

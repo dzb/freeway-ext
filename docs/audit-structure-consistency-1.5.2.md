@@ -448,7 +448,9 @@ core 的"物理销毁"意图在 Hikari 下变成"回滚 + 重置状态 + 回收"
 > **已实现并提交**：1、2（`2eaef6b`、`92fcea5`）；3、4、5（jetty `3d1cffd`、undertow `47f8d09`）；
 > 6、7、8（kafka）；10 的 `bare()` 守卫与三个装配方法合并（benchmark）。
 > 其中 **9 经确认是有意形态**——两个适配器各自实现、各自自包含，不合并重复；因此 §6
-> 「建议保留的有意差异」继续有效。剩余项见 §5 的 P2/P3。
+> 「建议保留的有意差异」继续有效。此后又落了 P2 三项：Undertow `readTimeout=0` 的语义与
+> `MAX_HEADER_SIZE` 对齐 core、Undertow 的 WS 死超限检查删除、Jetty `close()` 恢复中断标志、
+> benchmark 的 `Locale.ROOT`。剩余项见 §5 的 P2/P3。
 
 **P2（中）**：模块类命名/注册统一（`KafkaModule` 的 `final`/`id`/`primary`/hook id）；
 契约测试粒度与命名对齐；benchmark 包结构归并与结果模型收敛；DB 访问抽 repository；

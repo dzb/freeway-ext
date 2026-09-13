@@ -90,7 +90,7 @@ public final class RunCommand implements Command {
 
     // Run the benchmark
     var eng = ServerHarness.Engine.fromString(engine);
-    var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase());
+    var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
     var results = new ArrayList<BenchmarkResult>();
     var scores = new double[runs];
 

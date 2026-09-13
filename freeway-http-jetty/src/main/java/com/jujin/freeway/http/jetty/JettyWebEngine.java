@@ -438,6 +438,10 @@ public final class JettyWebEngine implements HttpEngine {
     public void close() {
       try {
         graceful.shutdown().get(Math.max(0, shutdownGrace.toMillis()), TimeUnit.MILLISECONDS);
+      } catch (InterruptedException ex) {
+        // The caller asked us to stop waiting; the interruption must stay
+        // visible after this method returns (Undertow's close does the same).
+        Thread.currentThread().interrupt();
       } catch (Exception ex) {
         // fall through to stop
       } finally {

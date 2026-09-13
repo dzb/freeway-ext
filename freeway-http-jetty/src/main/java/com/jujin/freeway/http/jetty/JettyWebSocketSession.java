@@ -19,13 +19,9 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.http.websocket.AbstractWebSocketSession;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import org.eclipse.jetty.websocket.api.Callback;
 import org.eclipse.jetty.websocket.api.Session;
 import org.slf4j.Logger;
@@ -106,7 +102,6 @@ final class JettyWebSocketSession extends AbstractWebSocketSession {
     // "Initiates a graceful close" per the interface contract — no join.
     session.close(code, closeReason(reason), completionCallback());
   }
-
 
   boolean localCloseRequested() {
     return localCloseRequested;

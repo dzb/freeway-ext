@@ -16,8 +16,8 @@
 
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.AbstractWebSocketSession;
+import com.jujin.freeway.http.websocket.WebSocketListener;
 import io.undertow.websockets.core.AbstractReceiveListener;
 import io.undertow.websockets.core.BufferedBinaryMessage;
 import io.undertow.websockets.core.BufferedTextMessage;
@@ -27,13 +27,9 @@ import io.undertow.websockets.core.WebSocketChannel;
 import io.undertow.websockets.core.WebSockets;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.IoUtils;
@@ -210,7 +206,6 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
     // "Initiates a graceful close" per the interface contract — no blocking.
     WebSockets.sendClose(code, closeReason(reason), channel, SEND_CALLBACK);
   }
-
 
   @Override
   public void flush() throws IOException {

@@ -690,3 +690,38 @@ diff <(sed 's/Jetty/ENGINE/g; s/jetty/engine/g' A.java) \
 javap -p -cp ~/.m2/repository/com/jujin8/freeway/freeway-ioc/1.5.1/freeway-ioc-1.5.1.jar com.jujin.freeway.ioc.Binder
 javap -p -cp ~/.m2/repository/com/jujin8/freeway/freeway-ioc/1.5.2-SNAPSHOT/freeway-ioc-1.5.2-SNAPSHOT.jar com.jujin.freeway.ioc.Binder
 ```
+
+## 9. 收尾状态（2026-09-13）
+
+本审计的入口判据是"结构 / 一致性 / 简洁性"三条，不是"行数变少"。以下按最终状态分类，正文各节的
+逐轮更新说明保留在 §5、§6 与 §4.x 末尾，作为过程记录。
+
+### 9.1 已落地
+
+| 主题 | 结果 | 关键验证 |
+|---|---|---|
+| P0 clean 构建 | benchmark 跟进 core 1.5.2 API（模块树 + `HttpContextImpl.reset`） | `mvn -o clean test` 全绿（曾长期假绿） |
+| 两个 HTTP 适配器（jetty/undertow） | 池化 context 的 exchange 元数据重置、`ssl.enabled` 三态、`isSecure`/`sslSession`/`remoteAddress`、`read-timeout=0`、header 预算、WS 死超限检查、`close()` 中断标志 | 侧写测试 + 真实 TLS/raw-socket WS 探针 |
+| kafka | 12 个键/默认值单一声明、`send` 遵守不抛契约、DLQ 与 `poison-policy` 语义、`final` + `freeway.kafka.lifecycle` hook id | 42 例（4 跳过） |
+| hikari | `Pool.invalidate` 落地为物理销毁（core 新增 SPI）、时长改写/`cleanInterval`/`longLeased`/`close()` 四处分叉写入 javadoc、测试 13→19 例 | 逆向校验：改回"关闭句柄"三例转红 |
+| benchmark | 包结构归一（`benchmarks`→`bench.*`）、CLI 契约（一处表格/一处数字/用法错误/退出码/`--output` 扩展名）、JMH 策略注解与协议对齐、`ServerHarness` 走 `WebServerBuilder`、按角色拆分 `BenchFork`、场景单点化 `ScenarioSpec`、DB 语句收敛 `BenchRepository`、`bench jmh` 结果入库、事件订阅者 | 真实 fork / 四引擎实跑 / 每轮逆向校验 |
+| core 复用缝隙 | `Compression`、`AbstractWebSocketSession`、`SymbolSource.systemProperties()`、`SslSettings`/`SslContexts`；`closeReason` 的 UTF-8 截断缺陷 | core 全量 + 两适配器契约测试 |
+| 测试重复 | `freeway-http-adapter-testkit`：三个 98-100% 相同的契约收敛，适配器测试 −994 行；testkit 装配改走 `WebServerBuilder` | 逆向校验：改共享 `Pipelines` 两侧同时转红 |
+| core 保留项复核 | `WebServer` 死构造器删除（4/5/6→4/6） | core clean test |
+
+### 9.2 有意保留（不做，理由见正文）
+
+- 两个适配器按引擎 API 各自实现、各自自包含：transport 启停、每请求 dispatch（Undertow 的 worker
+  交接）、响应映射、TLS 装配、`*Handle` 的记录类型、404 体、`readTimeout=0` 拼法、WS 帧上限拒绝时机。
+- `AbstractHttpContext` / `HttpContextImpl.reset` 10 参（两个内部调用点、十项必需、每请求热路径）。
+- `ServiceRegistry.drainWindow()` 默认方法（SPI 的既定形态，hook 在读、测试在覆写）。
+- `ServerHarness` 不再按引擎拆：场景已单点化、装配已走 builder、WS 桥已提顶层，剩余的是"文件长"。
+  若将来加第五个引擎，再按"工厂 + 每引擎一个 `BenchServer` 实现类"重构更划算。
+
+### 9.3 剩余（不影响发布行为）
+
+- 六个 per-adapter 测试类中约 15 处仍直接 `new WebServer(engine, config, event -> {}, pipeline)`
+  （`UndertowHttpContractTest` 6、`JettyWebEngineContractTest` 5、`JettyTlsHttp2Test` 2、
+  `UndertowTlsTest` 2、`JettyWebSocketProbeTest` 2、`UndertowTransportLimitsTest` 1）：它们各自带
+  引擎特化 fixture，迁移到 `Pipelines` + builder 需要逐文件做并逐个跑模块回归。属于测试侧一致性问题
+  （这些测试的服务器会多构造每请求事件对象、少默认错误处理器），不改变任何发布产物。

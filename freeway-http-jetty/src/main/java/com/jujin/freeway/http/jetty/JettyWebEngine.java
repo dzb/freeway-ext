@@ -27,6 +27,7 @@ import com.jujin.freeway.http.MediaTypes;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -212,7 +213,17 @@ public final class JettyWebEngine implements HttpEngine {
    * enabled.
    */
   private ServerConnector buildConnector(Server server, HttpServerConfig config) {
-    boolean sslEnabled = Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_ENABLED, "false"));
+    // The shared three-state semantics: an explicit true/false wins (false is
+    // the kill switch suppressing a configured keystore), unset falls to
+    // keystore presence, and an unreadable value fails naming the key. The
+    // WebServer reports the same verdict through secure(), so the adapter must
+    // not disagree with it.
+    String sslKeyStore = symbols.resolve(HttpConfigKeys.SSL_KEY_STORE, null);
+    boolean sslEnabled =
+        SymbolSpec.activated(
+            HttpConfigKeys.SSL_ENABLED,
+            symbols.resolve(HttpConfigKeys.SSL_ENABLED, null),
+            sslKeyStore != null && !sslKeyStore.isBlank());
     boolean alpnHttp2 =
         sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true"));
     boolean h2c =
@@ -222,7 +233,7 @@ public final class JettyWebEngine implements HttpEngine {
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
-      ssl.setKeyStorePath(symbols.resolve(HttpConfigKeys.SSL_KEY_STORE, null));
+      ssl.setKeyStorePath(sslKeyStore);
       ssl.setKeyStorePassword(symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, ""));
       String keyStoreType = symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_TYPE, null);
       if (keyStoreType != null && !keyStoreType.isBlank()) {

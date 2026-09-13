@@ -36,7 +36,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.zip.GZIPOutputStream;
+import javax.net.ssl.SSLSession;
 import org.eclipse.jetty.http.HttpHeader;
+import org.eclipse.jetty.io.EndPoint;
 import org.eclipse.jetty.server.Request;
 import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.util.Callback;
@@ -70,6 +72,11 @@ final class JettyHttpContext extends AbstractHttpContext {
     this.request = Objects.requireNonNull(request, "request");
     this.response = Objects.requireNonNull(response, "response");
     this.callback = Objects.requireNonNull(callback, "callback");
+    // Clear the previous request's principal/attributes and roll a fresh
+    // correlation id before the incoming one is applied: this object is pooled
+    // per thread, so request N+1 would otherwise inherit request N's
+    // authentication context, attributes and start time.
+    resetExchangeMeta();
     setCorrelationId(correlationId);
     this.queryParams = parseQueryParams(request);
     this.cachedBody = null;
@@ -83,6 +90,25 @@ final class JettyHttpContext extends AbstractHttpContext {
     if (compression != null) {
       this.compression = compression;
     }
+  }
+
+  @Override
+  public boolean isSecure() {
+    return request.isSecure();
+  }
+
+  @Override
+  public SSLSession sslSession() {
+    // Jetty's TLS customizer attaches the negotiated session to the request;
+    // without it (plaintext, or a customizer that did not run) there is none.
+    Object data = request.getAttribute(EndPoint.SslSessionData.ATTRIBUTE);
+    return data instanceof EndPoint.SslSessionData ssl ? ssl.sslSession() : null;
+  }
+
+  @Override
+  public String remoteAddress() {
+    String remote = Request.getRemoteAddr(request);
+    return remote != null ? remote : "";
   }
 
   @Override

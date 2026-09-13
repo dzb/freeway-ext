@@ -81,7 +81,6 @@ public class FilterChainBenchmark {
         false,
         OutputStream.nullOutputStream(),
         null,
-        false,
         true);
 
     // Health check request — intercepted by HealthFilter
@@ -96,7 +95,6 @@ public class FilterChainBenchmark {
         false,
         OutputStream.nullOutputStream(),
         null,
-        false,
         true);
 
     // CORS preflight — intercepted by CorsFilter
@@ -114,7 +112,6 @@ public class FilterChainBenchmark {
         false,
         OutputStream.nullOutputStream(),
         null,
-        false,
         true);
   }
 

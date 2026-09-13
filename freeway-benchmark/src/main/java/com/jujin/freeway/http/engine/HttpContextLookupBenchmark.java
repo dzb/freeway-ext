@@ -64,7 +64,6 @@ public class HttpContextLookupBenchmark {
         false,
         OutputStream.nullOutputStream(),
         null,
-        false,
         true);
     ctx.setPathVars(Map.of("id", "42"));
   }

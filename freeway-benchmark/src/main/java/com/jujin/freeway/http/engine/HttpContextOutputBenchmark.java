@@ -81,7 +81,6 @@ public class HttpContextOutputBenchmark {
         false,
         sink,
         null,
-        false,
         true);
 
     // Context pre-configured for sendJson convenience shortcut
@@ -96,7 +95,6 @@ public class HttpContextOutputBenchmark {
         false,
         sink,
         null,
-        false,
         true);
   }
 
@@ -114,7 +112,6 @@ public class HttpContextOutputBenchmark {
         false,
         sink,
         null,
-        false,
         true);
     ctx.setStatus(200);
     ctx.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -134,7 +131,6 @@ public class HttpContextOutputBenchmark {
         false,
         sink,
         null,
-        false,
         true);
     ctx.setStatus(200);
     ctx.outputJson(Map.of("status", "ok"));
@@ -153,7 +149,6 @@ public class HttpContextOutputBenchmark {
         false,
         sink,
         null,
-        false,
         true);
     ctx.setStatus(404);
     ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));

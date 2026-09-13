@@ -19,14 +19,13 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
-import com.jujin.freeway.http.HttpConfigKeys;
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
+import com.jujin.freeway.http.SslSettings;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -183,19 +182,12 @@ public final class JettyWebEngine implements HttpEngine {
    * enabled.
    */
   private ServerConnector buildConnector(Server server, HttpServerConfig config) {
-    // The shared three-state semantics: an explicit true/false wins (false is
-    // the kill switch suppressing a configured keystore), unset falls to
-    // keystore presence, and an unreadable value fails naming the key. The
-    // WebServer reports the same verdict through secure(), so the adapter must
-    // not disagree with it.
-    String sslKeyStore = symbols.resolve(HttpConfigKeys.SSL_KEY_STORE, null);
-    boolean sslEnabled =
-        SymbolSpec.activated(
-            HttpConfigKeys.SSL_ENABLED,
-            symbols.resolve(HttpConfigKeys.SSL_ENABLED, null),
-            sslKeyStore != null && !sslKeyStore.isBlank());
-    boolean alpnHttp2 =
-        sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true"));
+    // The shared TLS section, resolved once by core: the same keys, defaults
+    // and three-state activation the built-in engine and Undertow use, so the
+    // WebServer's secure() verdict and this adapter cannot disagree.
+    SslSettings tls = SslSettings.from(symbols);
+    boolean sslEnabled = tls.enabled();
+    boolean alpnHttp2 = sslEnabled && tls.http2();
     boolean h2c =
         !sslEnabled && Boolean.parseBoolean(symbols.resolve("freeway.http.http2", "false"));
     if (!sslEnabled && !h2c) {
@@ -203,31 +195,22 @@ public final class JettyWebEngine implements HttpEngine {
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
-      ssl.setKeyStorePath(sslKeyStore);
-      ssl.setKeyStorePassword(symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, ""));
-      String keyStoreType = symbols.resolve(HttpConfigKeys.SSL_KEY_STORE_TYPE, null);
-      if (keyStoreType != null && !keyStoreType.isBlank()) {
-        ssl.setKeyStoreType(keyStoreType);
+      ssl.setKeyStorePath(tls.keyStorePath());
+      ssl.setKeyStorePassword(tls.keyStorePassword());
+      ssl.setKeyStoreType(tls.keyStoreType());
+      if (tls.trustStorePath() != null) {
+        ssl.setTrustStorePath(tls.trustStorePath());
+        ssl.setTrustStorePassword(tls.trustStorePassword());
+        ssl.setTrustStoreType(tls.trustStoreType());
       }
-      String trustStorePath = symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE, null);
-      if (trustStorePath != null) {
-        ssl.setTrustStorePath(trustStorePath);
-        ssl.setTrustStorePassword(symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, ""));
-        String trustStoreType = symbols.resolve(HttpConfigKeys.SSL_TRUST_STORE_TYPE, null);
-        if (trustStoreType != null && !trustStoreType.isBlank()) {
-          ssl.setTrustStoreType(trustStoreType);
-        }
-      }
-      if (Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_CLIENT_AUTH, "false"))) {
+      if (tls.clientAuth()) {
         ssl.setNeedClientAuth(true);
       }
-      String protocols = symbols.resolve(HttpConfigKeys.SSL_PROTOCOLS, null);
-      if (protocols != null && !protocols.isBlank()) {
-        ssl.setIncludeProtocols(splitCommaSeparated(protocols));
+      if (tls.protocols() != null && !tls.protocols().isEmpty()) {
+        ssl.setIncludeProtocols(tls.protocols().toArray(String[]::new));
       }
-      String ciphers = symbols.resolve(HttpConfigKeys.SSL_CIPHERS, null);
-      if (ciphers != null && !ciphers.isBlank()) {
-        ssl.setIncludeCipherSuites(splitCommaSeparated(ciphers));
+      if (tls.ciphers() != null && !tls.ciphers().isEmpty()) {
+        ssl.setIncludeCipherSuites(tls.ciphers().toArray(String[]::new));
       }
       // Jetty extensions kept from the pre-refactor adapter: separate key
       // manager password and certificate alias selection.

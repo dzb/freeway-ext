@@ -24,10 +24,11 @@ import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
+import com.jujin.freeway.http.SslContexts;
+import com.jujin.freeway.http.SslSettings;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
@@ -42,9 +43,6 @@ import io.undertow.websockets.WebSocketProtocolHandshakeHandler;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.security.KeyStore;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -55,11 +53,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import javax.net.ssl.KeyManager;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.TrustManagerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -130,17 +123,11 @@ public final class UndertowWebEngine implements HttpEngine {
     // dynamic encoding has no minimum-size gate, so it would compress small
     // responses the shared config says to leave alone.
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
-    // The shared three-state semantics: an explicit true/false wins (false is
-    // the kill switch suppressing a configured keystore), unset falls to
-    // keystore presence, and an unreadable value fails naming the key. The
-    // WebServer reports the same verdict through secure(), so the adapter must
-    // not disagree with it.
-    String configuredKeyStore = prop(HttpConfigKeys.SSL_KEY_STORE);
-    boolean sslEnabled =
-        SymbolSpec.activated(
-            HttpConfigKeys.SSL_ENABLED,
-            symbols.resolve(HttpConfigKeys.SSL_ENABLED, null),
-            configuredKeyStore != null && !configuredKeyStore.isBlank());
+    // The shared TLS section, resolved once by core: the same keys, defaults
+    // and three-state activation the built-in engine and Jetty use, so the
+    // WebServer's secure() verdict and this adapter cannot disagree.
+    SslSettings tls = SslSettings.from(symbols);
+    boolean sslEnabled = tls.enabled();
     Undertow.Builder builder =
         Undertow.builder()
             .setHandler(gracefulShutdown)
@@ -173,11 +160,11 @@ public final class UndertowWebEngine implements HttpEngine {
     // Undertow defaults to workerThreads = ioThreads * 8; the old explicit
     // 1-thread worker pool starved blocking handlers.
     if (sslEnabled) {
-      builder.addHttpsListener(config.port(), config.host(), sslContext());
+      builder.addHttpsListener(config.port(), config.host(), SslContexts.build(tls));
       // mTLS / protocol / cipher constraints, keyed on the same
       // freeway.http.ssl.* options the built-in engine uses. XNIO applies
       // these socket options when the SSL engine is created.
-      if (Boolean.parseBoolean(symbols.resolve(HttpConfigKeys.SSL_CLIENT_AUTH, "false"))) {
+      if (tls.clientAuth()) {
         builder.setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED);
       }
       String protocols = prop(HttpConfigKeys.SSL_PROTOCOLS);
@@ -194,7 +181,7 @@ public final class UndertowWebEngine implements HttpEngine {
       // flag the built-in engine uses (default true). Undertow performs ALPN
       // itself on JDK 9+; h2c (cleartext) has no core knob and is not
       // enabled by this adapter.
-      if (!"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true"))) {
+      if (tls.http2()) {
         builder.setServerOption(UndertowOptions.ENABLE_HTTP2, true);
       }
     } else {
@@ -217,47 +204,6 @@ public final class UndertowWebEngine implements HttpEngine {
    * client-auth/protocols/ciphers enforced via XNIO socket options (the JDK SSLContext itself is
    * configured with key/trust managers only).
    */
-  private SSLContext sslContext() {
-    String keyStorePath = prop(HttpConfigKeys.SSL_KEY_STORE);
-    char[] password = prop(HttpConfigKeys.SSL_KEY_STORE_PASSWORD, "").toCharArray();
-    try {
-      String type = keyStoreType(keyStorePath);
-      KeyStore keyStore = KeyStore.getInstance(type);
-      try (var in = Files.newInputStream(Path.of(keyStorePath))) {
-        keyStore.load(in, password);
-      }
-      // JKS keystores may protect the key with a separate password; honor
-      // freeway.http.ssl.key-password like the Jetty adapter does.
-      String keyPasswordProp = prop("freeway.http.ssl.key-password");
-      char[] keyPassword = keyPasswordProp != null ? keyPasswordProp.toCharArray() : password;
-      KeyManagerFactory kmf =
-          KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-      kmf.init(keyStore, keyPassword);
-      KeyManager[] keyManagers = kmf.getKeyManagers();
-
-      TrustManager[] trustManagers = null;
-      String trustStorePath = prop(HttpConfigKeys.SSL_TRUST_STORE);
-      if (trustStorePath != null) {
-        String trustStoreType = prop(HttpConfigKeys.SSL_TRUST_STORE_TYPE, "PKCS12");
-        char[] trustPassword = prop(HttpConfigKeys.SSL_TRUST_STORE_PASSWORD, "").toCharArray();
-        KeyStore trustStore = KeyStore.getInstance(trustStoreType);
-        try (var in = Files.newInputStream(Path.of(trustStorePath))) {
-          trustStore.load(in, trustPassword);
-        }
-        TrustManagerFactory tmf =
-            TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(trustStore);
-        trustManagers = tmf.getTrustManagers();
-      }
-
-      SSLContext context = SSLContext.getInstance("TLS");
-      context.init(keyManagers, trustManagers, null);
-      return context;
-    } catch (Exception ex) {
-      throw new IllegalStateException("Failed to configure TLS for Undertow", ex);
-    }
-  }
-
   /**
    * Resolves the keystore type: explicit {@code freeway.http.ssl.key-store-type} wins, else
    * inferred from the {@code .jks} extension, else PKCS12 (the built-in engine's default).

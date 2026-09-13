@@ -4,6 +4,16 @@
 
 ### Changed
 
+- **both engines read TLS from one place, and Undertow stops hand-rolling JSSE** — the adapters each
+  resolved the `freeway.http.ssl.*` keys and re-implemented the tri-state activation; Undertow also
+  carried its own `KeyStore`/`KeyManagerFactory`/`SSLContext` builder that silently lacked what the
+  built-in engine already had (SNI certificate selection, keystore-type detection, the null-vs-empty
+  password rule, reload). Both now read `SslSettings.from(symbols)` and Undertow builds its context
+  with `SslContexts.build(settings)`, so the three engines load TLS material identically; Jetty
+  keeps only its own `ssl.key-password`/`ssl.key-alias` keys. The adapter config tests also share a
+  `Symbols.of(Map)` double that resolves `SymbolSpec`s through a coercer like the container chain —
+  the previous per-test doubles passed under the container and would have failed on the standalone
+  path.
 - **jetty: the WebSocket bridge is its own class** — `JettyWebEngine` carried a 110-line nested
   `JettyWebSocketBridge` (upgrade negotiation, frame plumbing, error/close mapping), which made the
   engine file 568 lines and hid the fact that the bridge is a separate collaborator. It is now

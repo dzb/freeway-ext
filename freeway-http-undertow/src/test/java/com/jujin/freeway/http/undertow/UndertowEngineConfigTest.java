@@ -25,10 +25,10 @@ import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.testkit.Symbols;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.Freeway;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.UnknownSymbolException;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Map;
@@ -41,25 +41,7 @@ import org.junit.jupiter.api.Test;
 class UndertowEngineConfigTest {
 
   private static SymbolSource symbols(Map<String, String> values) {
-    return new SymbolSource() {
-      @Override
-      public String resolve(String name) {
-        if (!values.containsKey(name)) {
-          throw new UnknownSymbolException(name);
-        }
-        return values.get(name);
-      }
-
-      @Override
-      public String resolve(String name, String defaultValue) {
-        return values.getOrDefault(name, defaultValue);
-      }
-
-      @Override
-      public String expand(String input) {
-        return input;
-      }
-    };
+    return Symbols.of(values);
   }
 
   @Test

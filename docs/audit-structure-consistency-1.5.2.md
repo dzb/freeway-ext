@@ -572,6 +572,18 @@ CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端�
 WS probe 测试第一次就抓到了它（这也是审计说的"需要真实 WS 跑"才能验证）。验证：jetty 27 例全绿
 （含两个 raw-socket WS probe），ext 全量全绿。
 
+**（2026-09-13 又一轮：TLS 设置与上下文构建共用）** §5 P2 的"TLS 助手统一"已落地：core 新增公开的
+`SslSettings.from(SymbolSource)`（全部 `freeway.http.ssl.*` 键 + 三态判定）与 `SslContexts`
+（由 `internal.SslContextFactory` 提升，公开 `build`/`parameters`，含 SNI、truststore、协议/套件），
+`internal.HttpModuleConfig.Ssl`、`internal.SslContextFactory`、`internal.SniKeyManager` 相应删除或迁入
+根包。两个适配器改读 `SslSettings`：Jetty 保留自己的 `ssl.key-password`/`key-alias` 与 Jetty 的
+SslContextFactory，**Undertow 删掉自写的 40 行 JSSE 构建**（改调 `SslContexts.build`）——顺带补齐了它
+此前缺的 SNI/keystore 类型探测/空密码规则，与内置引擎口径一致。
+过程中发现并修掉一个真实缺陷：`SymbolSource.systemProperties()`（上一轮新增的独立来源）只实现
+`resolve(String)`，遇到按 `SymbolSpec` 读取的适配器会抛"has no parser"——**容器路径正常、直接构造
+失败**；现在它内部接 `CoercerDefault`，与容器链一致。两个适配器的配置测试也改用 testkit 里共享的
+`Symbols.of(Map)`（同样按容器语义解析 spec），因为原来各自手写的 double 同样只实现了字符串读取。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

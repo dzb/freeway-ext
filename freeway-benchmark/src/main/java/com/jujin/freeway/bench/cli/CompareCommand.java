@@ -16,11 +16,11 @@
 
 package com.jujin.freeway.bench.cli;
 
+import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.Orm;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -61,11 +61,10 @@ public final class CompareCommand implements Command {
   public void run(Context ctx) throws Exception {
     var container = ctx.container();
     var db = container.get(Database.class);
-    var coercer = container.get(Coercer.class);
-    var orm = new Orm(db, coercer);
+    var repository = new BenchRepository(db, container.get(Coercer.class));
 
     // Determine run IDs
-    var allRuns = orm.findAll(BenchmarkRun.class, "id ASC", 0, 0);
+    var allRuns = repository.allRuns();
     if (allRuns.isEmpty()) {
       System.out.println("No runs found.");
       return;
@@ -73,7 +72,8 @@ public final class CompareCommand implements Command {
 
     int toId = ctx.getInt("to", (int) allRuns.getLast().id());
     var toRun =
-        orm.findById(BenchmarkRun.class, (long) toId)
+        repository
+            .findRun(toId)
             .orElseThrow(() -> new IllegalArgumentException("Run not found: " + toId));
 
     // Auto-detect baseline: if --from not specified, find best previous run
@@ -83,15 +83,9 @@ public final class CompareCommand implements Command {
       fromId = ctx.getInt("from", 0);
     } else {
       fromId =
-          db.query(
-                  "SELECT r.id FROM bench_runs r JOIN bench_results res ON r.id = res.run_id "
-                      + "WHERE r.engine = ? AND r.scenario = ? AND r.concurrency = ? "
-                      + "AND r.id < ? GROUP BY r.id ORDER BY MAX(res.score) DESC LIMIT 1",
-                  toRun.engine(),
-                  toRun.scenario(),
-                  toRun.concurrency(),
-                  toId)
-              .one(Integer.class)
+          repository
+              .previousRunIdFor(toRun)
+              .map(Long::intValue)
               .orElseThrow(
                   () ->
                       new IllegalArgumentException(
@@ -107,19 +101,16 @@ public final class CompareCommand implements Command {
     }
 
     var fromRun =
-        orm.findById(BenchmarkRun.class, (long) fromId)
+        repository
+            .findRun(fromId)
             .orElseThrow(() -> new IllegalArgumentException("Run not found: " + fromId));
 
     // Fetch results
     // ORDER BY makes "the last iteration wins" below deterministic: without it
     // the database is free to return the rows in any order, so the same two runs
     // could compare different iterations run to run.
-    var fromResults =
-        db.query("SELECT * FROM bench_results WHERE run_id = ? ORDER BY id ASC", fromId)
-            .list(BenchmarkResult.class);
-    var toResults =
-        db.query("SELECT * FROM bench_results WHERE run_id = ? ORDER BY id ASC", toId)
-            .list(BenchmarkResult.class);
+    var fromResults = repository.resultsFor(fromId);
+    var toResults = repository.resultsFor(toId);
 
     // Index by benchmark name — pick last result if duplicates (multiple run iterations)
     var fromIndex =

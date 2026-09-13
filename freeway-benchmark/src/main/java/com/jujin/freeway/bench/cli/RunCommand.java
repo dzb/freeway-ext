@@ -16,6 +16,7 @@
 
 package com.jujin.freeway.bench.cli;
 
+import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
@@ -25,7 +26,6 @@ import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.Orm;
 import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -90,12 +90,12 @@ public final class RunCommand implements Command {
     var container = ctx.container();
     var db = container.get(Database.class);
     var coercer = container.get(Coercer.class);
-    var orm = new Orm(db, coercer);
+    var repository = new BenchRepository(db, coercer);
     var eventBus = container.get(EventBus.class);
 
     // Create run record
     var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
-    long runId = orm.insert(run).longKey();
+    long runId = repository.insertRun(run);
     eventBus.publish(new BenchEvent.RunStarted(run));
 
     // Run the benchmark
@@ -134,7 +134,7 @@ public final class RunCommand implements Command {
         iterations.add(ir);
         // The generated key is the id of this row: capturing it here is what
         // removes the re-query that used to hunt the median row afterwards.
-        resultIds[r] = orm.insert(result).longKey();
+        resultIds[r] = repository.insertResult(result);
         eventBus.publish(new BenchEvent.ResultCollected(result));
       }
     }
@@ -148,8 +148,7 @@ public final class RunCommand implements Command {
     if (runs > 1) {
       // The dispersion belongs on the row every comparison prints: the median
       // iteration. Its id came from the insert above.
-      db.execute(
-          "UPDATE bench_results SET score_error = ? WHERE id = ?", error, resultIds[medianIndex]);
+      repository.recordDispersion(resultIds[medianIndex], error);
     }
 
     eventBus.publish(new BenchEvent.RunCompleted(runId));

@@ -604,6 +604,14 @@ benchmark 模块 16 例、ext 全量全绿。
 请求体，导致 undertow 的 JSON/PING 全部失败。现在 echo 走 Undertow 的 `BlockingHandler`（worker 线程），
 定长响应仍走非阻塞 sender。四个引擎 × {ping,json} 与 echo 均实跑 0 错误。
 
+**（2026-09-13 又一轮：DB 访问风格收敛）** §4.5「DB 访问三套风格并存」已落地为
+`BenchRepository`（`bench.db`）：`Orm` 实体插入/查找、`list` 的拼接 WHERE（原先同一条件分支出两个
+`db.query`）、`history` 的参数列表 JOIN、`compare` 里两份重复的结果查询与内联 join、`run`/`suite` 的
+`UPDATE score_error` 全部收进一个类；五个命令不再各自拼 SQL，也不再各自 `new Orm(...)`。
+新增 `BenchRepositoryTest` 3 例覆盖此前只有端到端才走到的分支：newest-first 与 engine 过滤、
+结果按插入序读取、dispersion 落在中位行、窗口 JOIN 的可选过滤、以及"最佳历史同类运行"的基线规则。
+验证：benchmark 21 例、五个命令对真实 SQLite 文件实跑（run/list/history/compare 全绿）。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

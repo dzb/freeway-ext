@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **benchmark: every bench-table statement lives in one repository** — the five commands each
+  hand-wrote their SQL in a different style: `Orm` entities in `run`/`suite`/`compare`, a
+  concatenated `WHERE` with a duplicated `db.query` branch in `list`, a param-list builder in
+  `history`, and two identical result fetches plus an inline join in `compare`. `BenchRepository`
+  now owns them (`insertRun`/`insertResult`/`recordDispersion`, `allRuns`/`findRun`,
+  `recentRuns(engine, limit)`, `runsSince(days, engine)`, `resultsSince(days, engine, benchmark)`,
+  `resultsFor(runId)`, `previousRunIdFor(candidate)`), so each query has one spelling and the filters
+  are testable without a command. `BenchRepositoryTest` covers what the commands previously only
+  exercised end-to-end: newest-first ordering and the engine filter, insert-order result reads,
+  dispersion landing on the median row, the windowed join's optional filters, and the "best earlier
+  matching run" baseline rule. All five commands were re-run against a real SQLite file afterwards.
 - **benchmark: a scenario is declared once, and the Undertow echo path works** — the four server
   implementations in `ServerHarness` each carried their own `switch` over the scenario (path, method,
   response bytes, content type), and the client's `RequestPattern` restated the same paths and

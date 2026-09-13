@@ -16,8 +16,10 @@
 
 package com.jujin.freeway.bench.cli;
 
+import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
+import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -57,35 +59,17 @@ public final class HistoryCommand implements Command {
       throw new IllegalArgumentException("--days must be a positive integer");
     }
 
-    // Fetch runs within the time window
-    String runSql =
-        "SELECT * FROM bench_runs WHERE created_at >= datetime('now', ?)"
-            + (engineFilter != null ? " AND engine = ?" : "")
-            + " ORDER BY created_at ASC";
-    var runParams = new ArrayList<Object>();
-    runParams.add("-" + days + " days");
-    if (engineFilter != null) runParams.add(engineFilter);
-    List<BenchmarkRun> runs = db.query(runSql, runParams.toArray()).list(BenchmarkRun.class);
+    var repository = new BenchRepository(db, container.get(Coercer.class));
+    List<BenchmarkRun> runs = repository.runsSince(days, engineFilter);
 
     if (runs.isEmpty()) {
       System.out.println("No runs found in the last " + days + " days.");
       return;
     }
 
-    // Fetch results via a JOIN with the same window — avoids SQLite's
-    // per-statement parameter limit when the run count is large.
-    String sql =
-        "SELECT res.* FROM bench_results res JOIN bench_runs r"
-            + " ON res.run_id = r.id"
-            + " WHERE r.created_at >= datetime('now', ?)"
-            + (engineFilter != null ? " AND r.engine = ?" : "")
-            + (benchFilter != null ? " AND res.benchmark = ?" : "")
-            + " ORDER BY res.run_id ASC";
-    var params = new ArrayList<Object>();
-    params.add("-" + days + " days");
-    if (engineFilter != null) params.add(engineFilter);
-    if (benchFilter != null) params.add(benchFilter);
-    List<BenchmarkResult> results = db.query(sql, params.toArray()).list(BenchmarkResult.class);
+    // The join with the same window avoids SQLite's per-statement parameter
+    // limit when the run count is large.
+    List<BenchmarkResult> results = repository.resultsSince(days, engineFilter, benchFilter);
 
     if (results.isEmpty()) {
       System.out.println("No results found for the given filters.");

@@ -16,7 +16,8 @@
 
 package com.jujin.freeway.bench.cli;
 
-import com.jujin.freeway.bench.model.BenchmarkRun;
+import com.jujin.freeway.bench.db.BenchRepository;
+import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -50,21 +51,8 @@ public final class ListCommand implements Command {
     var container = ctx.container();
     var db = container.get(Database.class);
 
-    String sql =
-        "SELECT id, engine, scenario, concurrency, requests, "
-            + "warmup, runs, commit_sha, jdk_info, os_info, cpu_info, created_at "
-            + "FROM bench_runs";
-    if (engineFilter != null) {
-      sql += " WHERE engine = ?";
-    }
-    sql += " ORDER BY created_at DESC LIMIT ?";
-
-    List<BenchmarkRun> runs;
-    if (engineFilter != null) {
-      runs = db.query(sql, engineFilter, limit).list(BenchmarkRun.class);
-    } else {
-      runs = db.query(sql, limit).list(BenchmarkRun.class);
-    }
+    var runs =
+        new BenchRepository(db, container.get(Coercer.class)).recentRuns(engineFilter, limit);
 
     if (runs.isEmpty()) {
       System.out.println("No benchmark runs found.");

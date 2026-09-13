@@ -17,9 +17,7 @@
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.Orm;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -45,8 +43,6 @@ public final class ListCommand implements Command {
 
     var container = ctx.container();
     var db = container.get(Database.class);
-    var coercer = container.get(Coercer.class);
-    var orm = new Orm(db, coercer);
 
     String sql =
         "SELECT id, engine, scenario, concurrency, requests, "
@@ -80,7 +76,7 @@ public final class ListCommand implements Command {
           r.engine(),
           r.scenario(),
           r.concurrency(),
-          r.commitSha().isBlank() ? "—" : r.commitSha(),
+          r.commitSha() == null || r.commitSha().isBlank() ? "—" : r.commitSha(),
           r.jdkInfo() != null && r.jdkInfo().length() > 20
               ? r.jdkInfo().substring(0, 20)
               : r.jdkInfo() == null ? "" : r.jdkInfo(),

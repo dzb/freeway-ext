@@ -59,6 +59,16 @@
 - **benchmark: `Scenario.valueOf(scenario.toUpperCase(Locale.ROOT))`** — under a Turkish locale
   `"ping"` would have uppercased to `"PİNG"` and failed to resolve; the two CLI call sites now spell
   the locale out, matching the rest of the module.
+- **benchmark: the reported numbers describe the same server every engine runs** — the scenario
+  payloads now come from the client's own `RequestPattern` constants (the bytes the server answers
+  with and the bytes the client expects are the same constant, so a mismatch can no longer turn every
+  request into a silent "engine 100% error"), the Freeway pipeline carries production's
+  `ErrorHandlers.defaultHandler()` so a 413/400 scenario is measured as the response a real
+  application returns, and the three engine-assembly methods collapse into one `freewayWith(engine,
+  scenario)` path. The `compare` query orders its rows (`ORDER BY id ASC`), so "the last iteration
+  wins" no longer depends on the database's return order; a null `commit_sha` no longer NPEs the list
+  command; `Http11Client.sendPing()`/the single-arg constructor and the unused `coercer`/`orm` locals
+  in two commands are gone.
 - **benchmark follows the `HttpContextImpl.reset` signature** — core 1.5.2
   narrowed the reset call, so the three HTTP benchmarks drop the position
   argument that no longer exists. Without this the benchmark module does not

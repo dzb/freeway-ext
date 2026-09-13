@@ -450,7 +450,9 @@ core 的"物理销毁"意图在 Hikari 下变成"回滚 + 重置状态 + 回收"
 > 其中 **9 经确认是有意形态**——两个适配器各自实现、各自自包含，不合并重复；因此 §6
 > 「建议保留的有意差异」继续有效。此后又落了 P2 三项：Undertow `readTimeout=0` 的语义与
 > `MAX_HEADER_SIZE` 对齐 core、Undertow 的 WS 死超限检查删除、Jetty `close()` 恢复中断标志、
-> benchmark 的 `Locale.ROOT`。剩余项见 §5 的 P2/P3。
+> benchmark 的 `Locale.ROOT`；此后又落 benchmark 四项：场景载荷单点化（服务端响应与客户端期望同一常量）、
+> 装配路径带上 core 默认 `ErrorHandler`、三个引擎装配方法合并、`compare` 查询补 `ORDER BY`
+> （外加 `sendPing`/单参构造器/未用局部变量的死代码清理）。剩余项见 §5 的 P2/P3。
 
 **P2（中）**：模块类命名/注册统一（`KafkaModule` 的 `final`/`id`/`primary`/hook id）；
 契约测试粒度与命名对齐；benchmark 包结构归并与结果模型收敛；DB 访问抽 repository；

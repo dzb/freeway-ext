@@ -18,9 +18,7 @@ package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.Orm;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -46,8 +44,6 @@ public final class HistoryCommand implements Command {
   public void run(Context ctx) throws Exception {
     var container = ctx.container();
     var db = container.get(Database.class);
-    var coercer = container.get(Coercer.class);
-    var orm = new Orm(db, coercer);
 
     String benchFilter = ctx.get("bench", null);
     String engineFilter = ctx.get("engine", null);

@@ -105,11 +105,15 @@ public final class CompareCommand implements Command {
             .orElseThrow(() -> new IllegalArgumentException("Run not found: " + fromId));
 
     // Fetch results
+    // ORDER BY makes "the last iteration wins" below deterministic: without it
+    // the database is free to return the rows in any order, so the same two runs
+    // could compare different iterations run to run.
     var fromResults =
-        db.query("SELECT * FROM bench_results WHERE run_id = ?", fromId)
+        db.query("SELECT * FROM bench_results WHERE run_id = ? ORDER BY id ASC", fromId)
             .list(BenchmarkResult.class);
     var toResults =
-        db.query("SELECT * FROM bench_results WHERE run_id = ?", toId).list(BenchmarkResult.class);
+        db.query("SELECT * FROM bench_results WHERE run_id = ? ORDER BY id ASC", toId)
+            .list(BenchmarkResult.class);
 
     // Index by benchmark name — pick last result if duplicates (multiple run iterations)
     var fromIndex =

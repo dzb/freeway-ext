@@ -16,12 +16,13 @@
 
 package com.jujin.freeway.benchmarks;
 
+import com.jujin.freeway.benchmarks.client.Http11Client;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.ErrorHandler;
+import com.jujin.freeway.http.filter.ErrorHandlers;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.filter.HttpFilter;
 import com.jujin.freeway.http.jetty.JettyWebEngine;
@@ -129,8 +130,14 @@ public final class ServerHarness implements AutoCloseable {
   private final AutoCloseable server;
   private final int port;
 
-  private static final byte[] PONG_BYTES = "pong".getBytes(StandardCharsets.UTF_8);
-  private static final String JSON_BODY = "{\"id\":1,\"name\":\"test\"}";
+  /**
+   * The scenario payloads come from the client's request patterns: the bytes the server answers
+   * with and the bytes the client expects are the same constant, so a change cannot make every
+   * request report a mismatch.
+   */
+  private static final byte[] PONG_BYTES = Http11Client.RequestPattern.PING.expectedBody();
+
+  private static final byte[] JSON_BYTES = Http11Client.RequestPattern.JSON.expectedBody();
 
   private ServerHarness(AutoCloseable server, int port) {
     this.server = server;
@@ -182,61 +189,27 @@ public final class ServerHarness implements AutoCloseable {
   // ---------------------------------------------------------------
 
   private static ServerHarness freeway(Scenario scenario) throws Exception {
-    var engine = new FreewayHttpEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
-    WebSocketIndex wsIndex;
-    RouteIndex routeIndex;
-    if (scenario == Scenario.WS_ECHO) {
-      routeIndex = new RouteIndex(List.of(), List.of());
-      wsIndex = freewayWebSocketRoutes();
-    } else {
-      routeIndex = freewayRoutes(scenario);
-      wsIndex = new WebSocketIndex(List.of(), List.of());
-    }
-    var pipeline =
-        new RequestComponents(
-            routeIndex,
-            wsIndex,
-            noopCors(),
-            noopHealth(),
-            List.<StaticResourceMount>of(),
-            List.<HttpFilter>of(),
-            List.<ErrorHandler>of());
-    var srv = new WebServer(engine, config, event -> {}, pipeline);
-    srv.start();
-    return new ServerHarness(srv, srv.port());
+    return freewayWith(
+        new FreewayHttpEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
   }
 
   /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness jettyAdapter(Scenario scenario) throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
-    WebSocketIndex wsIndex;
-    RouteIndex routeIndex;
-    if (scenario == Scenario.WS_ECHO) {
-      routeIndex = new RouteIndex(List.of(), List.of());
-      wsIndex = freewayWebSocketRoutes();
-    } else {
-      routeIndex = freewayRoutes(scenario);
-      wsIndex = new WebSocketIndex(List.of(), List.of());
-    }
-    var pipeline =
-        new RequestComponents(
-            routeIndex,
-            wsIndex,
-            noopCors(),
-            noopHealth(),
-            List.<StaticResourceMount>of(),
-            List.<HttpFilter>of(),
-            List.<ErrorHandler>of());
-    var srv = new WebServer(engine, config, event -> {}, pipeline);
-    srv.start();
-    return new ServerHarness(srv, srv.port());
+    return freewayWith(new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
   }
 
   /** Freeway + Undertow adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness undertowAdapter(Scenario scenario) throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    return freewayWith(
+        new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
+  }
+
+  /**
+   * The one assembly path behind the three Freeway-based engines: same config, same pipeline, same
+   * routes — only the engine differs. Keeping it in one place is what makes the engines comparable
+   * and stops a new scenario from having to be added three times.
+   */
+  private static ServerHarness freewayWith(HttpEngine engine, Scenario scenario) throws Exception {
     var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
     WebSocketIndex wsIndex;
     RouteIndex routeIndex;
@@ -247,6 +220,12 @@ public final class ServerHarness implements AutoCloseable {
       routeIndex = freewayRoutes(scenario);
       wsIndex = new WebSocketIndex(List.of(), List.of());
     }
+    // The measured path carries no application filters, but it does carry the
+    // default error mapping production has: without ErrorHandlers.defaultHandler()
+    // a 413/400 scenario would be measured as an unmapped failure instead of the
+    // response a real application returns. CORS and health stay disabled on
+    // purpose — they are per-request work and a route the scenarios never touch,
+    // and every engine must measure the same pipeline.
     var pipeline =
         new RequestComponents(
             routeIndex,
@@ -255,7 +234,7 @@ public final class ServerHarness implements AutoCloseable {
             noopHealth(),
             List.<StaticResourceMount>of(),
             List.<HttpFilter>of(),
-            List.<ErrorHandler>of());
+            List.of(ErrorHandlers.defaultHandler()));
     var srv = new WebServer(engine, config, event -> {}, pipeline);
     srv.start();
     return new ServerHarness(srv, srv.port());
@@ -374,7 +353,7 @@ public final class ServerHarness implements AutoCloseable {
           };
       case JSON ->
           exchange -> {
-            byte[] body = JSON_BODY.getBytes(StandardCharsets.UTF_8);
+            byte[] body = JSON_BYTES;
             exchange.getResponseHeaders().add("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream os = exchange.getResponseBody()) {
@@ -436,7 +415,7 @@ public final class ServerHarness implements AutoCloseable {
           };
       case JSON ->
           exchange -> {
-            String body = JSON_BODY;
+            String body = new String(JSON_BYTES, StandardCharsets.UTF_8);
             exchange
                 .getResponseHeaders()
                 .put(Headers.CONTENT_LENGTH, String.valueOf(body.length()));
@@ -517,7 +496,7 @@ public final class ServerHarness implements AutoCloseable {
             yield true;
           }
           case JSON -> {
-            byte[] body = JSON_BODY.getBytes(StandardCharsets.UTF_8);
+            byte[] body = JSON_BYTES;
             response.setStatus(200);
             response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json");
             response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(body.length));

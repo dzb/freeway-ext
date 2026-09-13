@@ -50,10 +50,6 @@ public final class Http11Client implements AutoCloseable {
   private final byte[] request;
   private final byte[] expectedBody;
 
-  public Http11Client(int port) throws IOException {
-    this(port, RequestPattern.PING);
-  }
-
   public Http11Client(int port, RequestPattern pattern) throws IOException {
     this(port, pattern, false);
   }
@@ -94,11 +90,6 @@ public final class Http11Client implements AutoCloseable {
       o += n;
     }
     return Arrays.equals(b, expectedBody);
-  }
-
-  /** Legacy alias: sends GET /ping and checks for "pong". */
-  public boolean sendPing() throws IOException {
-    return send();
   }
 
   @Override

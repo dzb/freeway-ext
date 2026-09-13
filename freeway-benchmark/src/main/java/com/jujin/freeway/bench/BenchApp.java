@@ -56,10 +56,7 @@ public final class BenchApp {
     AppRuntime app =
         FreewayApp.of(
                 ModuleNode.app(
-                    "freeway-benchmark",
-                    BenchDbModule.class,
-                    DbModule.class,
-                    CliModule.class))
+                    "freeway-benchmark", BenchDbModule.class, DbModule.class, CliModule.class))
             .autoDiscovery(false)
             .start();
     int exitCode = 0;

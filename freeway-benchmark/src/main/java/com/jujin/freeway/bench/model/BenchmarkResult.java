@@ -35,18 +35,22 @@ public record BenchmarkResult(
     @Column("p95_us") long p95us,
     @Column("p99_us") long p99us,
     @Column("errors") int errors) {
-  public static BenchmarkResult of(
+  /**
+   * The persisted row for one HTTP iteration: the score is a request rate, so the unit is {@code
+   * req/s} and there is no per-iteration error estimate — the run-level dispersion is recorded
+   * later on the median row ({@code score_error}). Both are filled here rather than passed in, so
+   * no call site can disagree about what a row means.
+   */
+  public static BenchmarkResult forHttpIteration(
       long runId,
       String benchmark,
       String mode,
-      double score,
-      double scoreError,
-      String unit,
+      double rps,
       long p50us,
       long p95us,
       long p99us,
       int errors) {
     return new BenchmarkResult(
-        0, runId, benchmark, mode, score, scoreError, unit, p50us, p95us, p99us, errors);
+        0, runId, benchmark, mode, rps, 0, "req/s", p50us, p95us, p99us, errors);
   }
 }

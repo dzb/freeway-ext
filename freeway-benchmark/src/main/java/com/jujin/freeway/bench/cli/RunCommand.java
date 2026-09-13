@@ -29,7 +29,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -92,6 +91,8 @@ public final class RunCommand implements Command {
     var eng = ServerHarness.Engine.fromString(engine);
     var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
     var results = new ArrayList<BenchmarkResult>();
+    var iterations = new ArrayList<BenchRunner.IterationResult>();
+    var resultIds = new long[runs];
     var scores = new double[runs];
 
     try (var harness = ServerHarness.start(eng, scn)) {
@@ -107,19 +108,20 @@ public final class RunCommand implements Command {
             ir.rps(), ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
 
         var result =
-            BenchmarkResult.of(
+            BenchmarkResult.forHttpIteration(
                 runId,
                 engine + "/" + scenario,
                 modeLabel,
                 ir.rps(),
-                0,
-                "req/s",
                 ir.p50us(),
                 ir.p95us(),
                 ir.p99us(),
                 ir.errors());
         results.add(result);
-        orm.insert(result);
+        iterations.add(ir);
+        // The generated key is the id of this row: capturing it here is what
+        // removes the re-query that used to hunt the median row afterwards.
+        resultIds[r] = orm.insert(result).longKey();
         eventBus.publish(new BenchEvent.ResultCollected(result));
       }
     }
@@ -128,21 +130,13 @@ public final class RunCommand implements Command {
     double avgRps = 0;
     for (double s : scores) avgRps += s;
     avgRps /= runs;
+    int medianIndex = BenchRunner.medianIndex(iterations);
     double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-    // Locate the median row by DB id: orm.insert does not write generated
-    // keys back into record entities, so the in-memory id is always 0.
-    var medianId =
-        db
-            .query("SELECT * FROM bench_results WHERE run_id = ?", runId)
-            .list(BenchmarkResult.class)
-            .stream()
-            .sorted(Comparator.comparingDouble(BenchmarkResult::score))
-            .skip(runs / 2)
-            .findFirst()
-            .map(BenchmarkResult::id)
-            .orElse(0L);
-    if (medianId > 0) {
-      db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?", error, medianId);
+    if (runs > 1) {
+      // The dispersion belongs on the row every comparison prints: the median
+      // iteration. Its id came from the insert above.
+      db.execute(
+          "UPDATE bench_results SET score_error = ? WHERE id = ?", error, resultIds[medianIndex]);
     }
 
     eventBus.publish(new BenchEvent.RunCompleted(runId));
@@ -159,12 +153,7 @@ public final class RunCommand implements Command {
           i + 1, r.score(), r.p50us(), r.p95us(), r.p99us(), r.errors());
     }
     if (results.size() > 1) {
-      var median =
-          results.stream()
-              .sorted(Comparator.comparingDouble(BenchmarkResult::score))
-              .skip(results.size() / 2)
-              .findFirst()
-              .orElseThrow();
+      var median = results.get(medianIndex);
       System.out.printf(
           "| **Median** | **%.0f** | **%dμs** | **%dμs** | **%dμs** | **%d** |%n",
           median.score(), median.p50us(), median.p95us(), median.p99us(), median.errors());

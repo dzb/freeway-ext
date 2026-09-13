@@ -20,6 +20,8 @@ import com.jujin.freeway.benchmarks.ServerHarness;
 import com.jujin.freeway.benchmarks.client.Http11Client;
 import com.jujin.freeway.benchmarks.client.WsClient;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -42,6 +44,22 @@ public final class BenchRunner {
 
   /** Result of a single benchmark iteration. */
   public record IterationResult(double rps, long p50us, long p95us, long p99us, int errors) {}
+
+  /**
+   * The index of the run's representative iteration: the median by rps, the same row the summary
+   * tables print and the one the run-level dispersion is recorded on. Both commands pick it here so
+   * "the median" cannot mean two things.
+   */
+  public static int medianIndex(List<IterationResult> results) {
+    if (results.isEmpty()) {
+      throw new IllegalArgumentException("no iterations to take a median from");
+    }
+    return java.util.stream.IntStream.range(0, results.size())
+        .boxed()
+        .sorted(Comparator.comparingDouble((Integer i) -> results.get(i).rps()))
+        .toList()
+        .get(results.size() / 2);
+  }
 
   /**
    * Runs a black-box HTTP benchmark against a server on the given port.

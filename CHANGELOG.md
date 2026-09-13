@@ -69,6 +69,17 @@
   wins" no longer depends on the database's return order; a null `commit_sha` no longer NPEs the list
   command; `Http11Client.sendPing()`/the single-arg constructor and the unused `coercer`/`orm` locals
   in two commands are gone.
+- **benchmark: one measurement type, one median, no re-query** — the report row
+  (`SuiteCommand.SuiteResult`) now holds the shared `BenchRunner.IterationResult` instead of
+  restating rps/p50/p95/p99, which also puts `errors` in the suite table and the written report;
+  `BenchmarkResult.of(...)` became `forHttpIteration(...)`, filling `unit`/`score_error` inside so no
+  call site passes the magic `"req/s"`/`0`; and both commands take the median iteration's id from the
+  insert that created it (`orm.insert(...).longKey()`) instead of re-querying the table, sorting and
+  updating — the duplicated "stddev + SELECT * + UPDATE" block is gone, and
+  `BenchRunner.medianIndex(...)` is the one definition of which iteration represents a run.
+- **benchmark: the CLI has tests** — `BenchCliTest` covers the median choice, the row factory, and an
+  end-to-end `bench run` (SQLite in-memory) that asserts three persisted iterations, the dispersion on
+  exactly one row, and that the marked row is the median iteration (mis-marking it fails the test).
 - **benchmark follows the `HttpContextImpl.reset` signature** — core 1.5.2
   narrowed the reset call, so the three HTTP benchmarks drop the position
   argument that no longer exists. Without this the benchmark module does not

@@ -29,7 +29,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -125,6 +124,7 @@ public final class SuiteCommand implements Command {
           System.out.println();
 
           var scores = new double[runs];
+          var resultIds = new long[runs];
           List<BenchRunner.IterationResult> iterationResults = new ArrayList<>();
 
           try (var harness = ServerHarness.start(eng, scn)) {
@@ -136,18 +136,16 @@ public final class SuiteCommand implements Command {
               iterationResults.add(ir);
 
               var result =
-                  BenchmarkResult.of(
+                  BenchmarkResult.forHttpIteration(
                       runId,
                       engine + "/" + scenario,
                       modeLabel,
                       ir.rps(),
-                      0,
-                      "req/s",
                       ir.p50us(),
                       ir.p95us(),
                       ir.p99us(),
                       ir.errors());
-              orm.insert(result);
+              resultIds[r] = orm.insert(result).longKey();
               eventBus.publish(new BenchEvent.ResultCollected(result));
 
               System.out.printf(
@@ -156,38 +154,21 @@ public final class SuiteCommand implements Command {
             }
           }
 
-          // Compute score_error and update median
+          // The dispersion belongs on the row every comparison prints: the
+          // median iteration. Its id came from the insert, so there is nothing
+          // to re-query.
+          int medianIndex = BenchRunner.medianIndex(iterationResults);
           double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-          var medianId =
-              db
-                  .query("SELECT * FROM bench_results WHERE run_id = ?", runId)
-                  .list(BenchmarkResult.class)
-                  .stream()
-                  .sorted(Comparator.comparingDouble(BenchmarkResult::score))
-                  .skip(runs / 2)
-                  .findFirst()
-                  .map(BenchmarkResult::id)
-                  .orElse(0L);
-          if (medianId > 0) {
-            db.execute("UPDATE bench_results SET score_error = ? WHERE id = ?", error, medianId);
+          if (runs > 1) {
+            db.execute(
+                "UPDATE bench_results SET score_error = ? WHERE id = ?",
+                error,
+                resultIds[medianIndex]);
           }
 
           // Pick median iteration as representative
-          var median =
-              iterationResults.stream()
-                  .sorted(Comparator.comparingDouble(BenchRunner.IterationResult::rps))
-                  .skip(iterationResults.size() / 2)
-                  .findFirst()
-                  .orElseThrow();
           allResults.add(
-              new SuiteResult(
-                  engine,
-                  scenario,
-                  concurrency,
-                  median.rps(),
-                  median.p50us(),
-                  median.p95us(),
-                  median.p99us()));
+              new SuiteResult(engine, scenario, concurrency, iterationResults.get(medianIndex)));
           System.out.println();
         }
       }
@@ -206,21 +187,16 @@ public final class SuiteCommand implements Command {
         done, engines.size() * scenarios.size() * concurrencies.length);
   }
 
+  /** One row of the report: what was measured, plus the one measurement type. */
   private record SuiteResult(
-      String engine,
-      String scenario,
-      int concurrency,
-      double rps,
-      long p50us,
-      long p95us,
-      long p99us) {}
+      String engine, String scenario, int concurrency, BenchRunner.IterationResult measurement) {}
 
   private static void printSummary(List<SuiteResult> allResults) {
     System.out.println("## Suite Summary");
     System.out.println();
     System.out.printf(
-        "| %-16s | %-10s | %6s | %9s | %6s | %6s | %6s |%n",
-        "Engine", "Scenario", "Concur", "RPS", "p50", "p95", "p99");
+        "| %-16s | %-10s | %6s | %9s | %6s | %6s | %6s | %6s |%n",
+        "Engine", "Scenario", "Concur", "RPS", "p50", "p95", "p99", "Errors");
     System.out.println(
         "|"
             + "─".repeat(18)
@@ -236,18 +212,22 @@ public final class SuiteCommand implements Command {
             + "─".repeat(8)
             + "|"
             + "─".repeat(8)
+            + "|"
+            + "─".repeat(8)
             + "|");
 
     for (var r : allResults) {
+      var m = r.measurement();
       System.out.printf(
-          "| %-16s | %-10s | %6d | %9s | %6s | %6s | %6s |%n",
+          "| %-16s | %-10s | %6d | %9s | %6s | %6s | %6s | %6d |%n",
           r.engine(),
           r.scenario(),
           r.concurrency(),
-          BenchFormat.rps(r.rps()),
-          r.p50us() + "μs",
-          r.p95us() + "μs",
-          r.p99us() + "μs");
+          BenchFormat.rps(m.rps()),
+          m.p50us() + "μs",
+          m.p95us() + "μs",
+          m.p99us() + "μs",
+          m.errors());
     }
   }
 
@@ -255,20 +235,22 @@ public final class SuiteCommand implements Command {
       throws Exception {
     var report = new StringBuilder();
     report.append("# Suite Report\n\n");
-    report.append("| Engine | Scenario | Concur | RPS | p50 | p95 | p99 |\n");
-    report.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |\n");
+    report.append("| Engine | Scenario | Concur | RPS | p50 | p95 | p99 | Errors |\n");
+    report.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
     for (var r : allResults) {
+      var m = r.measurement();
       report.append(
           String.format(
               Locale.ROOT,
-              "| %s | %s | %d | %s | %dμs | %dμs | %dμs |\n",
+              "| %s | %s | %d | %s | %dμs | %dμs | %dμs | %d |\n",
               r.engine(),
               r.scenario(),
               r.concurrency(),
-              BenchFormat.rps(r.rps()),
-              r.p50us(),
-              r.p95us(),
-              r.p99us()));
+              BenchFormat.rps(m.rps()),
+              m.p50us(),
+              m.p95us(),
+              m.p99us(),
+              m.errors()));
     }
     Files.writeString(Path.of(outputPath), report.toString(), StandardCharsets.UTF_8);
     System.out.println("Report written to " + outputPath);

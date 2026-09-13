@@ -444,6 +444,11 @@ core 的"物理销毁"意图在 Hikari 下变成"回滚 + 重置状态 + 回收"
    gzip/Accept-Encoding 判定、关联 ID 消毒、快照工具、`AbstractWebSocketSession`）。✅
 10. benchmark：`ServerHarness` 三个装配方法合并；`bare()` 拒绝同 JVM 换 provider。⚠
 
+> **状态更新（2026-09-13，随修复提交）**：上面的 ✅/⚠ 是审计当时的计划标记，不是实现状态。
+> **已实现并提交**：1、2（`2eaef6b`、`92fcea5`）、3、4、5（jetty `3d1cffd`、undertow 同批）。
+> **未实现**：6、7、8、10。其中 **9 经确认是有意形态**——两个适配器各自实现、各自自包含，
+> 不合并重复；因此 §6「建议保留的有意差异」继续有效，本节其余项按实际状态看待。
+
 **P2（中）**：模块类命名/注册统一（`KafkaModule` 的 `final`/`id`/`primary`/hook id）；
 契约测试粒度与命名对齐；benchmark 包结构归并与结果模型收敛；DB 访问抽 repository；
 JMH 策略注解与协议对齐；`ServerHarness` 改用 `WebServer.builder()`；

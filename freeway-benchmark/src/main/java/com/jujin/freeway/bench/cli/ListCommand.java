@@ -20,6 +20,7 @@ import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,6 +36,11 @@ import java.util.List;
 public final class ListCommand implements Command {
 
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+  @Override
+  public String name() {
+    return "list";
+  }
 
   @Override
   public void run(Context ctx) throws Exception {
@@ -65,22 +71,33 @@ public final class ListCommand implements Command {
       return;
     }
 
-    System.out.printf(
-        "%-4s %-16s %-10s %-6s %-9s %-20s %s%n",
-        "ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created");
-    System.out.println("─".repeat(100));
+    var rows = new ArrayList<BenchFormat.Row>();
     for (var r : runs) {
-      System.out.printf(
-          "%-4d %-16s %-10s %-6d %-9s %-20s %s%n",
-          r.id(),
-          r.engine(),
-          r.scenario(),
-          r.concurrency(),
-          r.commitSha() == null || r.commitSha().isBlank() ? "—" : r.commitSha(),
-          r.jdkInfo() != null && r.jdkInfo().length() > 20
-              ? r.jdkInfo().substring(0, 20)
-              : r.jdkInfo() == null ? "" : r.jdkInfo(),
-          r.createdAt() != null ? FMT.format(r.createdAt().atZone(ZoneId.systemDefault())) : "—");
+      rows.add(
+          BenchFormat.Row.of(
+              String.valueOf(r.id()),
+              r.engine(),
+              r.scenario(),
+              String.valueOf(r.concurrency()),
+              r.commitSha() == null || r.commitSha().isBlank() ? "—" : r.commitSha(),
+              r.jdkInfo() != null && r.jdkInfo().length() > 20
+                  ? r.jdkInfo().substring(0, 20)
+                  : r.jdkInfo() == null ? "" : r.jdkInfo(),
+              r.createdAt() != null
+                  ? FMT.format(r.createdAt().atZone(ZoneId.systemDefault()))
+                  : "—"));
     }
+    System.out.println(
+        BenchFormat.table(
+            List.of("ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created"),
+            List.of(
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.LEFT,
+                BenchFormat.Align.LEFT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.LEFT,
+                BenchFormat.Align.LEFT,
+                BenchFormat.Align.LEFT),
+            rows));
   }
 }

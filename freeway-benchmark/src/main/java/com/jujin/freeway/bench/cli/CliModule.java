@@ -57,14 +57,20 @@ public final class CliModule implements ModuleEx {
   }
 
   /**
-   * Dispatches the first CLI argument to the matching Command. Called by {@link
-   * com.jujin.freeway.bench.BenchApp} after the container starts.
+   * Dispatches the first CLI argument to the matching Command, matched by {@link Command#name()}
+   * (never by implementation class name). Called by {@link com.jujin.freeway.bench.BenchApp} after
+   * the container starts.
    *
    * @return the process exit code: {@code 0} when the command ran and asked for no failure, {@code
    *     1} for a usage error (no/unknown command), otherwise the code the command recorded (see
    *     {@link Command.Context#exitCode(int)})
+   * @throws IllegalStateException when called before the container started (no captured container)
    */
-  public static int dispatch(Container container, String[] args) throws Exception {
+  public static int dispatch(String[] args) throws Exception {
+    Container container = container();
+    if (container == null) {
+      throw new IllegalStateException("CLI not started: no container captured by the runtime hook");
+    }
     if (args.length == 0) {
       System.out.println("Usage: bench <command> [--key=value ...]");
       System.out.println("Commands:");
@@ -98,13 +104,14 @@ public final class CliModule implements ModuleEx {
 
     var commands = container.extension(Command.class).all();
     for (var cmd : commands) {
-      if (cmd.getClass().getSimpleName().equalsIgnoreCase(commandName + "Command")) {
+      if (cmd.name().equalsIgnoreCase(commandName)) {
         cmd.run(ctx);
         return ctx.exitCode();
       }
     }
 
     System.err.println("Unknown command: " + commandName);
+    System.err.println("Usage: bench <command> [--key=value ...]");
     return 1;
   }
 }

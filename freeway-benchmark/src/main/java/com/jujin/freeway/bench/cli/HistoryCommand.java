@@ -41,6 +41,11 @@ public final class HistoryCommand implements Command {
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
   @Override
+  public String name() {
+    return "history";
+  }
+
+  @Override
   public void run(Context ctx) throws Exception {
     var container = ctx.container();
     var db = container.get(Database.class);
@@ -97,25 +102,6 @@ public final class HistoryCommand implements Command {
       System.out.println();
       System.out.println("## " + benchName);
       System.out.println();
-      System.out.printf(
-          "| %-4s | %-20s | %9s | %6s | %6s | %6s | %s |%n",
-          "Run", "Created", "RPS", "p50", "p95", "p99", "Δ vs best");
-      System.out.println(
-          "|"
-              + "─".repeat(6)
-              + "|"
-              + "─".repeat(22)
-              + "|"
-              + "─".repeat(11)
-              + "|"
-              + "─".repeat(8)
-              + "|"
-              + "─".repeat(8)
-              + "|"
-              + "─".repeat(8)
-              + "|"
-              + "─".repeat(12)
-              + "|");
 
       // Find best score for this benchmark
       double bestScore = benchResults.stream().mapToDouble(BenchmarkResult::score).max().orElse(1);
@@ -123,24 +109,37 @@ public final class HistoryCommand implements Command {
       // Find corresponding run for each result
       var runIndex = runs.stream().collect(Collectors.toMap(BenchmarkRun::id, r -> r));
 
+      var rows = new ArrayList<BenchFormat.Row>();
       for (var r : benchResults) {
         var run = runIndex.get(r.runId());
         String created =
             run != null && run.createdAt() != null
                 ? FMT.format(run.createdAt().atZone(ZoneId.systemDefault()))
                 : "—";
-        double delta = (r.score() - bestScore) / bestScore * 100;
+        double delta = bestScore > 0 ? (r.score() - bestScore) / bestScore : 0;
 
-        System.out.printf(
-            "| %-4d | %-20s | %9s | %6s | %6s | %6s | %+10.1f%% |%n",
-            r.runId(),
-            created,
-            BenchFormat.rps(r.score()),
-            r.p50us() + "μs",
-            r.p95us() + "μs",
-            r.p99us() + "μs",
-            delta);
+        rows.add(
+            BenchFormat.Row.of(
+                String.valueOf(r.runId()),
+                created,
+                BenchFormat.rps(r.score()),
+                BenchFormat.micros(r.p50us()),
+                BenchFormat.micros(r.p95us()),
+                BenchFormat.micros(r.p99us()),
+                BenchFormat.delta(delta)));
       }
+      System.out.println(
+          BenchFormat.table(
+              List.of("Run", "Created", "RPS", "p50", "p95", "p99", "Δ vs best"),
+              List.of(
+                  BenchFormat.Align.RIGHT,
+                  BenchFormat.Align.LEFT,
+                  BenchFormat.Align.RIGHT,
+                  BenchFormat.Align.RIGHT,
+                  BenchFormat.Align.RIGHT,
+                  BenchFormat.Align.RIGHT,
+                  BenchFormat.Align.RIGHT),
+              rows));
     }
 
     System.out.println();

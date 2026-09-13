@@ -31,6 +31,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -53,6 +54,11 @@ import java.util.Map;
 public final class RunCommand implements Command {
 
   @Override
+  public String name() {
+    return "run";
+  }
+
+  @Override
   public void run(Context ctx) throws Exception {
     var engine = ctx.get("engine", "freeway");
     var scenario = ctx.get("scenario", "ping");
@@ -62,6 +68,15 @@ public final class RunCommand implements Command {
     int requests = ctx.getInt("requests", 5000);
     int warmup = ctx.getInt("warmup", 500);
     int runs = ctx.getInt("runs", 3);
+
+    // Resolve the engine/scenario before anything is written: a usage error must
+    // not leave a half-created run row behind.
+    var eng = ctx.parse("engine", ServerHarness.Engine::fromString, ServerHarness.Engine.FREEWAY);
+    var scn =
+        ctx.parse(
+            "scenario",
+            value -> ServerHarness.Scenario.valueOf(value.toUpperCase(Locale.ROOT)),
+            ServerHarness.Scenario.PING);
 
     var modeLabel = modeStr.toLowerCase(Locale.ROOT);
     var benchMode =
@@ -89,8 +104,6 @@ public final class RunCommand implements Command {
     eventBus.publish(new BenchEvent.RunStarted(run));
 
     // Run the benchmark
-    var eng = ServerHarness.Engine.fromString(engine);
-    var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
     var results = new ArrayList<BenchmarkResult>();
     var iterations = new ArrayList<BenchRunner.IterationResult>();
     var resultIds = new long[runs];
@@ -105,8 +118,12 @@ public final class RunCommand implements Command {
         scores[r] = ir.rps();
 
         System.out.printf(
-            "    rps=%.0f p50=%dus p95=%dus p99=%dus " + "errors=%d%n",
-            ir.rps(), ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
+            "    rps=%s p50=%s p95=%s p99=%s errors=%d%n",
+            BenchFormat.rps(ir.rps()),
+            BenchFormat.micros(ir.p50us()),
+            BenchFormat.micros(ir.p95us()),
+            BenchFormat.micros(ir.p99us()),
+            ir.errors());
 
         var result =
             BenchmarkResult.forHttpIteration(
@@ -141,29 +158,52 @@ public final class RunCommand implements Command {
     }
 
     eventBus.publish(new BenchEvent.RunCompleted(runId));
-    System.out.printf("Done. Run #%d saved. avg=%.0f ± %.0f req/s%n", runId, avgRps, error);
+    System.out.printf(
+        "Done. Run #%d saved. avg=%s ± %s req/s%n",
+        runId, BenchFormat.rps(avgRps), BenchFormat.rps(error));
 
     // Print summary table
-    System.out.println();
-    System.out.println("| Run | RPS | p50 | p95 | p99 | Errors |");
-    System.out.println("| --- | --: | --: | --: | --: | ----: |");
+    var rows = new ArrayList<BenchFormat.Row>();
     for (int i = 0; i < results.size(); i++) {
       var r = results.get(i);
-      System.out.printf(
-          "| %d | %.0f | %dμs | %dμs | %dμs | %d |%n",
-          i + 1, r.score(), r.p50us(), r.p95us(), r.p99us(), r.errors());
+      rows.add(
+          BenchFormat.Row.of(
+              String.valueOf(i + 1),
+              BenchFormat.rps(r.score()),
+              BenchFormat.micros(r.p50us()),
+              BenchFormat.micros(r.p95us()),
+              BenchFormat.micros(r.p99us()),
+              String.valueOf(r.errors())));
     }
     if (results.size() > 1) {
       var median = results.get(medianIndex);
-      System.out.printf(
-          "| **Median** | **%.0f** | **%dμs** | **%dμs** | **%dμs** | **%d** |%n",
-          median.score(), median.p50us(), median.p95us(), median.p99us(), median.errors());
+      rows.add(
+          BenchFormat.Row.of(
+                  "Median",
+                  BenchFormat.rps(median.score()),
+                  BenchFormat.micros(median.p50us()),
+                  BenchFormat.micros(median.p95us()),
+                  BenchFormat.micros(median.p99us()),
+                  String.valueOf(median.errors()))
+              .asBold());
     }
     System.out.println();
+    System.out.println(
+        BenchFormat.table(
+            List.of("Run", "RPS", "p50", "p95", "p99", "Errors"),
+            List.of(
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT),
+            rows));
 
     // Write JSON output if --output is specified
     String outputPath = ctx.get("output", null);
     if (outputPath != null && !outputPath.isBlank()) {
+      BenchFormat.requireOutputExtension(outputPath, ".json", "JSON");
       var jsonMap = new LinkedHashMap<String, Object>();
       jsonMap.put("run_id", runId);
       jsonMap.put("engine", engine);

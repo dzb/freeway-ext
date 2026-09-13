@@ -18,6 +18,7 @@ package com.jujin.freeway.bench.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.bench.db.BenchDbModule;
@@ -29,6 +30,7 @@ import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.DbModule;
 import com.jujin.freeway.ioc.ModuleNode;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.AfterEach;
@@ -81,7 +83,6 @@ class BenchCliTest {
       Database db = app.get(Database.class);
       int exitCode =
           CliModule.dispatch(
-              CliModule.container(),
               new String[] {
                 "run",
                 "--engine=freeway",
@@ -115,6 +116,50 @@ class BenchCliTest {
           "the marked row is the median iteration, not just any row");
       assertNotEquals(0L, medianRow.id(), "the id used by the update came from the insert");
     }
+  }
+
+  @Test
+  void commandsAnswerToExplicitNamesAndDispatchByThem() {
+    try (AppRuntime app = app()) {
+      Set<String> names =
+          CliModule.container().extension(Command.class).all().stream()
+              .map(Command::name)
+              .collect(Collectors.toSet());
+      assertEquals(
+          Set.of("run", "suite", "list", "compare", "history"),
+          names,
+          "dispatch matches these names, not implementation class names");
+    }
+  }
+
+  @Test
+  void tablesShareOneRendererWithNumericColumnsRightAligned() {
+    String table =
+        BenchFormat.table(
+            List.of("Run", "RPS"),
+            List.of(BenchFormat.Align.LEFT, BenchFormat.Align.RIGHT),
+            List.of(
+                BenchFormat.Row.of("1", "1.20M"), BenchFormat.Row.of("Median", "2.00M").asBold()));
+    assertEquals(
+        "| Run    |   RPS |\n"
+            + "| --- | --: |\n"
+            + "| 1      | 1.20M |\n"
+            + "| **Median** | **2.00M** |\n",
+        table,
+        "one renderer: text columns left, numbers right, bold rows for medians");
+  }
+
+  @Test
+  void badFlagsAreUsageErrorsNamingTheFlag() {
+    var ctx = new Command.Context(null, "run", Map.of("runs", "soon"));
+    UsageException badInt = assertThrows(UsageException.class, () -> ctx.getInt("runs", 1));
+    assertTrue(badInt.getMessage().contains("--runs"), badInt.getMessage());
+
+    UsageException badOutput =
+        assertThrows(
+            UsageException.class,
+            () -> BenchFormat.requireOutputExtension("report.md", ".json", "JSON"));
+    assertTrue(badOutput.getMessage().contains(".json"), badOutput.getMessage());
   }
 
   private static AppRuntime app() {

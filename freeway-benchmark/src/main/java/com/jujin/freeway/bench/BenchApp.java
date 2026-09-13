@@ -17,6 +17,7 @@
 package com.jujin.freeway.bench;
 
 import com.jujin.freeway.bench.cli.CliModule;
+import com.jujin.freeway.bench.cli.UsageException;
 import com.jujin.freeway.bench.db.BenchDbModule;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
@@ -62,7 +63,12 @@ public final class BenchApp {
     int exitCode = 0;
     try {
       // The contract: 0 = success, 1 = usage/internal error, 2 = a gate failed.
-      exitCode = CliModule.dispatch(CliModule.container(), args);
+      exitCode = CliModule.dispatch(args);
+    } catch (UsageException e) {
+      // A bad flag is the user's mistake, not a crash: report it without a stack trace.
+      System.err.println("Error: " + e.getMessage());
+      System.err.println("Usage: bench <command> [--key=value ...]");
+      exitCode = 1;
     } catch (Exception e) {
       System.err.println("Error: " + e.getMessage());
       e.printStackTrace();

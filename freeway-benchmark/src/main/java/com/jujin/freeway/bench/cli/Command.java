@@ -18,13 +18,19 @@ package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.ioc.Container;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * A CLI command contributed to the bench application. Implementations are registered via {@code
  * binder.contribute(Command.class)}.
  */
-@FunctionalInterface
 public interface Command {
+
+  /**
+   * The name this command answers to on the command line (for example {@code "run"}). Dispatch
+   * matches on it, so renaming or repackaging the implementation cannot silently unhook it.
+   */
+  String name();
 
   /** Execute this command. */
   void run(Context ctx) throws Exception;
@@ -65,7 +71,33 @@ public interface Command {
     /** Returns an int value for a key, or the default if absent. */
     public int getInt(String key, int defaultValue) {
       String v = args.get(key);
-      return v != null ? Integer.parseInt(v) : defaultValue;
+      if (v == null) return defaultValue;
+      try {
+        return Integer.parseInt(v.trim());
+      } catch (NumberFormatException e) {
+        throw new UsageException("--" + key + " must be an integer, got '" + v + "'");
+      }
+    }
+
+    /**
+     * Parses a flag through {@code parser}, or returns {@code defaultValue} when the flag is
+     * absent. A parser failure is reported as a usage error naming the flag, never as a stack
+     * trace.
+     */
+    public <T> T parse(String key, Function<String, T> parser, T defaultValue) {
+      String v = args.get(key);
+      if (v == null) return defaultValue;
+      try {
+        return parser.apply(v);
+      } catch (RuntimeException e) {
+        throw new UsageException(
+            "--"
+                + key
+                + " is invalid: '"
+                + v
+                + "'"
+                + (e.getMessage() == null ? "" : " — " + e.getMessage()));
+      }
     }
 
     /** Records a non-zero exit code for the process (usage error, failed gate). */

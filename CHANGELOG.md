@@ -4,6 +4,20 @@
 
 ### Changed
 
+- **benchmark CLI: one table, one number style, one usage-error path** — the five commands each
+  formatted their own way (`list` printed bare columns with a `─` rule, `history` and `compare`
+  padded their own Markdown, `run` printed raw `%.0f` rates next to `suite`'s `1.20M`), and a bad
+  flag surfaced as a stack trace. Now `BenchFormat` owns the formatting: one Markdown renderer with
+  numeric columns right-aligned and a bold median row, and `rps()`/`micros()`/`delta()` everywhere,
+  so a rate reads `17.3k` in every command. Commands answer to an explicit `Command.name()`
+  instead of matching `getSimpleName()` against `"<command>Command"`, so renaming a class can no
+  longer silently unhook it, and `CliModule.dispatch` takes just the argument array (the container
+  comes from the runtime hook it already captured). A bad flag, an unknown engine/scenario, or a
+  non-numeric list is a `UsageException`: one `Error:` line plus a usage hint, exit code 1, no stack
+  trace — internal failures keep theirs. `--output` now validates its extension (`run` writes JSON,
+  `suite` writes Markdown), which used to be silently ignored: `run --output=report.md` happily wrote
+  JSON into a `.md` file. `run` also resolves the engine and scenario before it inserts the run row,
+  so a usage error no longer leaves a half-created run behind.
 - **benchmark: one package root, and the dependency runs one way** — the module carried two homes
   (`com.jujin.freeway.bench.*` and `com.jujin.freeway.benchmarks.*`) with a cycle between them:
   `BenchFork` imported `bench.cli.BenchRunner` while `BenchRunner` imported

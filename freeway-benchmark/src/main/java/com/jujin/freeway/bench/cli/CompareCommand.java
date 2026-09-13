@@ -25,6 +25,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -50,6 +51,11 @@ public final class CompareCommand implements Command {
   private static final double NOISE_THRESHOLD_RPS = 0.03; // 3% RPS noise
   private static final double REGRESSION_LATENCY = 0.05; // 5% latency regression
   private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+  @Override
+  public String name() {
+    return "compare";
+  }
 
   @Override
   public void run(Context ctx) throws Exception {
@@ -128,19 +134,8 @@ public final class CompareCommand implements Command {
     System.out.println(
         "## Compare: Run #" + fromId + " (baseline) vs Run #" + toId + " (candidate)");
     System.out.println();
-    System.out.printf(
-        "| %-28s | %12s %12s %7s | %12s %12s %7s | %8s |%n",
-        "Benchmark", "RPS", "p50", "p95", "RPS", "p50", "p95", "ΔRPS");
-    System.out.println(
-        "|"
-            + "─".repeat(30)
-            + "|"
-            + "─".repeat(34)
-            + "|"
-            + "─".repeat(34)
-            + "|"
-            + "─".repeat(10)
-            + "|");
+
+    var tableRows = new ArrayList<BenchFormat.Row>();
 
     // Collect all unique benchmark names
     var allBenchmarks = new LinkedHashSet<String>();
@@ -156,10 +151,10 @@ public final class CompareCommand implements Command {
 
       String fromRps = f != null ? BenchFormat.rps(f.score()) : "—";
       String toRps = t != null ? BenchFormat.rps(t.score()) : "—";
-      String fromP50 = f != null ? f.p50us() + "μs" : "—";
-      String toP50 = t != null ? t.p50us() + "μs" : "—";
-      String fromP95 = f != null ? f.p95us() + "μs" : "—";
-      String toP95 = t != null ? t.p95us() + "μs" : "—";
+      String fromP50 = f != null ? BenchFormat.micros(f.p50us()) : "—";
+      String toP50 = t != null ? BenchFormat.micros(t.p50us()) : "—";
+      String fromP95 = f != null ? BenchFormat.micros(f.p95us()) : "—";
+      String toP95 = t != null ? BenchFormat.micros(t.p95us()) : "—";
 
       String flag = "";
       if (f != null && t != null) {
@@ -187,16 +182,35 @@ public final class CompareCommand implements Command {
         }
 
         var delta = BenchFormat.delta(rpsDelta) + flag;
-        System.out.printf(
-            "| %-28s | %12s %12s %7s | %12s %12s %7s | %s |%n",
-            bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta);
+        tableRows.add(
+            BenchFormat.Row.of(bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta));
       } else {
-        String delta = "—";
-        System.out.printf(
-            "| %-28s | %12s %12s %7s | %12s %12s %7s | %8s |%n",
-            bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, delta);
+        tableRows.add(
+            BenchFormat.Row.of(bench, fromRps, fromP50, fromP95, toRps, toP50, toP95, "—"));
       }
     }
+
+    System.out.println(
+        BenchFormat.table(
+            List.of(
+                "Benchmark",
+                "base RPS",
+                "base p50",
+                "base p95",
+                "cand RPS",
+                "cand p50",
+                "cand p95",
+                "ΔRPS"),
+            List.of(
+                BenchFormat.Align.LEFT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT,
+                BenchFormat.Align.RIGHT),
+            tableRows));
 
     System.out.println();
     System.out.println("Baseline:  " + formatRun(fromRun));

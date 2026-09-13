@@ -502,6 +502,19 @@ hikari 配置保真度告警与 `close()` 语义声明；benchmark 补测试。
 `freeway.<module>.<thing>` 惯例），并在 javadoc 写明"适配器自有类型不标 `.primary()`"的理由。
 剩余 P2/P3 不变。
 
+**（2026-09-13 又一轮：benchmark CLI 契约统一）** §4.5 一致性里的 CLI 三项已实现：五套表格样式
+收敛为 `BenchFormat.table(...)` 一处渲染（数字列右对齐、中位行加粗），速率统一走
+`BenchFormat.rps()`（`17.3k`，不再是 `1200000`）；`Command` 增加显式 `name()`，分发不再用
+`getSimpleName().equalsIgnoreCase(name + "Command")` 这种改名即静默失配的字符串匹配，
+`CliModule.dispatch` 去掉与静态字段重复的 container 参数；用户输入错误（坏数字、未知
+engine/scenario、非法 `--output` 扩展名）改为 `UsageException`：一行 `Error:` + 用法提示 + 退出码 1，
+不再打 stack trace，内部错误仍保留 trace。`--output` 此前只写不校验——`run --output=report.md`
+会把 JSON 写进 `.md`，现在按扩展名校验（`run`→`.json`、`suite`→`.md`）。顺带修掉一个真实缺陷：
+`run` 原先先 insert 运行行、后解析 engine/scenario，用法错误会在库里留下半成品行，现在先校验再落库。
+验证：五个命令实跑（`run`/`suite`/`list`/`history`/`compare` 输出与报告文件均为同一渲染器），
+四类用法错误实跑确认无 stack trace 且退出码为 1，`BenchCliTest` 6 例覆盖命令名集合、表格渲染、
+坏 flag 与 `--output` 扩展名。
+
 ## 6. 建议保留的有意差异
 
 - Undertow 不映射 `maxConnections`（无对应能力，`:169` 已注释）；两个适配器都不映射

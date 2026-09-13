@@ -55,6 +55,11 @@ import java.util.Locale;
 public final class SuiteCommand implements Command {
 
   @Override
+  public String name() {
+    return "suite";
+  }
+
+  @Override
   public void run(Context ctx) throws Exception {
     var container = ctx.container();
     var db = container.get(Database.class);
@@ -80,14 +85,11 @@ public final class SuiteCommand implements Command {
         };
     if (benchMode == BenchRunner.Mode.WS) {
       if (scenarios.stream().noneMatch(s -> s.equalsIgnoreCase("ws_echo"))) {
-        throw new IllegalArgumentException("--mode=ws requires --scenario=ws_echo");
+        throw new UsageException("--mode=ws requires --scenario=ws_echo");
       }
       for (var engine : engines) {
-        var eng = ServerHarness.Engine.fromString(engine);
-        if (eng != ServerHarness.Engine.FREEWAY
-            && eng != ServerHarness.Engine.UNDERTOW_NATIVE
-            && eng != ServerHarness.Engine.JETTY_NATIVE) {
-          throw new IllegalArgumentException(
+        if (!isWsCapable(engine)) {
+          throw new UsageException(
               "--mode=ws is not supported for engine '"
                   + engine
                   + "'; supported: freeway, undertow-native, jetty-native");
@@ -112,9 +114,9 @@ public final class SuiteCommand implements Command {
     var allResults = new ArrayList<SuiteResult>();
 
     for (var engine : engines) {
-      var eng = ServerHarness.Engine.fromString(engine);
+      var eng = requireEngine(engine);
       for (var scenario : scenarios) {
-        var scn = ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
+        var scn = requireScenario(scenario);
         for (int concurrency : concurrencies) {
           // Create run record
           var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
@@ -150,8 +152,13 @@ public final class SuiteCommand implements Command {
               eventBus.publish(new BenchEvent.ResultCollected(result));
 
               System.out.printf(
-                  "  run %d/%d: rps=%.0f p50=%dus " + "[%d/%d]%n",
-                  r + 1, runs, ir.rps(), ir.p50us(), done, total);
+                  "  run %d/%d: rps=%s p50=%s [%d/%d]%n",
+                  r + 1,
+                  runs,
+                  BenchFormat.rps(ir.rps()),
+                  BenchFormat.micros(ir.p50us()),
+                  done,
+                  total);
             }
           }
 
@@ -180,6 +187,7 @@ public final class SuiteCommand implements Command {
 
     // Write report to file if requested
     if (outputPath != null && !outputPath.isBlank()) {
+      BenchFormat.requireOutputExtension(outputPath, ".md", "Markdown");
       writeReport(outputPath, allResults);
     }
 
@@ -195,66 +203,71 @@ public final class SuiteCommand implements Command {
   private static void printSummary(List<SuiteResult> allResults) {
     System.out.println("## Suite Summary");
     System.out.println();
-    System.out.printf(
-        "| %-16s | %-10s | %6s | %9s | %6s | %6s | %6s | %6s |%n",
-        "Engine", "Scenario", "Concur", "RPS", "p50", "p95", "p99", "Errors");
-    System.out.println(
-        "|"
-            + "─".repeat(18)
-            + "|"
-            + "─".repeat(12)
-            + "|"
-            + "─".repeat(8)
-            + "|"
-            + "─".repeat(11)
-            + "|"
-            + "─".repeat(8)
-            + "|"
-            + "─".repeat(8)
-            + "|"
-            + "─".repeat(8)
-            + "|"
-            + "─".repeat(8)
-            + "|");
+    System.out.println(summaryTable(allResults));
+  }
 
+  /** The suite table — the same renderer the Markdown report and every other command use. */
+  private static String summaryTable(List<SuiteResult> allResults) {
+    var rows = new ArrayList<BenchFormat.Row>();
     for (var r : allResults) {
       var m = r.measurement();
-      System.out.printf(
-          "| %-16s | %-10s | %6d | %9s | %6s | %6s | %6s | %6d |%n",
-          r.engine(),
-          r.scenario(),
-          r.concurrency(),
-          BenchFormat.rps(m.rps()),
-          m.p50us() + "μs",
-          m.p95us() + "μs",
-          m.p99us() + "μs",
-          m.errors());
+      rows.add(
+          BenchFormat.Row.of(
+              r.engine(),
+              r.scenario(),
+              String.valueOf(r.concurrency()),
+              BenchFormat.rps(m.rps()),
+              BenchFormat.micros(m.p50us()),
+              BenchFormat.micros(m.p95us()),
+              BenchFormat.micros(m.p99us()),
+              String.valueOf(m.errors())));
     }
+    return BenchFormat.table(
+        List.of("Engine", "Scenario", "Concur", "RPS", "p50", "p95", "p99", "Errors"),
+        List.of(
+            BenchFormat.Align.LEFT,
+            BenchFormat.Align.LEFT,
+            BenchFormat.Align.RIGHT,
+            BenchFormat.Align.RIGHT,
+            BenchFormat.Align.RIGHT,
+            BenchFormat.Align.RIGHT,
+            BenchFormat.Align.RIGHT,
+            BenchFormat.Align.RIGHT),
+        rows);
   }
 
   private static void writeReport(String outputPath, List<SuiteResult> allResults)
       throws Exception {
     var report = new StringBuilder();
     report.append("# Suite Report\n\n");
-    report.append("| Engine | Scenario | Concur | RPS | p50 | p95 | p99 | Errors |\n");
-    report.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |\n");
-    for (var r : allResults) {
-      var m = r.measurement();
-      report.append(
-          String.format(
-              Locale.ROOT,
-              "| %s | %s | %d | %s | %dμs | %dμs | %dμs | %d |\n",
-              r.engine(),
-              r.scenario(),
-              r.concurrency(),
-              BenchFormat.rps(m.rps()),
-              m.p50us(),
-              m.p95us(),
-              m.p99us(),
-              m.errors()));
-    }
+    report.append(summaryTable(allResults));
     Files.writeString(Path.of(outputPath), report.toString(), StandardCharsets.UTF_8);
     System.out.println("Report written to " + outputPath);
+  }
+
+  private static boolean isWsCapable(String engine) {
+    var e = requireEngine(engine);
+    return e == ServerHarness.Engine.FREEWAY
+        || e == ServerHarness.Engine.UNDERTOW_NATIVE
+        || e == ServerHarness.Engine.JETTY_NATIVE;
+  }
+
+  /** Resolves an engine name, reporting an unknown one as a usage error. */
+  private static ServerHarness.Engine requireEngine(String engine) {
+    try {
+      return ServerHarness.Engine.fromString(engine);
+    } catch (IllegalArgumentException e) {
+      throw new UsageException("--engines: unknown engine '" + engine + "'");
+    }
+  }
+
+  /** Resolves a scenario name, reporting an unknown one as a usage error. */
+  private static ServerHarness.Scenario requireScenario(String scenario) {
+    try {
+      return ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
+    } catch (IllegalArgumentException e) {
+      throw new UsageException("--scenarios: unknown scenario '" + scenario + "'");
+    }
   }
 
   private static List<String> parseList(String value) {
@@ -270,7 +283,12 @@ public final class SuiteCommand implements Command {
     var parts = value.split(",");
     var result = new int[parts.length];
     for (int i = 0; i < parts.length; i++) {
-      result[i] = Integer.parseInt(parts[i].trim());
+      try {
+        result[i] = Integer.parseInt(parts[i].trim());
+      } catch (NumberFormatException e) {
+        throw new UsageException(
+            "--concurrency must be a comma-separated list of integers, got '" + value + "'");
+      }
     }
     return result;
   }

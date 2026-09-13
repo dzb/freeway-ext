@@ -46,6 +46,18 @@ mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
   -Dexec.args='compare --from=1 --to=3'
 ```
 
+### CLI contract
+
+- **Exit codes**: `0` success, `1` usage or internal error, `2` a gate failed
+  (`compare` reporting regressions). Safe to wire into CI.
+- **Usage errors vs crashes**: a bad flag (`--runs=soon`), an unknown engine, or an
+  `--output` path whose extension does not match the report (`run` writes JSON, so
+  `--output=x.json`; `suite` writes Markdown, so `--output=x.md`) prints one
+  `Error: ...` line plus a usage hint. Internal failures keep the stack trace.
+- **Reports**: every table — `run`, `suite`, `list`, `history`, `compare` — comes from
+  the same Markdown renderer with numeric columns right-aligned, so terminal output
+  and written reports look the same. Rates read as `1.20M` / `17.3k`, never `1200000`.
+
 ## Forked (Isolated) Benchmark
 
 `BenchFork` runs server and client in **separate JVM processes** — zero

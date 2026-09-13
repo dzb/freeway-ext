@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.bench.harness.ServerHarness.Engine;
 import com.jujin.freeway.bench.harness.ServerHarness.Scenario;
+import com.jujin.freeway.http.HttpServerConfig;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -69,6 +70,27 @@ class ServerHarnessTest {
               HttpResponse.BodyHandlers.ofString());
       assertEquals(200, response.statusCode());
       assertEquals("pong", response.body());
+    }
+  }
+
+  @Test
+  void freewayPipelineMapsOversizedBodiesLikeProduction() throws Exception {
+    // The harness assembles through WebServerBuilder, which appends core's
+    // default error handler. Without it an oversized body would be measured as
+    // an unmapped failure (dropped connection) instead of the 413 a real
+    // application returns — the whole reason the harness does not hand-roll the
+    // pipeline.
+    try (var harness = ServerHarness.start(Engine.FREEWAY, Scenario.ECHO_BODY)) {
+      var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+      byte[] oversized = new byte[(int) HttpServerConfig.DEFAULT_MAX_BODY_SIZE + 4096];
+      var response =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + harness.port() + "/echo"))
+                  .POST(HttpRequest.BodyPublishers.ofByteArray(oversized))
+                  .timeout(Duration.ofSeconds(20))
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(413, response.statusCode(), response.body());
     }
   }
 }

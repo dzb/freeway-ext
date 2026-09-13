@@ -22,16 +22,11 @@ import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.ErrorHandlers;
 import com.jujin.freeway.http.filter.HealthFilter;
-import com.jujin.freeway.http.filter.HttpFilter;
 import com.jujin.freeway.http.jetty.JettyWebEngine;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.http.staticfile.StaticResourceMount;
 import com.jujin.freeway.http.undertow.UndertowWebEngine;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
 import com.sun.net.httpserver.HttpServer;
@@ -210,64 +205,53 @@ public final class ServerHarness implements AutoCloseable {
    * and stops a new scenario from having to be added three times.
    */
   private static ServerHarness freewayWith(HttpEngine engine, Scenario scenario) throws Exception {
-    var config = new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5));
-    WebSocketIndex wsIndex;
-    RouteIndex routeIndex;
-    if (scenario == Scenario.WS_ECHO) {
-      routeIndex = new RouteIndex(List.of(), List.of());
-      wsIndex = freewayWebSocketRoutes();
-    } else {
-      routeIndex = freewayRoutes(scenario);
-      wsIndex = new WebSocketIndex(List.of(), List.of());
+    // WebServerBuilder — not the raw WebServer constructor — because it is the
+    // standalone assembly production also uses: it installs the noop event sink
+    // sentinel (so no per-request event is built for a server nobody observes)
+    // and appends core's default error handler, which is what makes a 413/400
+    // scenario the response a real application returns instead of an unmapped
+    // failure. CORS and health stay disabled on purpose: they are per-request
+    // work and a route the scenarios never touch, and every engine must measure
+    // the same pipeline.
+    var builder =
+        WebServerBuilder.builder()
+            .engine(engine)
+            .config(new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5)))
+            .cors(disabledCors())
+            .health(disabledHealth());
+    for (var route : freewayRoutes(scenario)) {
+      builder.route(route);
     }
-    // The measured path carries no application filters, but it does carry the
-    // default error mapping production has: without ErrorHandlers.defaultHandler()
-    // a 413/400 scenario would be measured as an unmapped failure instead of the
-    // response a real application returns. CORS and health stay disabled on
-    // purpose — they are per-request work and a route the scenarios never touch,
-    // and every engine must measure the same pipeline.
-    var pipeline =
-        new RequestComponents(
-            routeIndex,
-            wsIndex,
-            noopCors(),
-            noopHealth(),
-            List.<StaticResourceMount>of(),
-            List.<HttpFilter>of(),
-            List.of(ErrorHandlers.defaultHandler()));
-    var srv = new WebServer(engine, config, event -> {}, pipeline);
+    for (var group : freewayWebSocketGroups()) {
+      builder.webSocketGroup(group);
+    }
+    var srv = builder.build();
     srv.start();
     return new ServerHarness(srv, srv.port());
   }
 
-  /** Creates routes for a Freeway scenario. All filters are noop — no overhead. */
-  private static RouteIndex freewayRoutes(Scenario scenario) {
+  /** Creates the routes for a Freeway scenario — the builder assembles them into an index. */
+  private static List<Route> freewayRoutes(Scenario scenario) {
     return switch (scenario) {
-      case PING ->
-          new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
+      case PING -> List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
       case JSON ->
-          new RouteIndex(
-              List.of(
-                  Route.get(
-                      "/api/resource", ctx -> ctx.sendJson(200, new JsonResponse(1, "test")))),
-              List.of());
+          List.of(
+              Route.get("/api/resource", ctx -> ctx.sendJson(200, new JsonResponse(1, "test"))));
       case ECHO_BODY ->
-          new RouteIndex(
-              List.of(
-                  Route.post(
-                      "/echo",
-                      ctx -> {
-                        ctx.setStatus(200);
-                        ctx.output(ctx.body());
-                      })),
-              List.of());
-      case WS_ECHO -> new RouteIndex(List.of(), List.of());
+          List.of(
+              Route.post(
+                  "/echo",
+                  ctx -> {
+                    ctx.setStatus(200);
+                    ctx.output(ctx.body());
+                  }));
+      case WS_ECHO -> List.of();
     };
   }
 
-  /** Creates WebSocket echo route for {@link Scenario#WS_ECHO}. */
-  private static WebSocketIndex freewayWebSocketRoutes() {
-    var group =
+  /** Creates the WebSocket echo route for {@link Scenario#WS_ECHO} (empty for HTTP scenarios). */
+  private static List<WebSocketGroup> freewayWebSocketGroups() {
+    return List.of(
         WebSocketGroup.of(
             "/ws",
             WebSocketRoute.of(
@@ -278,17 +262,19 @@ public final class ServerHarness implements AutoCloseable {
                       public void onText(String text) throws Exception {
                         session.sendText(text);
                       }
-                    }));
-    return new WebSocketIndex(List.of(), List.of(group));
+                    })));
   }
 
-  /** No-op CorsFilter: enabled=false, skips all CORS processing. */
-  private static CorsFilter noopCors() {
+  /**
+   * CORS disabled on purpose: the scenarios send no {@code Origin} header, so a default-enabled
+   * filter would be per-request work whose cost would land in every engine's numbers.
+   */
+  private static CorsFilter disabledCors() {
     return new CorsFilter(false, null, null, null, null, null, false);
   }
 
-  /** No-op HealthFilter: enabled=false, just delegates to next handler. */
-  private static HealthFilter noopHealth() {
+  /** Health disabled on purpose: no scenario probes it, and every engine must run one pipeline. */
+  private static HealthFilter disabledHealth() {
     return new HealthFilter(false, "/no-health", null);
   }
 

@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **benchmark harness: assembled by `WebServerBuilder`, so the measured server is the standalone
+  one** — `ServerHarness` built its Freeway servers with the raw `WebServer` constructor and a fake
+  `event -> {}` sink, which is not the noop sentinel: `WebServer` therefore kept
+  `publishEvents = true` and constructed an event object for every request, measured in all three
+  Freeway-based engine paths even though nothing observed it. The harness now goes through
+  `WebServerBuilder` (the assembly a standalone application uses), which installs the noop sink
+  sentinel and appends the default error handler — so the harness no longer passes
+  `ErrorHandlers.defaultHandler()` itself, and 413/400 scenarios still return what a real
+  application returns. CORS and health remain explicitly disabled, with the reason in the code: the
+  scenarios send no `Origin` and probe no health endpoint, so an enabled built-in would add
+  per-request work unrelated to what is being compared.
 - **benchmark CLI: one table, one number style, one usage-error path** — the five commands each
   formatted their own way (`list` printed bare columns with a `─` rule, `history` and `compare`
   padded their own Markdown, `run` printed raw `%.0f` rates next to `suite`'s `1.20M`), and a bad

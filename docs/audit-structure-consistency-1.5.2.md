@@ -479,7 +479,7 @@ core 的"物理销毁"意图在 Hikari 下变成"回滚 + 重置状态 + 回收"
 
 **P2（中）**：模块类命名/注册统一（`KafkaModule` 的 `final`/`id`/`primary`/hook id）；
 契约测试粒度与命名对齐；benchmark 包结构归并与结果模型收敛；DB 访问抽 repository；
-JMH 策略注解与协议对齐；`ServerHarness` 改用 `WebServer.builder()`；
+JMH 策略注解与协议对齐；`ServerHarness` 改用 `WebServerBuilder`（已落地，见下）；
 Undertow `MAX_HEADER_SIZE` 对齐 8192；Undertow 删除死超限检查；TLS 助手统一；
 `JettyWebSocketBridge` 提为顶层；`JettyHandle.close()` 恢复中断标志；
 hikari 配置保真度告警与 `close()` 语义声明；benchmark 补测试。
@@ -514,6 +514,19 @@ engine/scenario、非法 `--output` 扩展名）改为 `UsageException`：一行
 验证：五个命令实跑（`run`/`suite`/`list`/`history`/`compare` 输出与报告文件均为同一渲染器），
 四类用法错误实跑确认无 stack trace 且退出码为 1，`BenchCliTest` 6 例覆盖命令名集合、表格渲染、
 坏 flag 与 `--output` 扩展名。
+
+**（2026-09-13 又一轮：ServerHarness 改走 WebServerBuilder）** §4.5 里"绕过 `WebServer.builder()`"
+一项已落地：`freewayWith(...)` 改为 `WebServerBuilder.builder()` + `.engine(...)/.config(...)/
+.cors(disabled)/.health(disabled)` + 逐条 `.route(...)/.webSocketGroup(...)`。收益有两条，都是
+审计点名的：① 事件 sink 使用 builder 默认的 `NOOP_SINK` 哨兵，`WebServer` 因此
+`publishEvents=false`，不再为"没人观察的服务器"每请求构造事件对象（此前传 `event -> {}`，
+哨兵比较失败，快速路径失效）；② 默认错误映射由 builder 追加，harness 不再自己传
+`ErrorHandlers.defaultHandler()`，与 `HttpModule` 的贡献语义一致（自定义在前、内置默认恒在末尾）。
+CORS/health 仍显式关闭（scenario 不发 `Origin`、也不探测健康端点，开着就是每引擎都在测与场景无关的
+每请求开销），并在代码注释里写明理由。顺带修掉 core 的一处文档错误：`WebServerBuilder` 的示例写的是
+`WebServer.builder()`，而 core 并没有这个方法（core 提交 `593ac00c`）。
+验证：三条装配路径实跑（freeway ping、freeway ws_echo、undertow-adapter ping 均 0 错误），
+`ServerHarnessTest` 与 benchmark 全量测试通过。
 
 ## 6. 建议保留的有意差异
 

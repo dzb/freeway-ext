@@ -88,18 +88,18 @@ public final class BenchRunner {
       return runWs(port, concurrency, requests, warmup);
     }
 
-    var pattern =
-        switch (scenario) {
-          case PING -> Http11Client.RequestPattern.PING;
-          case JSON -> Http11Client.RequestPattern.JSON;
-          // Http11Client cannot send a request body, so the POST /echo
-          // scenario cannot be measured; fail fast instead of silently
-          // benchmarking GET /ping under the echo_body label.
-          case ECHO_BODY ->
-              throw new IllegalArgumentException(
-                  "Scenario ECHO_BODY is not supported (client cannot send a request body)");
-          case WS_ECHO -> throw new IllegalArgumentException("Scenario WS_ECHO requires --mode=ws");
-        };
+    var spec = com.jujin.freeway.bench.harness.ScenarioSpec.of(scenario);
+    if (spec.webSocket()) {
+      throw new IllegalArgumentException("Scenario " + scenario + " requires --mode=ws");
+    }
+    // Http11Client cannot send a request body, so the POST /echo scenario cannot
+    // be measured; fail fast instead of silently benchmarking GET /ping under
+    // the echo_body label.
+    if (spec.echoBody()) {
+      throw new IllegalArgumentException(
+          "Scenario " + scenario + " is not supported (client cannot send a request body)");
+    }
+    var pattern = Http11Client.RequestPattern.of(spec);
 
     // Warmup phase — send requests to let JIT settle
     if (warmup > 0) {

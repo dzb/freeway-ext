@@ -16,6 +16,7 @@
 
 package com.jujin.freeway.bench.harness;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -27,6 +28,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
@@ -70,6 +72,69 @@ class ServerHarnessTest {
               HttpResponse.BodyHandlers.ofString());
       assertEquals(200, response.statusCode());
       assertEquals("pong", response.body());
+    }
+  }
+
+  @Test
+  void everyEnginesFixedBodyMatchesItsScenarioSpec() throws Exception {
+    // The spec is the single source for the path, method, content type and expected bytes; this
+    // pins each HTTP engine's real answer against it, so a drift shows up here instead of as
+    // "engine 100% errors" during a measurement.
+    for (Scenario scenario : new Scenario[] {Scenario.PING, Scenario.JSON}) {
+      var spec = ScenarioSpec.of(scenario);
+      for (Engine engine : new Engine[] {Engine.FREEWAY, Engine.JDK_NATIVE}) {
+        try (var harness = ServerHarness.start(engine, scenario)) {
+          var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+          var response =
+              client.send(
+                  HttpRequest.newBuilder(
+                          URI.create("http://127.0.0.1:" + harness.port() + spec.path()))
+                      .GET()
+                      .timeout(Duration.ofSeconds(10))
+                      .build(),
+                  HttpResponse.BodyHandlers.ofByteArray());
+          assertEquals(200, response.statusCode(), engine + " " + scenario);
+          assertArrayEquals(
+              spec.responseBody(),
+              response.body(),
+              engine + " must answer " + scenario + "'s spec");
+          if (spec.contentType() != null) {
+            assertTrue(
+                response
+                    .headers()
+                    .firstValue("Content-Type")
+                    .orElse("")
+                    .startsWith(spec.contentType()),
+                engine + " " + scenario + " content type: " + response.headers().map());
+          }
+        }
+      }
+    }
+  }
+
+  @Test
+  void everyEngineEchoesTheRequestBodyBack() throws Exception {
+    // The echo scenario is the one dynamic body: it must read the request body on every engine
+    // (an unconditional blocking read on a GET is what broke Undertow's other scenarios once).
+    byte[] payload = "freeway-echo".getBytes(StandardCharsets.UTF_8);
+    for (Engine engine :
+        new Engine[] {
+          Engine.FREEWAY, Engine.JDK_NATIVE, Engine.UNDERTOW_NATIVE, Engine.JETTY_NATIVE
+        }) {
+      var spec = ScenarioSpec.of(Scenario.ECHO_BODY);
+      try (var harness = ServerHarness.start(engine, Scenario.ECHO_BODY)) {
+        var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
+        var response =
+            client.send(
+                HttpRequest.newBuilder(
+                        URI.create("http://127.0.0.1:" + harness.port() + spec.path()))
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+                    .timeout(Duration.ofSeconds(10))
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray());
+        assertEquals(200, response.statusCode(), engine + " echo status");
+        assertArrayEquals(payload, response.body(), engine + " must echo the request body");
+      }
     }
   }
 

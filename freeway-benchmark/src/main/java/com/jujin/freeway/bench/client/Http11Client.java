@@ -33,15 +33,31 @@ import java.util.Arrays;
  */
 public final class Http11Client implements AutoCloseable {
 
-  /** Describes an HTTP request and its expected response. */
+  /**
+   * Describes an HTTP request and its expected response. Both come from the scenario's {@link
+   * com.jujin.freeway.bench.harness.ScenarioSpec}, so the bytes the server answers with and the
+   * bytes the client expects cannot drift apart.
+   */
   public record RequestPattern(String method, String path, byte[] expectedBody) {
+
+    public static RequestPattern of(com.jujin.freeway.bench.harness.ScenarioSpec spec) {
+      if (spec.responseBody() == null) {
+        throw new IllegalArgumentException(
+            "Scenario " + spec.scenario() + " has no fixed response body to expect");
+      }
+      return new RequestPattern(spec.method(), spec.path(), spec.responseBody());
+    }
+
+    /** Kept for callers that drive {@code GET /ping} without a scenario. */
     public static final RequestPattern PING =
-        new RequestPattern("GET", "/ping", "pong".getBytes(StandardCharsets.ISO_8859_1));
+        of(
+            com.jujin.freeway.bench.harness.ScenarioSpec.of(
+                com.jujin.freeway.bench.harness.ServerHarness.Scenario.PING));
+
     public static final RequestPattern JSON =
-        new RequestPattern(
-            "GET",
-            "/api/resource",
-            "{\"id\":1,\"name\":\"test\"}".getBytes(StandardCharsets.ISO_8859_1));
+        of(
+            com.jujin.freeway.bench.harness.ScenarioSpec.of(
+                com.jujin.freeway.bench.harness.ServerHarness.Scenario.JSON));
   }
 
   private final Socket socket;

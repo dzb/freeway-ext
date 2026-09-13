@@ -594,6 +594,16 @@ SslContextFactory，**Undertow 删掉自写的 40 行 JSSE 构建**（改调 `Ss
 验证：真实 fork 跑通两轮 + median；CLI `--mode=ws --scenario=ws_echo` 跑通；两条拒绝路径实跑；
 benchmark 模块 16 例、ext 全量全绿。
 
+**（2026-09-13 又一轮：场景单点化 + 两个真实缺陷）** §4.5「加一个场景要改四处」的根因已消除：
+新增 `ScenarioSpec`（method/path/content-type/response-body/echo·json·websocket 标志）作为唯一场景表，
+`ServerHarness` 的 Freeway 路由与 JDK/Undertow/Jetty 三个 handler 全部读它，客户端
+`RequestPattern.of(spec)` 也从它派生；加场景 = 一个枚举常量 + 一行表项。`ServerHarnessTest` 新增两例
+把"每个引擎的真实响应 == spec"（字节与 content-type）与"四个引擎的 echo 路径"钉住，结果立刻抓出两个
+被各自 switch 掩盖的真实缺陷：① Undertow 的 echo handler 在 I/O 线程上做阻塞读（UT000126），
+`undertow-native --scenario=echo_body` 此前每个请求都 500；② 泛化后的 handler 在 GET 场景也去读
+请求体，导致 undertow 的 JSON/PING 全部失败。现在 echo 走 Undertow 的 `BlockingHandler`（worker 线程），
+定长响应仍走非阻塞 sender。四个引擎 × {ping,json} 与 echo 均实跑 0 错误。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

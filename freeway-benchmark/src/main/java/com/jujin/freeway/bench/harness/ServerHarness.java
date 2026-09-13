@@ -16,7 +16,6 @@
 
 package com.jujin.freeway.bench.harness;
 
-import com.jujin.freeway.bench.client.Http11Client;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
@@ -32,6 +31,7 @@ import com.jujin.freeway.http.websocket.WebSocketRoute;
 import com.sun.net.httpserver.HttpServer;
 import io.undertow.Undertow;
 import io.undertow.server.HttpHandler;
+import io.undertow.server.handlers.BlockingHandler;
 import io.undertow.util.Headers;
 import io.undertow.websockets.WebSocketConnectionCallback;
 import io.undertow.websockets.WebSocketProtocolHandshakeHandler;
@@ -72,8 +72,8 @@ import org.eclipse.jetty.websocket.server.WebSocketCreator;
  * }
  * }</pre>
  *
- * <p>Adding a new scenario: add a case to {@link #freewayRoutes(Scenario)}, {@link
- * #bareHandler(Scenario)}, and {@link #undertowHandler(Scenario)}.
+ * <p>Adding a new scenario: add the enum constant and its {@link ScenarioSpec} entry — the four
+ * server implementations and the client's request pattern all read that one table.
  */
 public final class ServerHarness implements AutoCloseable {
 
@@ -124,15 +124,6 @@ public final class ServerHarness implements AutoCloseable {
 
   private final AutoCloseable server;
   private final int port;
-
-  /**
-   * The scenario payloads come from the client's request patterns: the bytes the server answers
-   * with and the bytes the client expects are the same constant, so a change cannot make every
-   * request report a mismatch.
-   */
-  private static final byte[] PONG_BYTES = Http11Client.RequestPattern.PING.expectedBody();
-
-  private static final byte[] JSON_BYTES = Http11Client.RequestPattern.JSON.expectedBody();
 
   private ServerHarness(AutoCloseable server, int port) {
     this.server = server;
@@ -231,22 +222,26 @@ public final class ServerHarness implements AutoCloseable {
   }
 
   /** Creates the routes for a Freeway scenario — the builder assembles them into an index. */
+  /** Builds the Freeway routes for a scenario straight from its {@link ScenarioSpec}. */
   private static List<Route> freewayRoutes(Scenario scenario) {
-    return switch (scenario) {
-      case PING -> List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
-      case JSON ->
-          List.of(
-              Route.get("/api/resource", ctx -> ctx.sendJson(200, new JsonResponse(1, "test"))));
-      case ECHO_BODY ->
-          List.of(
-              Route.post(
-                  "/echo",
-                  ctx -> {
-                    ctx.setStatus(200);
-                    ctx.output(ctx.body());
-                  }));
-      case WS_ECHO -> List.of();
-    };
+    ScenarioSpec spec = ScenarioSpec.of(scenario);
+    if (spec.webSocket()) return List.of();
+    if (spec.echoBody()) {
+      return List.of(
+          Route.post(
+              spec.path(),
+              ctx -> {
+                ctx.setStatus(200);
+                ctx.output(ctx.body());
+              }));
+    }
+    if (spec.json()) {
+      // The JSON scenario measures the codec on the Freeway path; the bytes the
+      // client expects are the spec's response body, pinned by ServerHarnessTest.
+      return List.of(Route.get(spec.path(), ctx -> ctx.sendJson(200, new JsonResponse(1, "test"))));
+    }
+    String body = new String(spec.responseBody(), StandardCharsets.ISO_8859_1);
+    return List.of(Route.get(spec.path(), ctx -> ctx.send(200, body)));
   }
 
   /** Creates the WebSocket echo route for {@link Scenario#WS_ECHO} (empty for HTTP scenarios). */
@@ -313,7 +308,7 @@ public final class ServerHarness implements AutoCloseable {
     }
     var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
-    server.createContext("/", bareHandler(scenario));
+    server.createContext("/", bareHandler(ScenarioSpec.of(scenario)));
     server.start();
     return new ServerHarness(() -> server.stop(0), server.getAddress().getPort());
   }
@@ -327,40 +322,21 @@ public final class ServerHarness implements AutoCloseable {
    * JDK {@code HttpServer} reuses the connection for HTTP/1.1 when the response length is known and
    * fully delivered.
    */
-  private static com.sun.net.httpserver.HttpHandler bareHandler(Scenario scenario) {
-    return switch (scenario) {
-      case PING ->
-          exchange -> {
-            exchange.getResponseHeaders().add("Content-Type", "text/plain");
-            exchange.sendResponseHeaders(200, 4);
-            try (OutputStream os = exchange.getResponseBody()) {
-              os.write(PONG_BYTES);
-            }
-          };
-      case JSON ->
-          exchange -> {
-            byte[] body = JSON_BYTES;
-            exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, body.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-              os.write(body);
-            }
-          };
-      case ECHO_BODY ->
-          exchange -> {
-            if (!"POST".equals(exchange.getRequestMethod())) {
-              exchange.sendResponseHeaders(405, -1);
-              return;
-            }
-            byte[] body = exchange.getRequestBody().readAllBytes();
-            exchange.sendResponseHeaders(200, body.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-              os.write(body);
-            }
-          };
-      case WS_ECHO ->
-          throw new UnsupportedOperationException(
-              "WS_ECHO not supported for bare/JDK engines. Use freeway or undertow-native.");
+  private static com.sun.net.httpserver.HttpHandler bareHandler(ScenarioSpec spec) {
+    return exchange -> {
+      if (!spec.method().equals(exchange.getRequestMethod())) {
+        exchange.sendResponseHeaders(405, -1);
+        return;
+      }
+      byte[] body =
+          spec.echoBody() ? exchange.getRequestBody().readAllBytes() : spec.responseBody();
+      if (spec.contentType() != null) {
+        exchange.getResponseHeaders().add("Content-Type", spec.contentType());
+      }
+      exchange.sendResponseHeaders(200, body.length);
+      try (OutputStream os = exchange.getResponseBody()) {
+        os.write(body);
+      }
     };
   }
 
@@ -372,7 +348,7 @@ public final class ServerHarness implements AutoCloseable {
     var server =
         Undertow.builder()
             .addHttpListener(0, "127.0.0.1")
-            .setHandler(undertowHandler(scenario))
+            .setHandler(undertowHandler(ScenarioSpec.of(scenario)))
             .build();
     server.start();
     int port = ((InetSocketAddress) server.getListenerInfo().getFirst().getAddress()).getPort();
@@ -388,36 +364,39 @@ public final class ServerHarness implements AutoCloseable {
    * non-blocking sender API; ECHO_BODY uses {@code startBlocking()} + stream I/O for
    * straightforward body echo.
    */
-  private static HttpHandler undertowHandler(Scenario scenario) {
-    if (scenario == Scenario.WS_ECHO) {
+  private static HttpHandler undertowHandler(ScenarioSpec spec) {
+    if (spec.webSocket()) {
       return undertowWsEchoHandler();
     }
-    return switch (scenario) {
-      case PING ->
-          exchange -> {
-            exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, "4");
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/plain");
-            exchange.getResponseSender().send("pong");
-          };
-      case JSON ->
-          exchange -> {
-            String body = new String(JSON_BYTES, StandardCharsets.UTF_8);
-            exchange
-                .getResponseHeaders()
-                .put(Headers.CONTENT_LENGTH, String.valueOf(body.length()));
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "application/json");
-            exchange.getResponseSender().send(body);
-          };
-      case ECHO_BODY ->
-          exchange -> {
+    HttpHandler handler =
+        exchange -> {
+          if (!spec.method().equals(exchange.getRequestMethod().toString())) {
+            exchange.setStatusCode(405);
+            exchange.endExchange();
+            return;
+          }
+          if (spec.contentType() != null) {
+            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, spec.contentType());
+          }
+          // Only the echo scenario reads a request body: an unconditional
+          // startBlocking() + readAllBytes() on a GET waits for a body that never
+          // arrives, which failed every request.
+          if (spec.echoBody()) {
             exchange.startBlocking();
             byte[] body = exchange.getInputStream().readAllBytes();
             exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, String.valueOf(body.length));
-            exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "application/octet-stream");
             exchange.getOutputStream().write(body);
-          };
-      default -> throw new UnsupportedOperationException("Not implemented: " + scenario);
-    };
+          } else {
+            byte[] body = spec.responseBody();
+            exchange.getResponseHeaders().put(Headers.CONTENT_LENGTH, String.valueOf(body.length));
+            exchange.getResponseSender().send(ByteBuffer.wrap(body));
+          }
+        };
+    // The echo scenario reads the request body with blocking I/O, which Undertow
+    // forbids on an I/O thread (UT000126) — it has to run on a worker. The
+    // fixed-body scenarios keep the non-blocking sender, so they still measure
+    // the raw I/O-thread path.
+    return spec.echoBody() ? new BlockingHandler(handler) : handler;
   }
 
   /** Undertow-native WebSocket echo handler for WS_ECHO. */
@@ -460,56 +439,38 @@ public final class ServerHarness implements AutoCloseable {
                 return listener;
               });
     }
-    server.setHandler(jettyHandler(scenario));
+    server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
     server.start();
     int port = connector.getLocalPort();
     return new ServerHarness(() -> server.stop(), port);
   }
 
-  private static Handler jettyHandler(Scenario scenario) {
-    if (scenario == Scenario.WS_ECHO) {
+  private static Handler jettyHandler(ScenarioSpec spec) {
+    if (spec.webSocket()) {
       return null; // handled by WebSocket container
     }
     return new Handler.Abstract() {
       @Override
       public boolean handle(Request request, Response response, Callback callback) {
-        return switch (scenario) {
-          case PING -> {
-            response.setStatus(200);
-            response.getHeaders().put(HttpHeader.CONTENT_TYPE, "text/plain");
-            response.getHeaders().put(HttpHeader.CONTENT_LENGTH, "4");
-            response.write(true, ByteBuffer.wrap(PONG_BYTES), callback);
-            yield true;
+        if (!spec.method().equals(request.getMethod())) {
+          response.setStatus(405);
+          callback.succeeded();
+          return true;
+        }
+        try {
+          byte[] body =
+              spec.echoBody() ? Request.asInputStream(request).readAllBytes() : spec.responseBody();
+          response.setStatus(200);
+          if (spec.contentType() != null) {
+            response.getHeaders().put(HttpHeader.CONTENT_TYPE, spec.contentType());
           }
-          case JSON -> {
-            byte[] body = JSON_BYTES;
-            response.setStatus(200);
-            response.getHeaders().put(HttpHeader.CONTENT_TYPE, "application/json");
-            response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(body.length));
-            response.write(true, ByteBuffer.wrap(body), callback);
-            yield true;
-          }
-          case ECHO_BODY -> {
-            if (!"POST".equals(request.getMethod())) {
-              response.setStatus(405);
-              callback.succeeded();
-              yield true;
-            }
-            try {
-              byte[] body = Request.asInputStream(request).readAllBytes();
-              response.setStatus(200);
-              response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(body.length));
-              response.write(true, ByteBuffer.wrap(body), callback);
-            } catch (Exception e) {
-              response.setStatus(500);
-              callback.succeeded();
-            }
-            yield true;
-          }
-          case WS_ECHO ->
-              throw new UnsupportedOperationException(
-                  "WS_ECHO must go through WebSocket container");
-        };
+          response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(body.length));
+          response.write(true, ByteBuffer.wrap(body), callback);
+        } catch (Exception e) {
+          response.setStatus(500);
+          callback.succeeded();
+        }
+        return true;
       }
     };
   }

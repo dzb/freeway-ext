@@ -4,6 +4,18 @@
 
 ### Changed
 
+- **benchmark: a scenario is declared once, and the Undertow echo path works** — the four server
+  implementations in `ServerHarness` each carried their own `switch` over the scenario (path, method,
+  response bytes, content type), and the client's `RequestPattern` restated the same paths and
+  bodies. `ScenarioSpec` is now the one table (method, path, content type, response body, echo/JSON/
+  WebSocket flags); the Freeway routes and the JDK, Undertow and Jetty handlers all read it, and
+  `RequestPattern.of(spec)` feeds the client. Adding a scenario is one enum constant plus one entry.
+  `ServerHarnessTest` pins each engine's real answer against the spec (bytes and content type) and
+  the echo path on all four engines — which immediately caught two real defects the old
+  per-engine switches hid: Undertow's echo handler did blocking I/O on an I/O thread (UT000126, every
+  `undertow-native --scenario=echo_body` request 500'd), and the generalized handler read a request
+  body on `GET` scenarios (every Undertow JSON/PING request failed). The echo handler now runs on a
+  worker via Undertow's `BlockingHandler`; the fixed-body scenarios keep the non-blocking sender.
 - **benchmark: `BenchFork` split by role, and one definition of `--mode`** — the entry class carried
   four jobs in one 291-line file (suite orchestration, fork lifecycle, subprocess entry points,
   classpath discovery). It is now `BenchFork` (93 lines: role dispatch + the server/client child

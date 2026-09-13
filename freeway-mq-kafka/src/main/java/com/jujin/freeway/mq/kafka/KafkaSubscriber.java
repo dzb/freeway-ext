@@ -309,13 +309,6 @@ public class KafkaSubscriber implements AutoCloseable {
     if (config.dlqEnabled()) {
       try {
         sendToDlq(record, cause);
-        LOG.error(
-            "Poison message at '{}' offset {} moved to DLQ '{}'",
-            record.topic(),
-            record.offset(),
-            config.dlqTopic(),
-            cause);
-        return true;
       } catch (Exception dlqFailure) {
         // The message was neither processed nor moved to the DLQ; committing
         // would lose it permanently. Stop without committing so the offset is
@@ -328,6 +321,24 @@ public class KafkaSubscriber implements AutoCloseable {
             dlqFailure);
         return false;
       }
+      // The DLQ preserved the record; the policy still decides whether this
+      // subscriber keeps going (README: moved to the DLQ first, policy second).
+      if (config.failOnPoison()) {
+        LOG.error(
+            "Poison message at '{}' offset {} moved to DLQ '{}'; stopping per policy",
+            record.topic(),
+            record.offset(),
+            config.dlqTopic(),
+            cause);
+        return false;
+      }
+      LOG.error(
+          "Poison message at '{}' offset {} moved to DLQ '{}'",
+          record.topic(),
+          record.offset(),
+          config.dlqTopic(),
+          cause);
+      return true;
     }
     if (config.failOnPoison()) {
       LOG.error(
@@ -351,14 +362,15 @@ public class KafkaSubscriber implements AutoCloseable {
     }
     var out = new ProducerRecord<>(config.dlqTopic(), record.key(), record.value());
     record.headers().forEach(header -> out.headers().add(header.key(), header.value()));
-    out.headers().add("X-DLQ-Original-Topic", record.topic().getBytes(StandardCharsets.UTF_8));
+    out.headers()
+        .add(KafkaHeaders.DLQ_ORIGINAL_TOPIC, record.topic().getBytes(StandardCharsets.UTF_8));
     out.headers()
         .add(
-            "X-DLQ-Original-Offset",
+            KafkaHeaders.DLQ_ORIGINAL_OFFSET,
             String.valueOf(record.offset()).getBytes(StandardCharsets.UTF_8));
     String reason =
         cause != null && cause.getMessage() != null ? cause.getMessage() : String.valueOf(cause);
-    out.headers().add("X-DLQ-Reason", reason.getBytes(StandardCharsets.UTF_8));
+    out.headers().add(KafkaHeaders.DLQ_REASON, reason.getBytes(StandardCharsets.UTF_8));
     dlqProducer.send(out).get(10, TimeUnit.SECONDS);
   }
 
@@ -380,7 +392,7 @@ public class KafkaSubscriber implements AutoCloseable {
           // one also arrives over another transport: the inbound dedup window
           // drops the second copy instead of delivering it twice. Null for
           // records produced before the header existed — that always delivers.
-          String id = header(record, "X-Event-Id");
+          String id = header(record, KafkaHeaders.EVENT_ID);
           if (classChannel(record)) {
             bus.publishInbound(event, id);
           } else {
@@ -391,21 +403,18 @@ public class KafkaSubscriber implements AutoCloseable {
 
   /** True when the producer sent this record on the class dispatch channel. */
   private boolean classChannel(ConsumerRecord<String, byte[]> record) {
-    String channel = header(record, "X-Event-Channel");
-    // Absent header means an older producer — fall back to topic dispatch,
-    // the pre-channel behavior.
-    return channel != null && "CLASS".equalsIgnoreCase(channel.trim());
+    return KafkaHeaders.classChannel(record.headers());
   }
 
   /** True when this record was published by this node (its origin header matches ours). */
   private boolean isOwnEvent(ConsumerRecord<String, byte[]> record) {
-    String recordOrigin = header(record, "X-Event-Origin");
+    String recordOrigin = header(record, KafkaHeaders.EVENT_ORIGIN);
     return recordOrigin != null && recordOrigin.equals(origin);
   }
 
   private Object deserialize(ConsumerRecord<String, byte[]> record) throws Exception {
     String json = new String(record.value(), StandardCharsets.UTF_8);
-    String typeName = header(record, "X-Event-Type");
+    String typeName = header(record, KafkaHeaders.EVENT_TYPE);
     Class<?> type = resolveEventType(typeName, allowedEventTypes);
     return codec.fromJson(json, type);
   }

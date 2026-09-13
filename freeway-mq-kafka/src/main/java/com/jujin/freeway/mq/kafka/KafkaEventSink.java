@@ -102,6 +102,12 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
 
   @Override
   public void send(String topic, Object event, EventSink.Channel channel, String eventId) {
+    if (event == null) {
+      // The wire format carries the payload's class name, so a null payload has
+      // nothing to send; the bus allows it, the transport cannot.
+      LOG.warn("Event for topic '{}' has no payload — not sent", topic);
+      return;
+    }
     // Framework lifecycle events carry internal references (the Container)
     // and are inherently JVM-local — never send them.
     if (event.getClass().getName().startsWith("com.jujin.freeway.boot.")) {
@@ -120,19 +126,25 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     // broker and per-key parallel consumption on the subscriber side.
     String key = (event instanceof EventBus.Keyed k) ? k.key() : null;
     var record = new ProducerRecord<String, byte[]>(topic, key, bytes);
-    record
-        .headers()
-        .add("X-Event-Type", event.getClass().getName().getBytes(StandardCharsets.UTF_8));
-    record.headers().add("X-Event-Origin", origin.getBytes(StandardCharsets.UTF_8));
-    record.headers().add("X-Event-Channel", channel.name().getBytes(StandardCharsets.UTF_8));
+    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_TYPE, event.getClass().getName());
+    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ORIGIN, origin);
+    KafkaHeaders.put(
+        record.headers(), KafkaHeaders.EVENT_CHANNEL, KafkaHeaders.channelToken(channel));
     // The bus-minted id: one identity shared by every transport this event
     // was dispatched over, so consumers can correlate/dedupe copies.
-    record.headers().add("X-Event-Id", eventId.getBytes(StandardCharsets.UTF_8));
-    producer.send(
-        record,
-        (meta, ex) -> {
-          if (ex != null) LOG.warn("Kafka send failed for topic '{}'", topic, ex);
-        });
+    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ID, eventId);
+    try {
+      producer.send(
+          record,
+          (meta, ex) -> {
+            if (ex != null) LOG.warn("Kafka send failed for topic '{}'", topic, ex);
+          });
+    } catch (Exception ex) {
+      // EventSink.send must not throw: KafkaProducer.send signals some failures
+      // synchronously (timeout, illegal state, serializer) instead of through
+      // the callback, and the publishing thread must not pay for that.
+      LOG.warn("Failed to publish event for topic '{}' — not sent", topic, ex);
+    }
   }
 
   @Override

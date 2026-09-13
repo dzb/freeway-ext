@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.EventBus;
@@ -53,6 +54,36 @@ class KafkaEventSinkTest {
   private static String header(ProducerRecord<String, byte[]> record, String name) {
     var header = record.headers().lastHeader(name);
     return header == null ? null : new String(header.value(), StandardCharsets.UTF_8);
+  }
+
+  @Test
+  void sendDoesNotThrowWhenTheProducerRejectsTheRecord() {
+    // EventSink.send must not throw: KafkaProducer.send signals failures both
+    // synchronously and through the callback, and the publishing thread must
+    // survive either. The local dispatch already happened.
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    producer.sendException = new IllegalStateException("broker unavailable");
+    KafkaEventSink sink = newSink("", producer);
+
+    sink.send("orders", new PlainTestEvent("v"), EventSink.Channel.CLASS);
+
+    assertTrue(producer.history().isEmpty(), "the rejected record must not be reported as sent");
+  }
+
+  @Test
+  void sendIgnoresANullPayload() {
+    // The bus allows a null topic payload; the wire format carries the class
+    // name, so the transport skips it instead of failing on it.
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    KafkaEventSink sink = newSink("", producer);
+
+    sink.send("orders", null, EventSink.Channel.TOPIC);
+
+    assertTrue(producer.history().isEmpty(), "nothing to send, nothing sent");
   }
 
   @Test

@@ -16,7 +16,8 @@
 
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.ioc.annotation.Value;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
@@ -26,9 +27,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Configuration for the Kafka adapter, resolved from the config cascade via {@code @Value} (e.g.
- * {@code freeway.kafka.bootstrap-servers}). Components are fully parsed — raw config-cascade
- * strings are normalized by {@link #of}.
+ * Configuration for the Kafka adapter. Every key's name, type and default is declared exactly once
+ * here ({@link #from}), and {@link #of} is the single validation path — the module binds this
+ * record without restating a key, so a default cannot drift between two files.
  */
 public record KafkaConfig(
     String bootstrapServers,
@@ -52,23 +53,74 @@ public record KafkaConfig(
 
   private static final String PROCESS_ORIGIN = UUID.randomUUID().toString();
 
+  // ── Key declarations: name, type and default stated exactly once ──
+  private static final SymbolSpec<String> BOOTSTRAP_SERVERS =
+      SymbolSpec.of("freeway.kafka.bootstrap-servers", String.class, "localhost:9092");
+  private static final SymbolSpec<String> GROUP_ID =
+      SymbolSpec.of("freeway.kafka.group-id", String.class, "freeway");
+  private static final SymbolSpec<String> CLIENT_ID =
+      SymbolSpec.of("freeway.kafka.client-id", String.class, "");
+  private static final SymbolSpec<String> TOPICS =
+      SymbolSpec.of("freeway.kafka.topics", String.class, "");
+  private static final SymbolSpec<String> ALLOWED_EVENT_TYPES =
+      SymbolSpec.of("freeway.kafka.allowed-event-types", String.class, "");
+  private static final SymbolSpec<String> POISON_POLICY =
+      SymbolSpec.of("freeway.kafka.poison-policy", String.class, "skip");
+  private static final SymbolSpec<String> EXTRA_PROPERTIES =
+      SymbolSpec.of("freeway.kafka.properties", String.class, "");
+  private static final SymbolSpec<String> DLQ_TOPIC =
+      SymbolSpec.of("freeway.kafka.dlq-topic", String.class, "");
+  private static final SymbolSpec<Integer> MAX_RETRIES =
+      SymbolSpec.of("freeway.kafka.max-retries", Integer.class, 1, Integer::parseInt);
+  private static final SymbolSpec<Long> RETRY_BACKOFF_MS =
+      SymbolSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
+  private static final SymbolSpec<Integer> CONCURRENCY =
+      SymbolSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
+
   /**
-   * Adapting factory: parses the raw config-cascade strings (see the {@code freeway.kafka.*}
-   * defaults) into the typed components above, validating as it goes.
+   * Coercer-parsed on purpose: an unreadable value fails naming the key instead of silently
+   * becoming {@code false}, which would silently disable own-event suppression.
+   */
+  private static final SymbolSpec<Boolean> SUPPRESS_OWN =
+      SymbolSpec.of("freeway.kafka.suppress-own", Boolean.class, true);
+
+  /**
+   * Resolves the whole {@code freeway.kafka.*} surface from the config cascade. This is the only
+   * place that knows the keys; {@link #of} stays the only place that validates them.
+   */
+  public static KafkaConfig from(SymbolSource symbols) {
+    return of(
+        symbols.resolve(BOOTSTRAP_SERVERS),
+        symbols.resolve(GROUP_ID),
+        symbols.resolve(CLIENT_ID),
+        symbols.resolve(TOPICS),
+        symbols.resolve(ALLOWED_EVENT_TYPES),
+        symbols.resolve(POISON_POLICY),
+        symbols.resolve(EXTRA_PROPERTIES),
+        symbols.resolve(DLQ_TOPIC),
+        symbols.resolve(MAX_RETRIES),
+        symbols.resolve(RETRY_BACKOFF_MS),
+        symbols.resolve(CONCURRENCY),
+        symbols.resolve(SUPPRESS_OWN));
+  }
+
+  /**
+   * Adapting factory: parses the raw config-cascade strings into the typed components above,
+   * validating as it goes.
    */
   public static KafkaConfig of(
-      @Value("${freeway.kafka.bootstrap-servers:localhost:9092}") String bootstrapServers,
-      @Value("${freeway.kafka.group-id:freeway}") String groupId,
-      @Value("${freeway.kafka.client-id:}") String clientId,
-      @Value("${freeway.kafka.topics:}") String topicsRaw,
-      @Value("${freeway.kafka.allowed-event-types:}") String allowedEventTypesRaw,
-      @Value("${freeway.kafka.poison-policy:skip}") String poisonPolicyRaw,
-      @Value("${freeway.kafka.properties:}") String propertiesRaw,
-      @Value("${freeway.kafka.dlq-topic:}") String dlqTopic,
-      @Value("${freeway.kafka.max-retries:1}") int maxRetries,
-      @Value("${freeway.kafka.retry-backoff-ms:1000}") long retryBackoffMs,
-      @Value("${freeway.kafka.concurrency:1}") int concurrency,
-      @Value("${freeway.kafka.suppress-own:true}") boolean suppressOwn) {
+      String bootstrapServers,
+      String groupId,
+      String clientId,
+      String topicsRaw,
+      String allowedEventTypesRaw,
+      String poisonPolicyRaw,
+      String propertiesRaw,
+      String dlqTopic,
+      int maxRetries,
+      long retryBackoffMs,
+      int concurrency,
+      boolean suppressOwn) {
     if (!isValidPoisonPolicy(poisonPolicyRaw)) {
       throw new IllegalArgumentException(
           "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicyRaw + "'");

@@ -17,6 +17,7 @@
 package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -138,9 +139,92 @@ class KafkaSubscriberTest {
               StandardCharsets.UTF_8));
       assertNotNull(dlq.getFirst().headers().lastHeader("X-DLQ-Reason"));
       assertTrue(received.isEmpty(), "poison message must not reach the EventBus");
+      assertFalse(consumer.closed(), "the skip policy keeps the subscriber running");
 
       subscriber.close();
       assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void poisonPolicyFailStopsTheSubscriberAfterTheDlq() throws Exception {
+    // README contract: with a DLQ the record is preserved first, and the policy
+    // still decides whether processing continues (skip) or stops (fail).
+    var config =
+        KafkaConfig.of(
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            "",
+            "fail",
+            "",
+            "orders-dlq",
+            1,
+            0,
+            1,
+            true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var dlqProducer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var subscriber =
+          new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, dlqProducer);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var record =
+          new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (dlqProducer.history().isEmpty() && System.nanoTime() < deadline) {
+        Thread.sleep(20);
+      }
+      assertEquals(1, dlqProducer.history().size(), "the record is preserved in the DLQ first");
+
+      // The fail policy then stops the loop: it closes the consumer in its
+      // finally block, so nothing after the poison record is consumed and the
+      // offset stays uncommitted for redelivery.
+      long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (!consumer.closed() && System.nanoTime() < stopDeadline) {
+        Thread.sleep(20);
+      }
+      assertTrue(consumer.closed(), "the fail policy must stop the subscriber after the DLQ");
+    }
+  }
+
+  @Test
+  void poisonPolicyFailWithoutADlqStopsTheSubscriber() throws Exception {
+    var config =
+        KafkaConfig.of(
+            "localhost:9092", "test-group", "", "orders", "", "fail", "", "", 1, 0, 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var record =
+          new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+      while (!consumer.closed() && System.nanoTime() < stopDeadline) {
+        Thread.sleep(20);
+      }
+      assertTrue(consumer.closed(), "the fail policy stops the subscriber without a DLQ too");
     }
   }
 

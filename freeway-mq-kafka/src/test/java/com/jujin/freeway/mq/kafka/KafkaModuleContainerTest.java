@@ -46,6 +46,7 @@ class KafkaModuleContainerTest {
     System.clearProperty("freeway.kafka.max-retries");
     System.clearProperty("freeway.kafka.retry-backoff-ms");
     System.clearProperty("freeway.kafka.concurrency");
+    System.clearProperty("freeway.kafka.suppress-own");
   }
 
   @Test
@@ -94,6 +95,35 @@ class KafkaModuleContainerTest {
           "the rejected value must be quoted: " + ex.getMessage());
     } finally {
       System.clearProperty("freeway.kafka.max-retries");
+    }
+  }
+
+  @Test
+  void suppressOwnIsReadStrictly() {
+    // The coercer vocabulary ("no", "off", "0") is accepted…
+    System.setProperty("freeway.kafka.suppress-own", "no");
+    try (Container container = Freeway.create(new KafkaModule())) {
+      assertFalse(container.get(KafkaConfig.class).suppressOwn());
+    } finally {
+      System.clearProperty("freeway.kafka.suppress-own");
+    }
+    // …and an unreadable value fails naming the key instead of silently
+    // becoming false, which would silently disable own-event suppression.
+    System.setProperty("freeway.kafka.suppress-own", "maybe");
+    try {
+      IllegalArgumentException ex =
+          assertThrows(
+              IllegalArgumentException.class,
+              () -> {
+                try (Container container = Freeway.create(new KafkaModule())) {
+                  container.get(KafkaConfig.class);
+                }
+              });
+      assertTrue(
+          ex.getMessage().contains("freeway.kafka.suppress-own"),
+          "the failing key must be named: " + ex.getMessage());
+    } finally {
+      System.clearProperty("freeway.kafka.suppress-own");
     }
   }
 

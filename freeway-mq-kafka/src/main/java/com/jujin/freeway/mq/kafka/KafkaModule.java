@@ -23,39 +23,15 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.SymbolSpec;
 
 /** IoC module wiring the Kafka event sink and subscriber into the container. */
 public class KafkaModule implements ModuleEx {
-
-  private static final SymbolSpec<Integer> MAX_RETRIES =
-      SymbolSpec.of("freeway.kafka.max-retries", Integer.class, 1, Integer::parseInt);
-  private static final SymbolSpec<Long> RETRY_BACKOFF_MS =
-      SymbolSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
-  private static final SymbolSpec<Integer> CONCURRENCY =
-      SymbolSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
 
   @Override
   public void bind(Binder binder) {
     binder
         .bind(KafkaConfig.class)
-        .to(
-            container -> {
-              SymbolSource symbols = container.get(SymbolSource.class);
-              return KafkaConfig.of(
-                  symbols.resolve("freeway.kafka.bootstrap-servers", "localhost:9092"),
-                  symbols.resolve("freeway.kafka.group-id", "freeway"),
-                  symbols.resolve("freeway.kafka.client-id", ""),
-                  symbols.resolve("freeway.kafka.topics", ""),
-                  symbols.resolve("freeway.kafka.allowed-event-types", ""),
-                  symbols.resolve("freeway.kafka.poison-policy", "skip"),
-                  symbols.resolve("freeway.kafka.properties", ""),
-                  symbols.resolve("freeway.kafka.dlq-topic", ""),
-                  MAX_RETRIES.parse(symbols.resolve(MAX_RETRIES.key(), null)),
-                  RETRY_BACKOFF_MS.parse(symbols.resolve(RETRY_BACKOFF_MS.key(), null)),
-                  CONCURRENCY.parse(symbols.resolve(CONCURRENCY.key(), null)),
-                  Boolean.parseBoolean(symbols.resolve("freeway.kafka.suppress-own", "true")));
-            });
+        .to(container -> KafkaConfig.from(container.get(SymbolSource.class)));
     // Provider lambdas: constructor injection would select the max-param
     // constructor, which for these classes is the package-private test seam
     // (KafkaEventSink(config, codec, Producer)) — never reachable in

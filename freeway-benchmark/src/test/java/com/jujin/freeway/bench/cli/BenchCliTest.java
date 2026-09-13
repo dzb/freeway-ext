@@ -126,7 +126,7 @@ class BenchCliTest {
               .map(Command::name)
               .collect(Collectors.toSet());
       assertEquals(
-          Set.of("run", "suite", "list", "compare", "history"),
+          Set.of("run", "suite", "list", "compare", "history", "jmh"),
           names,
           "dispatch matches these names, not implementation class names");
     }

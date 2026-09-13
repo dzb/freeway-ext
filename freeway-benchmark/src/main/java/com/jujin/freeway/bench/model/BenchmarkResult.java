@@ -41,6 +41,17 @@ public record BenchmarkResult(
    * later on the median row ({@code score_error}). Both are filled here rather than passed in, so
    * no call site can disagree about what a row means.
    */
+  /**
+   * The persisted row for one JMH measurement: {@code Score ± Score Error} with the unit JMH
+   * reported ({@code ops/s} for throughput), so a microbenchmark lands in the same table and the
+   * same reports as an HTTP run. JMH has no latency percentiles and no request errors, so those
+   * columns stay zero.
+   */
+  public static BenchmarkResult forJmh(
+      long runId, String benchmark, String mode, double score, double scoreError, String unit) {
+    return new BenchmarkResult(0, runId, benchmark, mode, score, scoreError, unit, 0, 0, 0, 0);
+  }
+
   public static BenchmarkResult forHttpIteration(
       long runId,
       String benchmark,

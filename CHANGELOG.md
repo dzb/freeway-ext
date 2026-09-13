@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **benchmark: `bench jmh` puts the microbenchmarks in the same tables as the HTTP runs** — the
+  protocol calls the JMH microbenchmarks the decision-grade input, but nothing connected them to the
+  CLI: they were a console table, and `BenchmarkResult`'s `score_error`/`unit`/`mode` columns were
+  written but never read. The new `jmh` command runs JMH in-process
+  (`--include`, `--forks`, `--warmup`, `--iterations`, `--time`), persists one row per benchmark
+  method with JMH's own `Score ± Score Error`, unit and mode, and records the JMH parameter block
+  on the run row (engine `jmh`, scenario the include pattern, concurrency = forks, requests =
+  iterations, warmup, runs = methods measured). `list`, `history` and `compare` therefore read JMH
+  scores next to HTTP numbers; no stray `jmh-result.text` is written any more. A NaN score error
+  (JMH's "cannot estimate", e.g. a single iteration) persists as 0 rather than failing the row, and
+  an `--include` that matches nothing is a usage error naming the flag.
 - **benchmark: every bench-table statement lives in one repository** — the five commands each
   hand-wrote their SQL in a different style: `Orm` entities in `run`/`suite`/`compare`, a
   concatenated `WHERE` with a duplicated `db.query` branch in `list`, a param-list builder in

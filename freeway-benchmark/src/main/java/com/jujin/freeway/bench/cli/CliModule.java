@@ -39,6 +39,7 @@ public final class CliModule implements ModuleEx {
     cmds.add(new CompareCommand());
     cmds.add(new HistoryCommand());
     cmds.add(new SuiteCommand());
+    cmds.add(new JmhCommand());
     // AppRuntime no longer exposes the container; capture it at startup
     // so the CLI dispatcher can reach extension points.
     binder.contribute(RuntimeHook.class).add(c -> CliModule.container = c);
@@ -76,6 +77,7 @@ public final class CliModule implements ModuleEx {
       System.out.println("Commands:");
       System.out.println("  run      Run a benchmark");
       System.out.println("  suite    Run multiple engine/scenario/concurrency combinations");
+      System.out.println("  jmh      Run JMH microbenchmarks and persist their scores");
       System.out.println("  list     Show recent benchmark runs");
       System.out.println("  compare  Compare two benchmark runs");
       System.out.println("  history  Show performance trend over time");

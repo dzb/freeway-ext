@@ -104,6 +104,19 @@ mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
   -Dexec.args='com.jujin.freeway.bench.jmh.RouteIndexBenchmark'
 ```
 
+To persist microbenchmark scores in the same tables as the HTTP runs (`list`, `history`,
+`compare` then see them), use the CLI command instead of the JMH launcher:
+
+```bash
+mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
+  -Dexec.mainClass=com.jujin.freeway.bench.BenchApp \
+  -Dexec.args='jmh --include=com.jujin.freeway.bench.jmh.RouteIndexBenchmark'
+```
+
+`--forks/--warmup/--iterations/--time` mirror the JMH options (the annotated defaults apply when
+they are omitted), and the JMH parameter block is recorded on the run row so a later comparison can
+tell a protocol-conforming run from a local-iteration one.
+
 For quick local iteration, override the annotations explicitly — `-f 0 -wi 1 -i 1` runs in the
 host VM with one second of each phase. Those numbers are reference only, never decision-grade:
 the protocol requires the annotated defaults, and a report must record the options it used.

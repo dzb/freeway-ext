@@ -612,6 +612,16 @@ benchmark 模块 16 例、ext 全量全绿。
 结果按插入序读取、dispersion 落在中位行、窗口 JOIN 的可选过滤、以及"最佳历史同类运行"的基线规则。
 验证：benchmark 21 例、五个命令对真实 SQLite 文件实跑（run/list/history/compare 全绿）。
 
+**（2026-09-13 又一轮：JMH 结果入库）** §4.5「JMH 与 CLI 完全不相通」已落地：新增 `bench jmh`
+命令（`--include/--forks/--warmup/--iterations/--time`），进程内跑 JMH 并把每个基准方法写成一行
+`BenchmarkResult`（JMH 自己的 `Score ± Score Error`、unit、mode；`score_error/unit/mode` 这三个
+"只写不读"的列从此有真实来源），run 行记录 JMH 参数块（engine=jmh、scenario=include、concurrency=forks、
+requests=迭代数、warmup、runs=方法数）。`list`/`history`/`compare` 因此能直接读到微基准成绩
+（实跑：`history --bench=<class.method>` 显示 308.8k 与 -12.4% 对比）。实现中处理两个边界：
+JMH 的单迭代 score error 是 NaN（列 NOT NULL）→ 记为 0；`--include` 无匹配 → 命名该 flag 的用法错误。
+另去掉 JMH 自带的 `jmh-result.text` 落盘（成绩进库与终端即可）。测试：`JmhCommandTest` 2 例
+（真实 JMH 跑到入库的端到端 3 行断言 + 无匹配用法错误）。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

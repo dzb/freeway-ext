@@ -17,8 +17,28 @@
   dropping the fake container and the bus entirely.
 - **no adapter code changes** — the four adapters keep their public surface;
   only the version pins and the two engine RPC tests are touched.
+- **module composition is a tree now** — core 1.5.2 deletes
+  `ModuleEx.subModules()` and `ModuleTree`: composition is a `ModuleNode` value
+  built at the entry point, and a module that only groups others becomes a
+  fragment factory. `freeway-benchmark` follows: `BenchDbModule` is a leaf
+  (it only contributes `SchemaEntity`), and `BenchApp` composes
+  `ModuleNode.app("freeway-benchmark", BenchDbModule.class, DbModule.class,
+  CliModule.class)` — modules are named by class, since none of them takes
+  constructor arguments.
+- **benchmark follows the `HttpContextImpl.reset` signature** — core 1.5.2
+  narrowed the reset call, so the three HTTP benchmarks drop the position
+  argument that no longer exists. Without this the benchmark module does not
+  compile against the current core (`mvn clean test` was the real verdict —
+  the earlier BUILD SUCCESS came from a stale `target/classes`).
 - **spotless** — the two reworked RPC tests are re-flowed to
   google-java-format 1.36.1, the format `verify` enforces.
+- **Build**: third-party versions upgraded to latest stable: Undertow
+  2.4.3.Final, Jetty 12.1.13, SQLite JDBC 3.53.4.0, H2 2.5.250, SLF4J 2.0.19;
+  spotless-maven-plugin 3.10.2, maven-gpg-plugin 3.2.8, benchmark
+  exec-maven-plugin 3.6.4. Kafka Clients 4.3.1, HikariCP 7.1.0, JUnit 6.1.3,
+  JMH 1.37 and robaho httpserver 1.0.29 were already the latest stable
+  releases. The maven-source-plugin and maven-compiler-plugin majors are still
+  betas and stay on 3.4.0 / 3.15.0.
 
 ## 1.5.1
 

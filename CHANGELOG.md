@@ -25,6 +25,23 @@
   `ModuleNode.app("freeway-benchmark", BenchDbModule.class, DbModule.class,
   CliModule.class)` — modules are named by class, since none of them takes
   constructor arguments.
+- **kafka: one home for the keys, and the sink obeys its "must not throw" contract** —
+  `KafkaConfig` now declares the twelve `freeway.kafka.*` keys (name, type, default) and resolves
+  them in `from(SymbolSource)`, so `KafkaModule` no longer restates a key or a default. The twelve
+  `@Value` annotations were dead — the container never calls a static factory — so editing them
+  changed nothing and the defaults lived in three places; `suppress-own` is now read strictly, so a
+  typo fails naming the key instead of silently disabling own-event suppression. `KafkaEventSink
+  .send` swallows a synchronous producer failure and skips a null payload, as the `EventSink`
+  contract requires; the DLQ now preserves the record **and then** consults `poison-policy`
+  (previously `fail` was unreachable once a DLQ existed, contradicting the README); the wire header
+  names live in one `KafkaHeaders` class shared by writer and reader.
+- **benchmark: the harness refuses to mislabel an engine, and the regression gate reaches the exit
+  code** — `com.sun.net.httpserver.HttpServer` caches its provider once per JVM, so a second bare
+  engine in the same invocation would have been measured with the first engine's code and reported
+  under the second engine's name; `bare()` now fails naming both engines. `compare` sets exit code
+  2 when it reports regressions (contract: 0 = success, 1 = usage error), and a zero-score baseline
+  no longer yields ±Infinity. The three Freeway-engine assembly methods collapse into one path, and
+  the module has tests for the first time (the provider guard plus a ping smoke test).
 - **benchmark follows the `HttpContextImpl.reset` signature** — core 1.5.2
   narrowed the reset call, so the three HTTP benchmarks drop the position
   argument that no longer exists. Without this the benchmark module does not

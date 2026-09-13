@@ -20,6 +20,8 @@ import com.jujin.freeway.bench.cli.CliModule;
 import com.jujin.freeway.bench.db.BenchDbModule;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
+import com.jujin.freeway.db.DbModule;
+import com.jujin.freeway.ioc.ModuleNode;
 
 /**
  * {@code bench} — Freeway-powered CLI benchmark application.
@@ -52,7 +54,14 @@ public final class BenchApp {
     // duplicate contributions and "Multiple primary services" conflicts with
     // the transport engines bundled in this module.
     AppRuntime app =
-        FreewayApp.of(new BenchDbModule(), new CliModule()).autoDiscovery(false).start();
+        FreewayApp.of(
+                ModuleNode.app(
+                    "freeway-benchmark",
+                    BenchDbModule.class,
+                    DbModule.class,
+                    CliModule.class))
+            .autoDiscovery(false)
+            .start();
     int exitCode = 0;
     try {
       if (!CliModule.dispatch(CliModule.container(), args)) {

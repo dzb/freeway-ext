@@ -20,8 +20,8 @@ import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.WebServer;
+import com.jujin.freeway.http.WebServerBuilder;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
@@ -41,13 +41,31 @@ public abstract class EngineFixture {
   protected abstract String engineName();
 
   /** Starts a server with the test configuration and the given pipeline. */
-  protected final WebServer start(RequestComponents pipeline) {
+  protected final WebServer start(Pipelines pipeline) {
     return start(pipeline, defaultConfig());
   }
 
-  /** Starts a server with an explicit configuration (used by the compression contract). */
-  protected final WebServer start(RequestComponents pipeline, HttpServerConfig config) {
-    var server = new WebServer(newEngine(), config, event -> {}, pipeline);
+  /**
+   * Starts a server with an explicit configuration (used by the compression contract). Assembly
+   * goes through {@link WebServerBuilder} — the standalone path an application takes — so the
+   * contracts run against the same server shape as production: the noop event sink sentinel (no
+   * per-request event objects for a server nobody observes), the default error handler appended,
+   * and CORS/health explicitly disabled.
+   */
+  protected final WebServer start(Pipelines pipeline, HttpServerConfig config) {
+    var builder =
+        WebServerBuilder.builder()
+            .engine(newEngine())
+            .config(config)
+            .cors(Pipelines.disabledCors())
+            .health(Pipelines.disabledHealth());
+    for (var route : pipeline.routes()) {
+      builder.route(route);
+    }
+    for (var group : pipeline.webSocketGroups()) {
+      builder.webSocketGroup(group);
+    }
+    var server = builder.build();
     server.start();
     return server;
   }

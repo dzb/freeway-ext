@@ -1,45 +1,25 @@
-/*
- * Copyright 2026 dzb
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
 package com.jujin.freeway.http.testkit;
 
-import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
+import com.jujin.freeway.http.websocket.WebSocketGroup;
 import java.util.List;
 
 /**
- * The pipeline every contract test starts from: the routes under test, everything else disabled.
+ * The pipeline a contract test starts from: the routes under test plus any WebSocket groups, with
+ * CORS and health disabled. It hands the parts to {@link com.jujin.freeway.http.WebServerBuilder}
+ * instead of prebuilding a {@code RequestComponents}, so a contract test starts its server the same
+ * way a standalone application does — noop event sink sentinel, default error handler appended.
  */
-public final class Pipelines {
+public record Pipelines(List<Route> routes, List<WebSocketGroup> webSocketGroups) {
 
-  private Pipelines() {}
+  public static Pipelines of(List<Route> routes) {
+    return new Pipelines(List.copyOf(routes), List.of());
+  }
 
-  public static RequestComponents of(List<Route> routes) {
-    return new RequestComponents(
-        new RouteIndex(routes, List.of()),
-        new WebSocketIndex(List.of(), List.of()),
-        disabledCors(),
-        disabledHealth(),
-        List.of(),
-        List.of(),
-        List.of());
+  public static Pipelines of(List<Route> routes, List<WebSocketGroup> webSocketGroups) {
+    return new Pipelines(List.copyOf(routes), List.copyOf(webSocketGroups));
   }
 
   /**

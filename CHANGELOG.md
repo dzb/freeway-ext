@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **testkit: the engine contracts now start their servers the way an application does** —
+  `EngineFixture` built its test servers with the raw `WebServer` constructor and an `event -> {}`
+  sink, which is not the noop sentinel: `WebServer` therefore kept publishing an event object per
+  request for a server nobody observes, and the contracts ran without the default error handler.
+  `Pipelines` is now the builder's input (routes plus WebSocket groups, CORS/health disabled) and
+  `EngineFixture.start(...)` goes through `WebServerBuilder`, so the shared contracts measure the
+  same server shape as production. The six per-adapter test classes still hand-roll their own
+  `new WebServer(...)` (they have engine-specific fixtures: TLS properties, transport limits, raw
+  WS probes); migrating them is the remaining step and is recorded in the audit.
 - **benchmark: the run events have a consumer** — `RunCommand` and `SuiteCommand` publish
   `RunStarted`/`ResultCollected`/`RunCompleted`, but nothing in the module subscribed, so the
   EventBus showcase was publish-only. `BenchEventListener` now consumes them (DEBUG: the console

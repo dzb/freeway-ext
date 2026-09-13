@@ -637,10 +637,16 @@ JMH 的单迭代 score error 是 NaN（列 NOT NULL）→ 记为 0；`--include`
 而"3 个以上可选输入用参数记录"的规则针对的是公开装配面——**保留**。③ `ServiceRegistry.drainWindow()`：
 `RegistryLifecycleHook` 读取、`RegistryDrainTest` 覆写，是 SPI 上的"默认实现让自定义注册表免实现"的
 既定形态——**保留**。
-另发现一处新的可简化点（未做，留给下一轮）：两个适配器的**测试**里约有 15 处直接
-`new WebServer(engine, config, event -> {}, pipeline)`，绕过了 `WebServerBuilder`，因而既拿不到 NOOP
-sink 哨兵（`publishEvents` 恒 true）也没有默认错误处理器，且各自重复声明 disabled CORS/health 管线；
-testkit 的 `EngineFixture` 是收口点（需把 `Pipelines` 从"返回 RequestComponents"改为"喂给 builder 的各部分"）。
+**（2026-09-13 又一轮：适配器测试的装配统一，第一半）** 上一段记录的点已做了一半：testkit 的
+`Pipelines` 改为 builder 的输入（routes + WebSocket groups，CORS/health 仍显式关闭），
+`EngineFixture.start(...)` 改走 `WebServerBuilder`——三个共享契约（compression/context/remote-rpc）
+从此与独立应用同一装配形态（NOOP sink 哨兵 + 默认错误处理器），两侧测试全绿。
+**未做的第二半**：六个 per-adapter 测试类里仍有 ~15 处直接 `new WebServer(engine, config,
+event -> {}, pipeline)`（`JettyWebEngineContractTest` 5、`UndertowHttpContractTest` 6、
+`JettyTlsHttp2Test` 2、`UndertowTlsTest` 2、`UndertowTransportLimitsTest` 1、`JettyWebSocketProbeTest` 2），
+它们各自带引擎特有的 fixture（TLS 属性、传输上限、raw-socket WS 探针）且 pipeline 是就地构造的
+`RequestComponents`，迁移需要逐个把 fixture 改成 `Pipelines` + builder 形态——是纯测试侧一致性工作，
+不影响发布行为，留作下一轮（每迁一个文件都要跑该模块全绿）。
 
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。

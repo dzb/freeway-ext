@@ -4,6 +4,13 @@
 
 ### Changed
 
+- **kafka: a two-process bridge test that can only pass through the broker** — `CrossJvmEventTest`
+  spawns the publisher and the subscriber as **separate JVMs** (`CrossJvmRole`), connects them with
+  nothing but the broker, creates its own bridge topic per run (so parallel runs and stale offsets
+  cannot interfere) and asserts both that the class event is rebuilt in the consumer JVM and that
+  the string-topic event arrives under its local topic. It is gated by `FREEWAY_TEST_KAFKA` like the
+  in-JVM contract test: skipped without a broker, red with a dead address, green against a live one.
+  This is the case that would have caught the bridge-topic mismatch on its own.
 - **kafka: the bridge contract is now tested by the wire, not by a local shortcut** — the real-broker
   contract test used one bus for both sides, so its `bus.subscribe(...)` assertions were satisfied by
   the synchronous local dispatch at publish time: it passed with the broker carrying nothing (and

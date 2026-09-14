@@ -671,6 +671,12 @@ allowlist 时启动告警（点名该键与 `java.lang.String` 规则、说明"�
 `KafkaConfig` 的类 javadoc 增加"三个必须跨节点一致的键"一节（topics=桥接 topic、allowlist=接受清单、
 client-id=suppress-own 的节点身份，两节点共用会互相吞掉事件）。
 
+**（2026-09-13 补：跨 JVM 桥接测试进仓库）** `CrossJvmEventTest` + `CrossJvmRole`：测试内起**两个独立
+JVM**（发布/订阅各一），除 broker 外无任何共享，每次运行自建桥接 topic（并发运行与旧 offset 互不干扰），
+断言 class 事件在消费端被重建、字符串 topic 事件按本地 topic 送达。门控与原地契约测试一致
+（`FREEWAY_TEST_KAFKA`）：无 broker → skip、死地址 → 红（实测 TimeoutException）、真实 broker → 绿
+（模块 43 例 0 skipped）。这正是能独立发现"桥接 topic 不匹配"的那类测试。
+
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
 

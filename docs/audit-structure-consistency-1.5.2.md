@@ -658,12 +658,18 @@ poll 配置的 `freeway.kafka.topics`——生产与消费永远不在同一个 
 Kafka topic 名，兼容旧生产者）。**两条 JVM 实测通过**：A 发布 class 事件与字符串 topic 事件，
 B 的本地订阅者分别收到 `XjvmOrder[orderId=order-42, amount=7]` 与 `hello-from-jvm-A`。
 
-同时查出两个必须跟进的问题：① `KafkaEventSinkIntegrationTest` 是**假阳性**——它断言的同 JVM
-`bus.subscribe(...)` 由发布时的同步本地分发满足，broker 上一条记录都没有也会通过（这也解释了为什么
-四个用例在"4 skipped → 0 skipped"后依然全绿却证明不了 wire）；要改成两个 bus/两个容器才算真验证。
-② `freeway.kafka.allowed-event-types` 为空时**静默丢弃所有消费记录**（含字符串 topic 事件，其类型头是
-`java.lang.String`），实测就是它让第一次跨 JVM 尝试收不到任何东西；应在启动时告警并在文档写明
-"桥接哪些类型就要列哪些（字符串 topic 也要列 java.lang.String）"。
+同时查出两个问题，**均已在同一轮修复**（ext `79b6104`）：
+① `KafkaEventSinkIntegrationTest` 曾是**假阳性**——它断言的同 JVM `bus.subscribe(...)` 由发布时的同步
+本地分发满足，broker 上一条记录都没有也会通过（这也解释了为什么四个用例在"4 skipped → 0 skipped"后
+依然全绿却证明不了 wire）。现在发布与订阅分处**两个容器**、origin 不同（`it-producer`/`it-consumer`，
+否则 suppress-own 会把桥接记录当自己的丢弃），订阅侧断言只有记录真的过了 broker 才可能通过；
+逆向校验：把订阅 topic 改成不匹配的名字 → 四例全部转红（旧版本此时仍全绿），恢复后 4 例在真实 broker
+上全绿。
+② `freeway.kafka.allowed-event-types` 为空时**丢弃所有消费记录**（含字符串 topic 事件，其类型头是
+`java.lang.String`），实测就是它让第一次跨 JVM 尝试收不到任何东西。现在 `KafkaSubscriber` 在空
+allowlist 时启动告警（点名该键与 `java.lang.String` 规则、说明"症状会表现为 broker 没消息"），
+`KafkaConfig` 的类 javadoc 增加"三个必须跨节点一致的键"一节（topics=桥接 topic、allowlist=接受清单、
+client-id=suppress-own 的节点身份，两节点共用会互相吞掉事件）。
 
 验证：core `mvn -o clean test` 全绿
 （http 411→424 例、ioc 257→259 例），ext 全量五模块全绿，两条适配器的 compression/WS probe 测试作为回归网。
@@ -735,7 +741,18 @@ javap -p -cp ~/.m2/repository/com/jujin8/freeway/freeway-ioc/1.5.2-SNAPSHOT/free
 - `ServerHarness` 不再按引擎拆：场景已单点化、装配已走 builder、WS 桥已提顶层，剩余的是"文件长"。
   若将来加第五个引擎，再按"工厂 + 每引擎一个 `BenchServer` 实现类"重构更划算。
 
-### 9.3 剩余（不影响发布行为）
+### 9.3 已修复（2026-09-13 追加：Kafka 跨 JVM 链路）
+
+- **桥接 topic 与订阅 topic 曾不一致**（`b49fa9e`）：sink 写本地分发 topic（字符串 topic 或事件简单
+  类名），subscriber 只 poll `freeway.kafka.topics` → 跨 JVM 事件不可能送达。现在 sink 写配置的桥接
+  topic 并以 `X-Event-Topic` 头携带本地 topic，subscriber 用该头恢复；两 JVM 实测送达 class 与字符串
+  topic 事件。
+- **真实 broker 契约测试曾是假阳性**（`79b6104`）：改为发布/订阅分处两个容器（origin 不同），
+  逆向校验（订阅 topic 不匹配）可让四例转红。
+- **空 `freeway.kafka.allowed-event-types` 曾静默丢弃一切**（`79b6104`）：现在启动告警，且
+  `KafkaConfig` javadoc 写明"三个必须跨节点一致的键"（topics / allowed-event-types / client-id）。
+
+### 9.4 剩余（不影响发布行为）
 
 - 六个 per-adapter 测试类中约 15 处仍直接 `new WebServer(engine, config, event -> {}, pipeline)`
   （`UndertowHttpContractTest` 6、`JettyWebEngineContractTest` 5、`JettyTlsHttp2Test` 2、

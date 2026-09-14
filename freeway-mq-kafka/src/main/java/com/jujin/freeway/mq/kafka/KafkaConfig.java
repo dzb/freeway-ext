@@ -30,6 +30,22 @@ import java.util.stream.Collectors;
  * Configuration for the Kafka adapter. Every key's name, type and default is declared exactly once
  * here ({@link #from}), and {@link #of} is the single validation path — the module binds this
  * record without restating a key, so a default cannot drift between two files.
+ *
+ * <p><b>The three keys that must agree across nodes:</b>
+ *
+ * <ul>
+ *   <li>{@code freeway.kafka.topics} is the bridge topic list: the sink produces to it and the
+ *       subscriber polls it. Both sides must configure the same list, or records are written to a
+ *       topic nobody consumes (the local dispatch topic travels in the {@code X-Event-Topic} header
+ *       instead, so one bridge topic serves every local topic).
+ *   <li>{@code freeway.kafka.allowed-event-types} is the subscriber's accept list and must name
+ *       every bridged event class: a record whose type header is not listed is rejected as poison,
+ *       and string-topic events carry {@code java.lang.String} as their type, so bridging those
+ *       needs that entry too. An empty list accepts nothing.
+ *   <li>{@code freeway.kafka.client-id} is the node identity behind {@code suppress-own}: each node
+ *       needs its own value (unset falls back to a per-JVM UUID). Two nodes sharing one id treat
+ *       each other's events as their own and drop them.
+ * </ul>
  */
 public record KafkaConfig(
     String bootstrapServers,

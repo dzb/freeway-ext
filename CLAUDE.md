@@ -56,6 +56,11 @@ Ordinary applications depend on exactly one adapter and never hit this.
   (compiler 25, surefire, source, javadoc, GPG signing, Central publishing).
 - Core dependency versions are pinned via `<freeway.version>` in the parent's
   `dependencyManagement`, preventing accidental version drift from the core.
+- Adapters move with the core: the core deletes a superseded API shape instead of
+  keeping a compatibility overload next to it, so a compile error after a core upgrade
+  is the intended migration path — adapt the call site here and rebuild. Only a clean
+  build proves the adaptation: incremental compilation keeps the previous class and
+  turns the break green (`Wiring` losing its previous arity was exactly this).
 - `freeway-benchmark` is not an adapter — it is a JMH-based performance test suite
   that compares the Undertow adapter against other engines. It is the only module
   with cross-extension dependencies and is excluded from deployment.

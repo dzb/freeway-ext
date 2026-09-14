@@ -4,6 +4,15 @@
 
 ### Changed
 
+- **docs: `CLAUDE.md` renamed to `AGENTS.md` and reorganized on the core file's sections** — the
+  repository's conventions file now has the same shape as core's: intro (what this repository is,
+  where the framework-wide rules live), Build, Module Map, Naming, Design Rules, Testing,
+  Regressions to Watch, Commit Rules, Further Reading. The module dependency graph became the
+  Module Map table, the kafka/websocket operational notes became the regressions they are, and the
+  build section now states the two traps this repository actually has: `spotless:check` is bound to
+  `verify` (so `mvn test` skips the format gate, and CI's `verify -Dgpg.skip=true` is not the
+  offline loop), and a stale core snapshot or an incremental `target/` hides an ABI break. The
+  audit docs' references were updated to the new name.
 - **core: the retained `Wiring` constructor is gone, and this repository moved with it** — freeway-cloud
   deleted the 9-argument `CloudHttpClientDefault.Wiring` constructor that existed only to keep
   already-compiled callers working, so `RemoteRpcContract` (the only call site here) now passes the

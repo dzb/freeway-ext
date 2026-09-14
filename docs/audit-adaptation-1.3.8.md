@@ -89,7 +89,7 @@ freeway-ext 在本次审计前已随 core 重构做过多轮对齐（git 历史�
 - `KafkaEventBridge`：与重构后 `EventBridge`（`send(String topic, Object event)`）一致；
   序列化带 `X-Event-Type` 头、异步发送仅告警不抛出、`close()` 限时 10s —— 均保留。
 - `KafkaSubscriber`：`bus.publish(topic, event)` 走字符串 topic 通道；`Defer.within` 包裹；
-  allowlist 默认拒绝 typed 消息（CLAUDE.md 运营说明一致）；tombstone、DLQ、poison-policy、
+  allowlist 默认拒绝 typed 消息（AGENTS.md 运营说明一致）；tombstone、DLQ、poison-policy、
   按 key 分桶并发等行为复核无漂移。
 - `KafkaModule`：`RuntimeHook.start` 中 `EventBus.setEventBridge(...)` + `KafkaSubscriber.start()`
   与重构后 `EventBus` 生命周期一致（EventBus 在全部 lifecycle 回调之后才 close）。

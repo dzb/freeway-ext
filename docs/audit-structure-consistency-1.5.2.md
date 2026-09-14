@@ -5,7 +5,7 @@
   `freeway-mq-kafka` / `freeway-db-hikari` / `freeway-benchmark`），主源码 42 文件 ≈7 533 行
 - 审计维度：**结构**（职责划分、分层、命名、包组织）、**一致性**（模块内自洽、模块间对齐、
   与 core 约定对齐）、**简洁性**（重复实现、样板、死代码、不必要的间接层）
-- 判据来源：`freeway-ext/CLAUDE.md`、core `AGENTS.md`（`XDefault`/`XImpl` 规则、"协作者包私有"、
+- 判据来源：`freeway-ext/AGENTS.md`、core `AGENTS.md`（`XDefault`/`XImpl` 规则、"协作者包私有"、
   配置归属分层、"prefer small explicit APIs"）、core 现有 SPI 实现与已发布 jar 的真实字节码
 - 审计基线：`main`@`375248e`
 
@@ -203,7 +203,7 @@ core 提供的一个工厂（`SymbolSource.systemProperties()`）。
 
 **3.3.3 重复块可以下沉 core，且不违反叶子节点约束**
 
-`CLAUDE.md` 规定"四个适配器是叶子节点、互不依赖"，README 强调两个引擎模块互相独立。这与
+`AGENTS.md` 规定"四个适配器是叶子节点、互不依赖"，README 强调两个引擎模块互相独立。这与
 "源码重复"是两件事：上述重复块全是**纯函数**（gzip、`Accept-Encoding` 解析、关联 ID 消毒、
 快照、属性解析），不含引擎耦合；而两个适配器**本来就都依赖 core 的 `freeway-http`**。把它们
 下沉 core：
@@ -688,7 +688,7 @@ JVM**（发布/订阅各一），除 broker 外无任何共享，每次运行自
 - WS 帧超限的拒绝时机与 `onError`/`onClose` 差异（README:163-169 已文档化）。
 - 适配器专属配置键：`freeway.http.http2`、`freeway.http.undertow.dispatch-io`、
   `freeway.http.ssl.key-password`/`key-alias`、`freeway.db.pool.leak-detection`。
-- 两个引擎模块在**运行期**独立（一个应用只依赖其一）——这是 README 与 CLAUDE.md 的既定架构，
+- 两个引擎模块在**运行期**独立（一个应用只依赖其一）——这是 README 与 AGENTS.md 的既定架构，
   与"源码重复"是两回事：共享工具下沉 core 不破坏它。
 
 ## 7. 核验状态说明

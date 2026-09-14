@@ -47,17 +47,6 @@ public final class Http11Client implements AutoCloseable {
       }
       return new RequestPattern(spec.method(), spec.path(), spec.responseBody());
     }
-
-    /** Kept for callers that drive {@code GET /ping} without a scenario. */
-    public static final RequestPattern PING =
-        of(
-            com.jujin.freeway.bench.harness.ScenarioSpec.of(
-                com.jujin.freeway.bench.harness.ServerHarness.Scenario.PING));
-
-    public static final RequestPattern JSON =
-        of(
-            com.jujin.freeway.bench.harness.ScenarioSpec.of(
-                com.jujin.freeway.bench.harness.ServerHarness.Scenario.JSON));
   }
 
   private final Socket socket;

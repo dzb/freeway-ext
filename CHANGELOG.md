@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **core: the retained `Wiring` constructor is gone, and this repository moved with it** — freeway-cloud
+  deleted the 9-argument `CloudHttpClientDefault.Wiring` constructor that existed only to keep
+  already-compiled callers working, so `RemoteRpcContract` (the only call site here) now passes the
+  tenth argument (`null`, the built-in shutdown grace) with its behavior unchanged. The compile error
+  is the migration path; a stale `target/` hides it, so the check that proves the adaptation is a
+  `clean` build against the reinstalled core.
+- **benchmark: the client's request-pattern constants are deleted** — `RequestPattern.PING` and
+  `RequestPattern.JSON` restated request paths and expected bytes that `RequestPattern.of(spec)`
+  already derives from the single scenario table, and nothing referenced them: the comment saying they
+  existed "for callers that drive GET /ping without a scenario" described a call path the scenario
+  table had already replaced.
 - **kafka: a two-process bridge test that can only pass through the broker** — `CrossJvmEventTest`
   spawns the publisher and the subscriber as **separate JVMs** (`CrossJvmRole`), connects them with
   nothing but the broker, creates its own bridge topic per run (so parallel runs and stale offsets

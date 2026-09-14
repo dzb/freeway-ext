@@ -146,7 +146,8 @@ public abstract class RemoteRpcContract extends EngineFixture {
                 null, // no tracer
                 new NoopMetrics(),
                 Duration.ofSeconds(5),
-                Duration.ofSeconds(2)));
+                Duration.ofSeconds(2),
+                null)); // shutdown grace -> built-in default
     caller = new RemoteCaller(cloudClient, jsonCodec());
   }
 }

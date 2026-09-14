@@ -79,7 +79,7 @@ public class FilterChainBenchmark {
 
     // Real filter chain: cors -> health -> noop handler
     var cors = CorsFilter.DEFAULT;
-    var health = new HealthFilter(true, "/healthz", new HealthCheck.Default());
+    var health = new HealthFilter(true, "/healthz", HealthCheck.ALWAYS_OK);
     RouteHandler noop = ctx -> {};
     RouteHandler h = ctx -> health.doFilter(ctx, noop);
     chain = ctx -> cors.doFilter(ctx, h);

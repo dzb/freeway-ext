@@ -207,7 +207,11 @@ public final class ServerHarness implements AutoCloseable {
     var builder =
         WebServerBuilder.builder()
             .engine(engine)
-            .config(new HttpServerConfig("127.0.0.1", 0, 128, Duration.ofSeconds(5)))
+            .config(
+                HttpServerConfig.defaults()
+                    .withPort(0)
+                    .withBacklog(128)
+                    .withShutdownGrace(Duration.ofSeconds(5)))
             .cors(disabledCors())
             .health(disabledHealth());
     for (var route : freewayRoutes(scenario)) {

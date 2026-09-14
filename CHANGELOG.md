@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **core deleted the convenience constructors of `HttpServerConfig` and `WebServer`; this repository moved
+  with them** — the config now has one canonical constructor plus `defaults()` and per-field withers (the
+  nested builder and the four-step delegating ladder are gone, and with them the defaults that had drifted
+  to port 0 / grace 0), and `WebServer`'s public four-argument constructor — the one that hard-coded
+  `secure = false`, so an ext TLS test's server answered "not TLS" — is gone too. The testkit carries the
+  shared shapes (`EngineFixture.defaultConfig()`, plus a new `TestServers.start(...)` for the tests that
+  assemble their own engine), and the six adapter test files that hand-built a `RequestComponents` now go
+  through `Pipelines` and the builder — the same assembly path an application takes. `Pipelines` gained an
+  error-handler compartment so the 413 mapping and the exception-capture assertions survived the move, and
+  the benchmark's `ServerHarness` uses the same shape. A stale `target/` hid the benchmark's call site from
+  the compiler once, which is why the verification below is a `clean` build.
 - **docs: `CLAUDE.md` renamed to `AGENTS.md` and reorganized on the core file's sections** — the
   repository's conventions file now has the same shape as core's: intro (what this repository is,
   where the framework-wide rules live), Build, Module Map, Naming, Design Rules, Testing,

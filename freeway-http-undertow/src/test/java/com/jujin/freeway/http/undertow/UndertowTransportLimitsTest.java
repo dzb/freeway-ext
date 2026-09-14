@@ -21,13 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
 import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
+import com.jujin.freeway.http.testkit.Pipelines;
+import com.jujin.freeway.http.testkit.TestServers;
 import java.io.InputStream;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -50,11 +47,10 @@ class UndertowTransportLimitsTest {
     // dropped mid-request.
     try (var server =
         start(
-            HttpServerConfig.builder()
-                .host("127.0.0.1")
-                .port(0)
-                .readTimeout(Duration.ZERO)
-                .build())) {
+            HttpServerConfig.defaults()
+                .withHost("127.0.0.1")
+                .withPort(0)
+                .withReadTimeout(Duration.ZERO))) {
       try (var socket = new Socket("127.0.0.1", server.port())) {
         var out = socket.getOutputStream();
         // Headers split across two writes with a pause in between.
@@ -74,7 +70,7 @@ class UndertowTransportLimitsTest {
 
   @Test
   void headerBudgetMatchesTheBuiltInEngine() throws Exception {
-    try (var server = start(HttpServerConfig.builder().host("127.0.0.1").port(0).build())) {
+    try (var server = start(HttpServerConfig.defaults().withHost("127.0.0.1").withPort(0))) {
       // 12 KiB of headers: past the built-in engine's 8 KiB parser budget.
       String oversized = "X-Big: " + "a".repeat(12 * 1024) + "\r\n";
       String response = request(server.port(), oversized);
@@ -92,7 +88,7 @@ class UndertowTransportLimitsTest {
 
   private static WebServer start(HttpServerConfig config) {
     var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var server = new WebServer(engine, config, event -> {}, pipeline());
+    var server = TestServers.start(engine, config, pipeline());
     server.start();
     return server;
   }
@@ -118,16 +114,8 @@ class UndertowTransportLimitsTest {
     return end < 0 ? response : response.substring(0, end).trim();
   }
 
-  private static RequestComponents pipeline() {
-    var routes =
-        new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
-    return new RequestComponents(
-        routes,
-        new WebSocketIndex(List.of(), List.of()),
-        new CorsFilter(false, null, null, null, null, null, false),
-        new HealthFilter(false, "/no-health", null),
-        List.of(),
-        List.of(),
-        List.of());
+  private static Pipelines pipeline() {
+    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    return Pipelines.of(routes);
   }
 }

@@ -23,14 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
-import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.body.BodyTooLargeException;
-import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
+import com.jujin.freeway.http.testkit.Pipelines;
+import com.jujin.freeway.http.testkit.TestServers;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -50,21 +46,16 @@ class JettyWebEngineContractTest {
   @Test
   void servesGetWithContentLength() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
-    var routes =
-        new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
-    var pipeline =
-        new RequestComponents(
-            routes,
-            new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
+    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    var pipeline = Pipelines.of(routes);
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       var get =
           client.send(
@@ -82,21 +73,16 @@ class JettyWebEngineContractTest {
   @Test
   void headReportsSameContentLengthWithoutBody() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
-    var routes =
-        new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
-    var pipeline =
-        new RequestComponents(
-            routes,
-            new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
+    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    var pipeline = Pipelines.of(routes);
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       var head =
           client.send(
@@ -123,36 +109,30 @@ class JettyWebEngineContractTest {
   @Test
   void streamsMultipleSseEventsOnOneConnection() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
     // The handler blocks after the first event until the client has actually
     // received it, proving events are streamed on the open connection rather
     // than buffered until the emitter closes.
     var firstEventSeen = new CompletableFuture<Void>();
     var routes =
-        new RouteIndex(
-            List.of(
-                Route.get(
-                    "/sse",
-                    ctx -> {
-                      try (var emitter = ctx.sse()) {
-                        emitter.send("one");
-                        firstEventSeen.get(5, TimeUnit.SECONDS);
-                        emitter.send("two");
-                      }
-                    })),
-            List.of());
-    var pipeline =
-        new RequestComponents(
-            routes,
-            new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
+        List.of(
+            Route.get(
+                "/sse",
+                ctx -> {
+                  try (var emitter = ctx.sse()) {
+                    emitter.send("one");
+                    firstEventSeen.get(5, TimeUnit.SECONDS);
+                    emitter.send("two");
+                  }
+                }));
+    var pipeline = Pipelines.of(routes);
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       var resp =
           client.send(
@@ -182,20 +162,17 @@ class JettyWebEngineContractTest {
   @Test
   void rejectsCrlfInResponseHeaderName() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
     var captured = new AtomicReference<Throwable>();
-    var routes =
-        new RouteIndex(
-            List.of(Route.get("/bad", ctx -> ctx.setHeader("X-Bad\r\nX-Injected: 1", "v"))),
-            List.of());
+    var routes = List.of(Route.get("/bad", ctx -> ctx.setHeader("X-Bad\r\nX-Injected: 1", "v")));
     var pipeline =
-        new RequestComponents(
+        Pipelines.of(
             routes,
-            new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
             List.of(),
             List.of(
                 (ctx, ex) -> {
@@ -203,7 +180,7 @@ class JettyWebEngineContractTest {
                   return false;
                 }));
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       client.send(
           HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/bad"))
@@ -220,20 +197,18 @@ class JettyWebEngineContractTest {
   @Test
   void mapsOversizedBodyToPayloadTooLarge() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5), 1024);
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5))
+            .withMaxBodySize(1024);
     var client = httpClient();
-    var routes =
-        new RouteIndex(List.of(Route.post("/echo", ctx -> ctx.output(ctx.body()))), List.of());
+    var routes = List.of(Route.post("/echo", ctx -> ctx.output(ctx.body())));
     var pipeline =
-        new RequestComponents(
+        Pipelines.of(
             routes,
-            new WebSocketIndex(List.of(), List.of()),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
             List.of(),
-            List.of(),
-            // HttpModule's standard BodyTooLargeException mapping, applied so
-            // the adapter+handler pipeline is covered end to end.
             List.of(
                 (ctx, ex) -> {
                   if (ex instanceof BodyTooLargeException) {
@@ -243,7 +218,7 @@ class JettyWebEngineContractTest {
                   return false;
                 }));
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       var resp =
           client.send(

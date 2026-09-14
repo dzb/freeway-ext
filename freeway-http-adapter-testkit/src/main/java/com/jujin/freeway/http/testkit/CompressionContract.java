@@ -109,10 +109,11 @@ public abstract class CompressionContract extends EngineFixture {
   void compressionDisabledByConfig() throws Exception {
     var client = HttpClient.newHttpClient();
     var config =
-        HttpServerConfig.builder()
-            .port(0)
-            .compression(new HttpServerConfig.CompressionConfig(false, 0))
-            .build();
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5))
+            .withCompression(new HttpServerConfig.CompressionConfig(false, 0));
 
     try (var server = start(Pipelines.of(routes()), config)) {
       var resp =

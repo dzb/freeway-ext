@@ -53,7 +53,11 @@ class UndertowEngineConfigTest {
             new JsonCodecDefault(),
             new CoercerDefault(),
             symbols(Map.of("freeway.http.websocket.max-frame-size", "banana")));
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     IllegalArgumentException e =
         assertThrows(IllegalArgumentException.class, () -> engine.start(config, ctx -> {}));
     assertTrue(
@@ -68,7 +72,11 @@ class UndertowEngineConfigTest {
             new JsonCodecDefault(),
             new CoercerDefault(),
             symbols(Map.of("freeway.http.websocket.max-frame-size", "12345")));
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     try (var handle = engine.start(config, ctx -> {})) {
       Field field = UndertowWebEngine.class.getDeclaredField("wsMaxMessageSize");
       field.setAccessible(true);

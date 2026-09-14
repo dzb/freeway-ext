@@ -65,6 +65,9 @@ public abstract class EngineFixture {
     for (var group : pipeline.webSocketGroups()) {
       builder.webSocketGroup(group);
     }
+    for (var handler : pipeline.errorHandlers()) {
+      builder.errorHandler(handler);
+    }
     var server = builder.build();
     server.start();
     return server;
@@ -72,7 +75,10 @@ public abstract class EngineFixture {
 
   /** The shared test configuration: loopback, ephemeral port, short timeouts. */
   protected final HttpServerConfig defaultConfig() {
-    return new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    return HttpServerConfig.defaults()
+        .withPort(0)
+        .withBacklog(64)
+        .withShutdownGrace(Duration.ofSeconds(5));
   }
 
   /** A route handler that echoes the request body, for engine-agnostic pipelines. */

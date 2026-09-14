@@ -21,13 +21,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
-import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.route.RouteIndex;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
+import com.jujin.freeway.http.testkit.Pipelines;
+import com.jujin.freeway.http.testkit.TestServers;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -63,14 +59,18 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
     var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
             .sslContext(trustingSslContext())
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+    try (var server = TestServers.start(engine, config, pipeline())) {
       server.start();
       var resp =
           client.send(
@@ -92,7 +92,11 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
     var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var client =
         HttpClient.newBuilder()
             .sslContext(trustingSslContext())
@@ -100,7 +104,7 @@ class UndertowTlsTest {
             .connectTimeout(Duration.ofSeconds(5))
             .build();
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline())) {
+    try (var server = TestServers.start(engine, config, pipeline())) {
       server.start();
       var resp =
           client.send(
@@ -115,17 +119,9 @@ class UndertowTlsTest {
     }
   }
 
-  private static RequestComponents pipeline() {
-    var routes =
-        new RouteIndex(List.of(Route.get("/ping", ctx -> ctx.send(200, "pong"))), List.of());
-    return new RequestComponents(
-        routes,
-        new WebSocketIndex(List.of(), List.of()),
-        new CorsFilter(false, null, null, null, null, null, false),
-        new HealthFilter(false, "/no-health", null),
-        List.of(),
-        List.of(),
-        List.of());
+  private static Pipelines pipeline() {
+    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    return Pipelines.of(routes);
   }
 
   /** Trusts the test certificate (self-signed) for the HTTPS client. */

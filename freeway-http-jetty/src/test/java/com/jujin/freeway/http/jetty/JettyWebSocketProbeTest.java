@@ -22,13 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.RequestComponents;
-import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthFilter;
-import com.jujin.freeway.http.route.RouteIndex;
+import com.jujin.freeway.http.testkit.Pipelines;
+import com.jujin.freeway.http.testkit.TestServers;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
-import com.jujin.freeway.http.websocket.WebSocketIndex;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
 import java.io.IOException;
@@ -50,7 +46,11 @@ class JettyWebSocketProbeTest {
   @Test
   void probeJettyTextFrameEcho() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var wsGroup =
         WebSocketGroup.of(
             "/api",
@@ -63,17 +63,9 @@ class JettyWebSocketProbeTest {
                         session.sendText("echo:" + text + ":" + session.pathVar("room").orElse(""));
                       }
                     }));
-    var pipeline =
-        new RequestComponents(
-            new RouteIndex(List.of(), List.of()),
-            new WebSocketIndex(List.of(), List.of(wsGroup)),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
+    var pipeline = Pipelines.of(List.of(), List.of(wsGroup));
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       try (Socket socket = new Socket("127.0.0.1", server.port())) {
         socket.setSoTimeout(5000);
@@ -106,7 +98,11 @@ class JettyWebSocketProbeTest {
   @Test
   void rejectsOversizedMessageWithClose() throws Exception {
     var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var config = new HttpServerConfig("127.0.0.1", 0, 64, Duration.ofSeconds(5));
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
     var wsGroup =
         WebSocketGroup.of(
             "/api",
@@ -119,17 +115,9 @@ class JettyWebSocketProbeTest {
                         session.sendText("echo:" + text + ":" + session.pathVar("room").orElse(""));
                       }
                     }));
-    var pipeline =
-        new RequestComponents(
-            new RouteIndex(List.of(), List.of()),
-            new WebSocketIndex(List.of(), List.of(wsGroup)),
-            new CorsFilter(false, null, null, null, null, null, false),
-            new HealthFilter(false, "/no-health", null),
-            List.of(),
-            List.of(),
-            List.of());
+    var pipeline = Pipelines.of(List.of(), List.of(wsGroup));
 
-    try (var server = new WebServer(engine, config, event -> {}, pipeline)) {
+    try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();
       try (Socket socket = new Socket("127.0.0.1", server.port())) {
         socket.setSoTimeout(5000);

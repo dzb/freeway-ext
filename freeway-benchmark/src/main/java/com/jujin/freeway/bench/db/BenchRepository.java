@@ -65,7 +65,7 @@ public final class BenchRepository {
 
   /** All runs, oldest first. */
   public List<BenchmarkRun> allRuns() {
-    return orm.findAll(BenchmarkRun.class, "id ASC", 0, 0);
+    return orm.findAll(BenchmarkRun.class, Orm.FindOptions.defaults().withOrderBy("id ASC"));
   }
 
   public Optional<BenchmarkRun> findRun(long id) {

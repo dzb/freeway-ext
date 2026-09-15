@@ -52,7 +52,7 @@ class BenchRepositoryTest {
     // The schema is created by the migration runtime hook, so the app has to start
     // (Freeway.create alone never runs hooks).
     app =
-        FreewayApp.of(
+        FreewayApp.create(
                 ModuleNode.app(
                     "bench-repo-test", BenchDbModule.class, DbModule.class, CliModule.class))
             .autoDiscovery(false)

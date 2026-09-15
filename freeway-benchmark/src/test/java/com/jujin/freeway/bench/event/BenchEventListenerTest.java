@@ -76,7 +76,7 @@ class BenchEventListenerTest {
 
     RECEIVED.clear();
     try (AppRuntime app =
-        FreewayApp.of(
+        FreewayApp.create(
                 ModuleNode.app(
                     "bench-events",
                     BenchEventsModule.class,

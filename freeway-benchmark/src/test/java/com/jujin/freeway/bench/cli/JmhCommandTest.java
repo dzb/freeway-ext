@@ -116,7 +116,7 @@ class JmhCommandTest {
     System.setProperty("freeway.db.password", "");
     System.setProperty("freeway.db.pool.max-size", "1");
     System.setProperty("freeway.db.pool.min-idle", "0");
-    return FreewayApp.of(
+    return FreewayApp.create(
             ModuleNode.app(
                 "freeway-benchmark", BenchDbModule.class, DbModule.class, CliModule.class))
         .autoDiscovery(false)

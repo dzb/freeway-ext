@@ -25,6 +25,7 @@ import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
 import com.jujin.freeway.http.SslSettings;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.ioc.symbol.SymbolProvider;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -69,7 +70,7 @@ public final class JettyWebEngine implements HttpEngine {
   private final ThreadLocal<JettyHttpContext> contextPool;
 
   public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer) {
-    this(jsonCodec, coercer, SymbolSource.systemProperties());
+    this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
   }
 
   /**

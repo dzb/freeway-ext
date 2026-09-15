@@ -4,6 +4,17 @@
 
 ### Changed
 
+- **core deleted the container-less `SymbolSource.systemProperties()`; the adapters now build the shared chain
+  explicitly** — core collapsed the symbol chain to one implementation: JVM system properties became a
+  `SymbolProvider` tier (`SymbolProvider.systemProperties()`) and the chain itself a factory
+  (`SymbolSource.of(Coercer, SymbolProvider...)`), so the standalone source that used to switch `${...}` expansion
+  off and wire its own private `Coercer` is gone. The three adapters that construct themselves without a container
+  now say what they are: `JettyWebEngine` and `UndertowWebEngine` pass the `Coercer` they already receive,
+  `HikariPool` passes a plain `CoercerDefault` (it reads one string key and parses no spec). Standalone use is
+  therefore the same chain a composed application gets, and a `-D` value containing an unknown `${...}` reference
+  fails here exactly as it does under a container instead of being returned verbatim. `freeway-db-hikari` declares
+  `freeway-commons` directly for `CoercerDefault`.
+
 - **core deleted the convenience constructors of `HttpServerConfig` and `WebServer`; this repository moved
   with them** — the config now has one canonical constructor plus `defaults()` and per-field withers (the
   nested builder and the four-step delegating ladder are gone, and with them the defaults that had drifted

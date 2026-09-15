@@ -765,3 +765,12 @@ javap -p -cp ~/.m2/repository/com/jujin8/freeway/freeway-ioc/1.5.2-SNAPSHOT/free
   `UndertowTlsTest` 2、`JettyWebSocketProbeTest` 2、`UndertowTransportLimitsTest` 1）：它们各自带
   引擎特化 fixture，迁移到 `Pipelines` + builder 需要逐文件做并逐个跑模块回归。属于测试侧一致性问题
   （这些测试的服务器会多构造每请求事件对象、少默认错误处理器），不改变任何发布产物。
+
+### 9.5 追加（2026-09-15）：core 收敛符号链，§9.1 的接缝换了名字
+
+本文 §9.1 记录的 core 复用缝隙 `SymbolSource.systemProperties()` 已由 core 删除：系统属性改为
+`SymbolProvider` 的一个 tier（`SymbolProvider.systemProperties()`，`order()=TIER_SYS_PROPS`），符号链
+收成一个实现 `SymbolSource.of(Coercer, SymbolProvider...)`。三个无容器构造器随之各改一行（Jetty /
+Undertow 传自己已有的 `Coercer`，Hikari 传 `new CoercerDefault()`，为此 hikari 模块直接声明
+`freeway-commons`）。语义变化只有一处，且是向容器路径对齐：独立装配现在也展开 `${...}`、也用传入的
+`Coercer` 解析 `SymbolSpec`、也接受 `register(SymbolProvider)`。

@@ -28,6 +28,7 @@ import com.jujin.freeway.http.SslContexts;
 import com.jujin.freeway.http.SslSettings;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.ioc.symbol.SymbolProvider;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import io.undertow.Handlers;
 import io.undertow.Undertow;
@@ -72,7 +73,7 @@ public final class UndertowWebEngine implements HttpEngine {
   private volatile long wsMaxMessageSize = -1;
 
   public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer) {
-    this(jsonCodec, coercer, SymbolSource.systemProperties());
+    this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
   }
 
   /**

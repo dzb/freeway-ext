@@ -16,11 +16,13 @@
 
 package com.jujin.freeway.db.hikari;
 
+import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.db.DatabaseStats;
 import com.jujin.freeway.db.Pool;
 import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.db.PooledConnection;
 import com.jujin.freeway.db.SqlException;
+import com.jujin.freeway.ioc.symbol.SymbolProvider;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -81,7 +83,9 @@ public final class HikariPool implements Pool {
   private final AtomicLong borrowWaitNanos = new AtomicLong();
 
   public HikariPool(PoolConfig config) {
-    this(config, SymbolSource.systemProperties());
+    // No container and no contributed CoerceRule: the standalone chain parses
+    // with a plain coercer, and a plain -D lookup needs none at all.
+    this(config, SymbolSource.of(new CoercerDefault(), SymbolProvider.systemProperties()));
   }
 
   /**

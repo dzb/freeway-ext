@@ -177,9 +177,8 @@ public final class ServerHarness implements AutoCloseable {
   private static ServerHarness freeway(Scenario scenario) throws Exception {
     return freewayWith(
         new FreewayHttpEngine(
-                FreewayHttpEngine.Wiring.defaults(
-                    new JsonCodecDefault(), new CoercerDefault())),
-            scenario);
+            FreewayHttpEngine.Wiring.defaults(new JsonCodecDefault(), new CoercerDefault())),
+        scenario);
   }
 
   /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */

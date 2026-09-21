@@ -1,6 +1,13 @@
 # Changelog
 
-## 1.5.2-SNAPSHOT
+## 1.5.3
+
+### Changed
+
+- **ext adapted to core 1.5.3** — version bump across all POMs (`freeway.version` → `1.5.3`, parent
+  `1.5.3`). No source changes required: the adapter modules already carry the API adaptations from the
+  previous iteration (`Wiring` records, `FindOptions`, `FreewayApp.create`, `SymbolSource` chain,
+  `SslContexts` rename, `ErrorHandler` interface). All 24 tests pass, `spotless:check` clean.
 
 ### Changed
 

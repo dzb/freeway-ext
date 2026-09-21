@@ -76,14 +76,15 @@ Rules:
 
 The benchmark used for design decisions should be run with:
 
-- one server JVM per run
-- one client JVM per run
+- one resident server JVM per engine/mode
+- one client JVM per engine/mode
 - one fixed endpoint set
 - one fixed request shape
 - one fixed concurrency level
-- one fixed warmup count
-- at least 3 independent runs
-- median summary across runs
+- a fixed count of warmup requests, discarded before measurement
+- at least 3 measured rounds against that same server
+- a pause between the warmup and each measured round (`bench.pauseMillis`)
+- median summary across the measured rounds
 
 For final comparisons, external tools such as `wrk2` for HTTP/1.1 and `h2load`
 for HTTP/2/TLS are still preferred when available.
@@ -101,8 +102,8 @@ Capture:
 
 ## 5. Comparison Rules
 
-- Use at least 3 independent runs for a black-box comparison.
-- Prefer the median run when summarizing.
+- Use at least 3 measured rounds for a black-box comparison.
+- Prefer the median round when summarizing.
 - Report both absolute values and relative delta.
 - If the change is below 3 percent, treat it as noise until it is reproduced.
 - If p95 or p99 regresses by more than 5 percent, investigate before merging.

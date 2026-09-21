@@ -20,11 +20,12 @@ import com.jujin.freeway.bench.harness.ServerHarness;
 
 /**
  * Isolated benchmark entry point: one JVM per role. {@code bench.role=server} starts the engine and
- * waits, {@code bench.role=client} measures against it and prints a {@code RESULT} line, and the
- * default role orchestrates {@code bench.runs} fresh server+client pairs — zero cross-contamination
- * between the measured target and the measurement harness.
+ * waits, {@code bench.role=client} warms up and measures and prints one {@code RESULT} line per
+ * measured round, and the default role orchestrates one resident server plus one client that sends
+ * {@code bench.warmup} warmup requests and then measures {@code bench.runs} rounds. Nothing is
+ * restarted between rounds, so the server JIT stays warm.
  *
- * <p>The class only owns role dispatch and the two subprocess entry points; the fork loop lives in
+ * <p>The class only owns role dispatch and the two subprocess entry points; the run loop lives in
  * {@link ForkedRunner} and every process/classpath detail in {@link BenchProcesses}.
  *
  * <pre>
@@ -54,7 +55,9 @@ public final class BenchFork {
           BenchProcesses.intProp("bench.port", 0),
           BenchProcesses.intProp("bench.requests", 2000),
           BenchProcesses.intProp("bench.concurrency", 2),
-          BenchProcesses.intProp("bench.warmup", 200));
+          BenchProcesses.intProp("bench.warmup", 200),
+          BenchProcesses.intProp("bench.runs", 5),
+          BenchProcesses.intProp("bench.pauseMillis", 3000));
       return;
     }
 
@@ -82,12 +85,32 @@ public final class BenchFork {
   }
 
   private static void runClient(
-      String engine, String mode, int port, int requests, int concurrency, int warmup)
+      String engine,
+      String mode,
+      int port,
+      int requests,
+      int concurrency,
+      int warmup,
+      int runs,
+      int pauseMillis)
       throws Exception {
     var benchMode = BenchMode.of(mode);
-    var ir =
-        BenchRunner.run(
-            port, concurrency, requests, warmup, benchMode.scenario(), benchMode.clientMode());
-    System.out.println("RESULT " + ForkedRunner.toResult(engine, mode, requests, ir));
+    if (warmup > 0) {
+      // Warm up once (this round's result is discarded), then let the server settle.
+      BenchRunner.run(
+          port, concurrency, requests, warmup, benchMode.scenario(), benchMode.clientMode());
+      if (pauseMillis > 0) {
+        Thread.sleep(pauseMillis);
+      }
+    }
+    for (int i = 0; i < runs; i++) {
+      var ir =
+          BenchRunner.run(
+              port, concurrency, requests, 0, benchMode.scenario(), benchMode.clientMode());
+      System.out.println("RESULT " + ForkedRunner.toResult(engine, mode, requests, ir));
+      if (i + 1 < runs && pauseMillis > 0) {
+        Thread.sleep(pauseMillis);
+      }
+    }
   }
 }

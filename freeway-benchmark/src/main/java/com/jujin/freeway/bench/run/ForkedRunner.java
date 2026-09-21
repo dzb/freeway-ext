@@ -24,16 +24,19 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The suite half of the forked benchmark: it owns the run loop, the pause between runs and the
- * median summary, and delegates every child-process detail to {@link BenchProcesses}. Splitting it
- * out of {@link BenchFork} keeps the entry class to role dispatch while the orchestration stays
- * readable and independently reviewable.
+ * The forked run loop: one engine, one resident server, one client. The client sends {@code warmup}
+ * warmup requests (result discarded) and then measures {@code runs} rounds against the same server,
+ * so the server JIT is warm for every measured round. This class owns the child processes and the
+ * median summary; {@link BenchProcesses} owns every process/classpath detail.
  */
 final class ForkedRunner {
 
   private ForkedRunner() {}
 
-  /** Runs {@code runs} isolated fork cycles for one engine/mode and prints each result. */
+  /**
+   * Runs one engine in one resident server plus one client, and prints every measured round plus
+   * the median.
+   */
   static void run(
       String engine,
       String mode,
@@ -44,24 +47,9 @@ final class ForkedRunner {
       int pauseMillis)
       throws Exception {
     System.out.printf(
-        "=== %s mode=%s requests=%d concurrency=%d runs=%d ===%n",
-        engine, mode, requests, concurrency, runs);
+        "=== %s mode=%s requests=%d concurrency=%d warmup=%d runs=%d pause=%dms ===%n",
+        engine, mode, requests, concurrency, warmup, runs, pauseMillis);
 
-    List<Result> results = new ArrayList<>();
-    for (int i = 0; i < runs; i++) {
-      Result r = runFork(engine, mode, requests, concurrency, warmup, i);
-      results.add(r);
-      System.out.printf("[run %d/%d] %s%n", i + 1, runs, r);
-      if (i + 1 < runs && pauseMillis > 0) Thread.sleep(pauseMillis);
-    }
-    if (runs > 1) System.out.printf("[median] %s%n", Result.median(results));
-  }
-
-  // --- fork orchestration ---
-
-  private static Result runFork(
-      String engine, String mode, int requests, int concurrency, int warmup, int runIdx)
-      throws Exception {
     Path serverLog = Files.createTempFile("bench-server-", ".log");
     Process server =
         new ProcessBuilder(
@@ -90,16 +78,25 @@ final class ForkedRunner {
                   "-Dbench.requests=" + requests,
                   "-Dbench.concurrency=" + concurrency,
                   "-Dbench.warmup=" + warmup,
+                  "-Dbench.runs=" + runs,
+                  "-Dbench.pauseMillis=" + pauseMillis,
                   BenchFork.class.getName())
               .redirectErrorStream(true)
               .redirectOutput(clientLog.toFile())
               .start();
       try {
         int exit = client.waitFor();
-        if (exit != 0)
+        if (exit != 0) {
           throw new RuntimeException(
               "Client exit " + exit + "\n" + BenchProcesses.readAllSafe(clientLog));
-        return parseResult(BenchProcesses.readAllSafe(clientLog));
+        }
+        List<Result> results = parseResults(BenchProcesses.readAllSafe(clientLog));
+        for (int i = 0; i < results.size(); i++) {
+          System.out.printf("[run %d/%d] %s%n", i + 1, results.size(), results.get(i));
+        }
+        if (results.size() > 1) {
+          System.out.printf("[median] %s%n", Result.median(results));
+        }
       } finally {
         client.destroyForcibly();
         BenchProcesses.deleteSafe(clientLog);
@@ -110,11 +107,17 @@ final class ForkedRunner {
     }
   }
 
-  private static Result parseResult(String output) {
+  private static List<Result> parseResults(String output) {
+    List<Result> results = new ArrayList<>();
     for (String line : output.lines().toList()) {
-      if (line.startsWith("RESULT ")) return Result.fromLine(line);
+      if (line.startsWith("RESULT ")) {
+        results.add(Result.fromLine(line));
+      }
     }
-    throw new RuntimeException("No RESULT line in output:\n" + output);
+    if (results.isEmpty()) {
+      throw new RuntimeException("No RESULT line in output:\n" + output);
+    }
+    return results;
   }
 
   static Result toResult(String engine, String mode, int requests, BenchRunner.IterationResult ir) {

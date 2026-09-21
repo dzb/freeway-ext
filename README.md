@@ -19,20 +19,19 @@ dependencies.
 
 For the vast majority of applications, this is all you need.
 
-## When to use an extension module
+## Module map
 
 | Module | When to use | External Dependency |
 |--------|-------------|-------------------|
-| `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.3.Final |
 | `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.13 |
+| `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.3.Final |
 | `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
-| `freeway-benchmark` | JMH-based micro-benchmarks for HTTP, WebSocket, and DB adapters | [JMH](https://github.com/openjdk/jmh) 1.37 |
+| `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | [JMH](https://github.com/openjdk/jmh) 1.37, [robaho](https://github.com/robaho/httpserver) 1.0.29 |
+| `freeway-http-adapter-testkit` | Shared fixtures and contracts every engine must pass (test scope only) | JUnit 6.1.3 |
 
-`freeway-http-adapter-testkit` is not an application dependency: it holds the contract tests
-every HTTP engine adapter must satisfy (gzip, transport context, remote invocation). Each adapter
-depends on it at test scope and supplies only its engine, so a contract change lands in one place
-instead of one copy per adapter.
+Adapter modules are leaf nodes: no cross-dependencies between them. `freeway-benchmark` is the
+one exception — comparing engines requires both of them — and is excluded from deployment.
 
 ## Kafka security note
 
@@ -40,14 +39,19 @@ The Kafka subscriber only deserializes messages whose `X-Event-Type` header is o
 the `freeway.kafka.allowed-event-types` allowlist (comma-separated class names).
 Messages without the header are treated as plain JSON `Map`. If the allowlist is
 empty (the default), **typed messages are rejected** instead of being
-deserialized into arbitrary classes from the classpath.
+deserialized into arbitrary classes from the classpath. String-topic events
+(`java.lang.String` type header) also need `java.lang.String` in the list.
 
 > ⚠️ This is a breaking change from earlier versions. Existing consumers that
 > rely on typed events must configure the allowlist, for example:
 >
 > ```
-> -Dfreeway.kafka.allowed-event-types=com.acme.OrderCreated,com.acme.PaymentReceived
+> -Dfreeway.kafka.allowed-event-types=com.acme.OrderCreated,com.acme.PaymentReceived,java.lang.String
 > ```
+>
+> An empty allowlist is indistinguishable from "the broker is silent" — the
+> subscriber now warns at startup when `freeway.kafka.allowed-event-types` is
+> empty.
 >
 > Rejected messages follow the poison-message policy: they are retried once,
 > then either logged and skipped (default `freeway.kafka.poison-policy=skip`) or
@@ -56,6 +60,19 @@ deserialized into arbitrary classes from the classpath.
 > With `fail`, the failing offset is not committed, so already-published events
 > from the same batch may be redelivered after a restart (at-least-once
 > semantics).
+
+### Kafka bridge topology
+
+`KafkaEventSink` writes to the configured **bridge topic** (`freeway.kafka.topics`)
+and stamps the local dispatch topic in an `X-Event-Topic` header. The subscriber
+polls the same bridge topic and re-publishes inbound events under that header, so
+class dispatch uses the type header and string topics keep their name across the
+bridge. **The bridge topic must appear in `freeway.kafka.topics` on every node** —
+if the sink writes to a topic nobody polls, cross-JVM events are lost.
+
+`KafkaEventSink.send` swallows synchronous producer failures and skips null
+payloads, as the `EventSink` contract requires. The bridge is wired at startup
+via `freeway.kafka.lifecycle` (matching core's `freeway.<module>.<thing>` naming).
 
 Additional Kafka client options (TLS, SASL, etc.) can be passed through with
 `freeway.kafka.properties` as semicolon-separated `key=value` pairs, e.g.
@@ -71,9 +88,9 @@ These are applied last and override adapter defaults.
 | `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
 | `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
 
-Messages published by `KafkaEventSink` carry a null key, so keyed fan-out
-does not apply to them: self-produced events are always processed by the same
-worker (in order). Keys set by other producers are honored.
+Messages published by `KafkaEventSink` carry the event's class name as the Kafka
+record key (for class dispatch) or null (for string topics), so keyed fan-out
+applies only to class events. Keys set by other producers are honored.
 
 Without a DLQ topic, poison messages follow `freeway.kafka.poison-policy` as
 described above. With a DLQ topic, they are moved to the DLQ first and the
@@ -144,7 +161,7 @@ auto-discovery enabled.
 Both adapters register their engine as `HttpEngine.primary()`. This only
 matters when both artifacts end up on the same classpath (for example
 `freeway-benchmark`, which bundles them for comparative runs). In that case,
-either disable auto-discovery (`FreewayApp.of(...).autoDiscovery(false)`) and
+either disable auto-discovery (`FreewayApp.create(...).autoDiscovery(false)`) and
 install the desired module explicitly, or resolve the engine by id.
 
 ## WebSocket adapter note
@@ -182,17 +199,15 @@ closed.
 
 ## Install
 
-Add the Maven Central snapshot repository, then pick the modules you need:
+Pick the modules you need — versions track the Freeway core framework:
 
 ```xml
 <dependency>
     <groupId>com.jujin8.freeway</groupId>
     <artifactId>freeway-http-undertow</artifactId>
-    <version>${freeway.version}</version>
+    <version>1.5.3</version>
 </dependency>
 ```
-
-Versions track the Freeway core framework for guaranteed compatibility.
 
 ## Build
 
@@ -200,11 +215,16 @@ Requires JDK 25+. Build Freeway core first, then extensions:
 
 ```bash
 # 1. Install core modules into local Maven repository
-cd ../freeway && mvn install -DskipTests
+cd ../freeway-framework && mvn -DskipTests install
 
 # 2. Build all extensions
-cd - && mvn test
+cd ../freeway-ext && mvn test
 
 # 3. Single module
 mvn -pl freeway-http-undertow -am test
+
+# 4. Format check (bound to verify, not part of mvn test)
+mvn spotless:check
 ```
+
+CI runs `mvn -B -ntp verify -Dgpg.skip=true`.

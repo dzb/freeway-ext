@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Jetty adapter: `freeway.http.jetty.dispatch-io` knob** — mirrors the Undertow adapter's key. The
+  root handler used to be an undeclared-BLOCKING `Handler.Abstract`, so every request paid the
+  pool hand-off from the connection's producer thread. `false` declares the handler `NON_BLOCKING`
+  and runs it inline on the producer (the benchmark's raw-Jetty `keepalive` ping measured ~1.6x for
+  that shape); the default stays `true`, because a Freeway handler may legitimately block on body
+  reads or database calls, and blocking the shared producer/selector thread is a correctness
+  problem. Malformed values keep the safe default, matching the Undertow knob.
+
 ## 1.5.3
 
 ### Changed

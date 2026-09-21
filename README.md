@@ -126,6 +126,7 @@ naming the key instead of silently falling back.
 | `freeway.http.http2` | `false` | Jetty | Jetty-only: h2c (cleartext HTTP/2). Ignored when TLS is enabled — use `freeway.http.ssl.http2` there. |
 | `freeway.http.websocket.max-frame-size` | `65536` | Jetty, Undertow | Maximum WebSocket text/binary message size in bytes; `0` disables the limit. |
 | `freeway.http.undertow.dispatch-io` | `true` | Undertow | Dispatch handler execution from I/O threads to the worker pool. Keep enabled when handlers can block (body reads, DB calls); set `false` only for fully non-blocking handlers. |
+| `freeway.http.jetty.dispatch-io` | `true` | Jetty | Dispatch handler execution from the connection's producer thread to the Jetty thread pool. Keep enabled when handlers can block (body reads, DB calls); set `false` only for fully non-blocking handlers — the handler then runs inline on the producer, skipping the per-request hand-off (a `keepalive` ping measured ~1.6x on the raw Jetty shape). A blocking handler in this mode stalls the shared producer thread. |
 
 Example (Jetty, TLS + HTTP/2):
 

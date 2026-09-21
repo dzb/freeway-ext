@@ -48,6 +48,7 @@ import org.eclipse.jetty.server.handler.GracefulHandler;
 import org.eclipse.jetty.util.Callback;
 import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
+import org.eclipse.jetty.util.thread.Invocable;
 import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
 import org.eclipse.jetty.websocket.server.WebSocketCreator;
 import org.slf4j.Logger;
@@ -126,8 +127,17 @@ public final class JettyWebEngine implements HttpEngine {
       webSocketContainer.setMaxBinaryMessageSize(Long.MAX_VALUE);
     }
     GracefulHandler graceful = new GracefulHandler();
+    // A BLOCKING-declared handler is executed by the connection's producer thread through the
+    // pool's per-request hand-off; a NON_BLOCKING one runs inline on the producer instead.
+    // Freeway handlers are application code that may block (body reads, DB access, downstream
+    // calls), so pool dispatch stays the default; freeway.http.jetty.dispatch-io=false opts a
+    // fully non-blocking application out of the hand-off (the benchmark measured ~1.6x on
+    // keep-alive ping for the same shape). If such a handler blocks anyway it stalls the shared
+    // producer/selector thread — the same documented danger as the Undertow adapter's
+    // freeway.http.undertow.dispatch-io=false.
     graceful.setHandler(
-        new Handler.Abstract() {
+        new Handler.Abstract(
+            invocationType(symbols.resolve("freeway.http.jetty.dispatch-io", "true"))) {
           @Override
           public boolean handle(Request request, Response response, Callback callback)
               throws Exception {
@@ -172,6 +182,18 @@ public final class JettyWebEngine implements HttpEngine {
     int port = currentPort(server);
     LOG.info("Freeway jetty web engine started on {}:{}", config.host(), port);
     return new JettyHandle(server, graceful, config.shutdownGrace(), config.host(), port);
+  }
+
+  /**
+   * Maps the {@code freeway.http.jetty.dispatch-io} knob to the root handler's invocation type:
+   * only {@code false} opts out of pool dispatch (NON_BLOCKING); anything else, including a
+   * malformed value, keeps the safe BLOCKING default — mirroring how {@code
+   * freeway.http.undertow.dispatch-io} treats unknown values.
+   */
+  static Invocable.InvocationType invocationType(String dispatchIo) {
+    return "false".equalsIgnoreCase(dispatchIo)
+        ? Invocable.InvocationType.NON_BLOCKING
+        : Invocable.InvocationType.BLOCKING;
   }
 
   /**

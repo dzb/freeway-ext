@@ -73,8 +73,8 @@ public final class SuiteCommand implements Command {
     var scenarios = parseList(ctx.get("scenarios", "ping"));
     var concurrencies = parseIntList(ctx.get("concurrency", "16"));
     int requests = ctx.getInt("requests", 2000);
-    int warmup = ctx.getInt("warmup", 200);
-    int runs = ctx.getInt("runs", 3);
+    int warmup = ctx.getInt("warmup", 2_000);
+    int runs = ctx.getInt("runs", 5);
     var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
     var modeLabel = mode.label();
     if (mode.webSocket()) {

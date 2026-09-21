@@ -66,8 +66,8 @@ public final class RunCommand implements Command {
     var modeStr = ctx.get("mode", "keepalive");
     int concurrency = ctx.getInt("concurrency", 32);
     int requests = ctx.getInt("requests", 5000);
-    int warmup = ctx.getInt("warmup", 500);
-    int runs = ctx.getInt("runs", 3);
+    int warmup = ctx.getInt("warmup", 2_000);
+    int runs = ctx.getInt("runs", 5);
 
     // Resolve the engine/scenario before anything is written: a usage error must
     // not leave a half-created run row behind.

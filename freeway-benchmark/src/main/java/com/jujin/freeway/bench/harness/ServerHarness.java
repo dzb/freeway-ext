@@ -83,9 +83,11 @@ public final class ServerHarness implements AutoCloseable {
     JDK_NATIVE("jdk-native"),
     ROBAHO_NATIVE("robaho-native"),
     UNDERTOW_NATIVE("undertow-native"),
+    UNDERTOW_VT("undertow-vt"),
     UNDERTOW_ADAPTER("undertow-adapter"),
     JETTY_ADAPTER("jetty-adapter"),
-    JETTY_NATIVE("jetty-native");
+    JETTY_NATIVE("jetty-native"),
+    JETTY_VT("jetty-vt");
 
     private final String label;
 
@@ -106,7 +108,7 @@ public final class ServerHarness implements AutoCloseable {
           "Unknown engine: "
               + s
               + ". Supported: freeway, jdk-native, robaho-native, undertow-native,"
-              + " undertow-adapter, jetty-adapter, jetty-native");
+              + " undertow-vt, undertow-adapter, jetty-adapter, jetty-native, jetty-vt");
     }
   }
 
@@ -155,7 +157,9 @@ public final class ServerHarness implements AutoCloseable {
     if (scenario == Scenario.WS_ECHO) {
       if (engine != Engine.FREEWAY
           && engine != Engine.UNDERTOW_NATIVE
-          && engine != Engine.JETTY_NATIVE) {
+          && engine != Engine.UNDERTOW_VT
+          && engine != Engine.JETTY_NATIVE
+          && engine != Engine.JETTY_VT) {
         throw new UnsupportedOperationException(
             "WS_ECHO scenario not supported for " + engine.label());
       }
@@ -164,9 +168,11 @@ public final class ServerHarness implements AutoCloseable {
       case FREEWAY -> freeway(scenario);
       case JDK_NATIVE, ROBAHO_NATIVE -> bare(engine, scenario);
       case UNDERTOW_NATIVE -> undertow(scenario);
+      case UNDERTOW_VT -> undertowVT(scenario);
       case UNDERTOW_ADAPTER -> undertowAdapter(scenario);
       case JETTY_ADAPTER -> jettyAdapter(scenario);
       case JETTY_NATIVE -> jetty(scenario);
+      case JETTY_VT -> jettyVT(scenario);
     };
   }
 
@@ -351,14 +357,40 @@ public final class ServerHarness implements AutoCloseable {
   // ---------------------------------------------------------------
 
   private static ServerHarness undertow(Scenario scenario) throws Exception {
+    int ioThreads = Runtime.getRuntime().availableProcessors();
     var server =
         Undertow.builder()
+            .setIoThreads(ioThreads)
+            .setWorkerThreads(ioThreads * 8)
             .addHttpListener(0, "127.0.0.1")
             .setHandler(undertowHandler(ScenarioSpec.of(scenario)))
             .build();
     server.start();
     int port = ((InetSocketAddress) server.getListenerInfo().getFirst().getAddress()).getPort();
     return new ServerHarness(server::stop, port);
+  }
+
+  /** Undertow with virtual-thread worker pool (XNIO external executor). */
+  private static ServerHarness undertowVT(Scenario scenario) throws Exception {
+    var xnio = org.xnio.Xnio.getInstance();
+    var workerBuilder = xnio.createWorkerBuilder();
+    workerBuilder.setExternalExecutorService(Executors.newVirtualThreadPerTaskExecutor());
+    workerBuilder.setWorkerIoThreads(Runtime.getRuntime().availableProcessors());
+    var worker = workerBuilder.build();
+    var server =
+        Undertow.builder()
+            .setWorker(worker)
+            .addHttpListener(0, "127.0.0.1")
+            .setHandler(undertowHandler(ScenarioSpec.of(scenario)))
+            .build();
+    server.start();
+    int port = ((InetSocketAddress) server.getListenerInfo().getFirst().getAddress()).getPort();
+    return new ServerHarness(
+        () -> {
+          server.stop();
+          worker.shutdown();
+        },
+        port);
   }
 
   /**
@@ -428,10 +460,43 @@ public final class ServerHarness implements AutoCloseable {
   // ---------------------------------------------------------------
 
   private static ServerHarness jetty(Scenario scenario) throws Exception {
-    Server server = new Server();
+    var qtp = new org.eclipse.jetty.util.thread.QueuedThreadPool();
+    qtp.setMinThreads(8);
+    qtp.setMaxThreads(200);
+    qtp.setIdleTimeout(60_000);
+    Server server = new Server(qtp);
     ServerConnector connector = new ServerConnector(server);
     connector.setHost("127.0.0.1");
     connector.setPort(0);
+    connector.setAcceptQueueSize(128);
+    server.addConnector(connector);
+
+    if (scenario == Scenario.WS_ECHO) {
+      ServerWebSocketContainer wsContainer = ServerWebSocketContainer.ensure(server);
+      wsContainer.addMapping(
+          "/ws/echo",
+          (WebSocketCreator)
+              (upgradeRequest, upgradeResponse, wsCallback) -> {
+                var listener = new JettyEchoListener();
+                listener.setSessionCallback(wsCallback);
+                return listener;
+              });
+    }
+    server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
+    server.start();
+    int port = connector.getLocalPort();
+    return new ServerHarness(() -> server.stop(), port);
+  }
+
+  /** Jetty with virtual-thread executor pool. */
+  private static ServerHarness jettyVT(Scenario scenario) throws Exception {
+    var vtp = new org.eclipse.jetty.util.thread.VirtualThreadPool();
+    vtp.setMaxConcurrentTasks(Integer.MAX_VALUE);
+    Server server = new Server(vtp);
+    ServerConnector connector = new ServerConnector(server);
+    connector.setHost("127.0.0.1");
+    connector.setPort(0);
+    connector.setAcceptQueueSize(128);
     server.addConnector(connector);
 
     if (scenario == Scenario.WS_ECHO) {

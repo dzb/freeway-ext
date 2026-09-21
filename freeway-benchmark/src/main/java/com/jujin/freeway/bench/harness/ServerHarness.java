@@ -473,17 +473,10 @@ public final class ServerHarness implements AutoCloseable {
     server.addConnector(connector);
 
     if (scenario == Scenario.WS_ECHO) {
-      ServerWebSocketContainer wsContainer = ServerWebSocketContainer.ensure(server);
-      wsContainer.addMapping(
-          "/ws/echo",
-          (WebSocketCreator)
-              (upgradeRequest, upgradeResponse, wsCallback) -> {
-                var listener = new JettyEchoListener();
-                listener.setSessionCallback(wsCallback);
-                return listener;
-              });
+      server.setHandler(jettyWsHandler(ServerWebSocketContainer.ensure(server)));
+    } else {
+      server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
     }
-    server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
     server.start();
     int port = connector.getLocalPort();
     return new ServerHarness(() -> server.stop(), port);
@@ -510,17 +503,10 @@ public final class ServerHarness implements AutoCloseable {
     server.addConnector(connector);
 
     if (scenario == Scenario.WS_ECHO) {
-      ServerWebSocketContainer wsContainer = ServerWebSocketContainer.ensure(server);
-      wsContainer.addMapping(
-          "/ws/echo",
-          (WebSocketCreator)
-              (upgradeRequest, upgradeResponse, wsCallback) -> {
-                var listener = new JettyEchoListener();
-                listener.setSessionCallback(wsCallback);
-                return listener;
-              });
+      server.setHandler(jettyWsHandler(ServerWebSocketContainer.ensure(server)));
+    } else {
+      server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
     }
-    server.setHandler(jettyHandler(ScenarioSpec.of(scenario)));
     server.start();
     int port = connector.getLocalPort();
     return new ServerHarness(() -> server.stop(), port);
@@ -561,30 +547,48 @@ public final class ServerHarness implements AutoCloseable {
     };
   }
 
-  /** Minimal Jetty 12 WebSocket echo listener. */
-  private static final class JettyEchoListener implements Session.Listener.AutoDemanding {
+  /**
+   * Upgrade handler for WS_ECHO on the raw Jetty engines. Registering a mapping on the container is
+   * not enough — nothing looks the mapping up on its own; a handler must drive the upgrade, the
+   * same shape the Jetty adapter uses ({@link ServerWebSocketContainer#upgrade}).
+   */
+  private static Handler jettyWsHandler(ServerWebSocketContainer container) {
+    WebSocketCreator creator =
+        (upgradeRequest, upgradeResponse, wsCallback) -> new JettyEchoListener();
+    return new Handler.Abstract() {
+      @Override
+      public boolean handle(Request request, Response response, Callback callback) {
+        if ("GET".equals(request.getMethod())
+            && request.getHttpURI() != null
+            && "/ws/echo".equals(request.getHttpURI().getPath())
+            && container.upgrade(creator, request, response, callback)) {
+          return true;
+        }
+        response.setStatus(404);
+        callback.succeeded();
+        return true;
+      }
+    };
+  }
+
+  /**
+   * Minimal Jetty 12 WebSocket echo listener. Must stay public: the frame handler factory looks its
+   * methods up from another package, and a private nest is not accessible to it.
+   */
+  public static final class JettyEchoListener implements Session.Listener.AutoDemanding {
 
     private Session session;
-    private Callback setSessionCallback;
-
-    void setSessionCallback(Callback callback) {
-      this.setSessionCallback = callback;
-    }
 
     @Override
     public void onWebSocketOpen(Session session) {
       this.session = session;
-      if (setSessionCallback != null) {
-        setSessionCallback.succeeded();
-      }
-      session.demand();
+      // AutoDemanding: demanding explicitly is an error.
     }
 
     @Override
     public void onWebSocketText(String message) {
       try {
         session.sendText(message, org.eclipse.jetty.websocket.api.Callback.NOOP);
-        session.demand();
       } catch (Exception ignored) {
         // ignore send errors in benchmark
       }

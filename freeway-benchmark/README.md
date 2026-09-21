@@ -61,8 +61,12 @@ mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
 ## Forked (Isolated) Benchmark
 
 `BenchFork` runs server and client in **separate JVM processes** — zero
-cross-contamination between measured target and measurement harness. Use this
-when you need process-level isolation for final performance claims.
+cross-contamination between measured target and measurement harness. One server
+JVM stays resident for the whole engine/mode: the client sends `bench.warmup`
+warmup requests (the result is discarded), pauses, then measures `bench.runs`
+rounds against that same server with a `bench.pauseMillis` pause between rounds,
+so every measured round runs against a JIT-warm server. Use this when you need
+process-level isolation for final performance claims.
 
 ```bash
 mvn -f freeway-benchmark/pom.xml -am -DskipTests exec:java \
@@ -85,12 +89,17 @@ java --add-opens=java.base/java.lang=ALL-UNNAMED \
 
 Supported engines:
 
-| Engine           | Description |
+| Engine             | Description |
 |------------------|-------------|
-| `freeway`        | Freeway's built-in HTTP engine (`FreewayHttpEngine`) |
-| `jdk-native`     | Bare JDK `com.sun.net.httpserver.HttpServer` (baseline) |
-| `robaho-native`  | Robaho's `HttpServer` implementation (`robaho.net.httpserver`) |
-| `undertow-native`| Native Undertow server (`io.undertow.Undertow`) |
+| `freeway`          | Freeway's built-in HTTP engine (`FreewayHttpEngine`) |
+| `jdk-native`       | Bare JDK `com.sun.net.httpserver.HttpServer` (baseline) |
+| `robaho-native`    | Robaho's `HttpServer` implementation (`robaho.net.httpserver`) |
+| `undertow-native`  | Native Undertow server (`io.undertow.Undertow`) with a platform worker pool |
+| `undertow-vt`      | Native Undertow with a virtual-thread worker pool (XNIO external executor) |
+| `undertow-adapter` | Freeway's Undertow adapter (`UndertowWebEngine`) |
+| `jetty-native`     | Native Jetty server with a platform `QueuedThreadPool` |
+| `jetty-vt`         | Native Jetty with virtual threads for blocking work (`QueuedThreadPool` + virtual-thread executor) |
+| `jetty-adapter`    | Freeway's Jetty adapter (`JettyWebEngine`) |
 
 ## JMH Microbenchmarks
 

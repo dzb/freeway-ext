@@ -53,6 +53,7 @@ import org.eclipse.jetty.server.Response;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.Callback;
+import org.eclipse.jetty.util.thread.Invocable;
 import org.eclipse.jetty.websocket.api.Session;
 import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
 import org.eclipse.jetty.websocket.server.WebSocketCreator;
@@ -60,7 +61,7 @@ import org.eclipse.jetty.websocket.server.WebSocketCreator;
 /**
  * Pluggable HTTP server harness for black-box benchmarking.
  *
- * <p>Supports four engines ({@link Engine}) and four scenarios ({@link Scenario}). Each scenario
+ * <p>Supports nine engines ({@link Engine}) and four scenarios ({@link Scenario}). Each scenario
  * defines a logical request/response contract; the harness translates it to the native API of the
  * selected engine.
  *
@@ -488,11 +489,20 @@ public final class ServerHarness implements AutoCloseable {
     return new ServerHarness(() -> server.stop(), port);
   }
 
-  /** Jetty with virtual-thread executor pool. */
+  /**
+   * Jetty with virtual threads for the blocking work: a platform {@code QueuedThreadPool} (so the
+   * selector and the non-blocking path keep normal execution) with a virtual-thread executor for
+   * the tasks Jetty would otherwise run on a pooled platform thread. Putting the whole {@code
+   * Server} on Jetty's {@code VirtualThreadPool} measured far slower at low concurrency, so this
+   * uses the recommended QueuedThreadPool + virtual-thread-executor shape instead.
+   */
   private static ServerHarness jettyVT(Scenario scenario) throws Exception {
-    var vtp = new org.eclipse.jetty.util.thread.VirtualThreadPool();
-    vtp.setMaxConcurrentTasks(Integer.MAX_VALUE);
-    Server server = new Server(vtp);
+    var qtp = new org.eclipse.jetty.util.thread.QueuedThreadPool();
+    qtp.setMinThreads(8);
+    qtp.setMaxThreads(200);
+    qtp.setIdleTimeout(60_000);
+    qtp.setVirtualThreadsExecutor(Executors.newVirtualThreadPerTaskExecutor());
+    Server server = new Server(qtp);
     ServerConnector connector = new ServerConnector(server);
     connector.setHost("127.0.0.1");
     connector.setPort(0);
@@ -520,7 +530,12 @@ public final class ServerHarness implements AutoCloseable {
     if (spec.webSocket()) {
       return null; // handled by WebSocket container
     }
-    return new Handler.Abstract() {
+    // PING/JSON only write a fixed body, so run them on the selector thread (NON_BLOCKING) and
+    // skip the per-request selector -> pool hand-off. ECHO_BODY reads the request body (blocking),
+    // so it stays BLOCKING.
+    Invocable.InvocationType invocationType =
+        spec.echoBody() ? Invocable.InvocationType.BLOCKING : Invocable.InvocationType.NON_BLOCKING;
+    return new Handler.Abstract(invocationType) {
       @Override
       public boolean handle(Request request, Response response, Callback callback) {
         if (!spec.method().equals(request.getMethod())) {

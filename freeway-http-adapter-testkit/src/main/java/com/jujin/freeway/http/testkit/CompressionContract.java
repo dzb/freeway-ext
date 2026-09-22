@@ -130,6 +130,28 @@ public abstract class CompressionContract extends EngineFixture {
     }
   }
 
+  @Test
+  void gzipRefusedByQZeroIsNotCompressed() throws Exception {
+    // q=0 is a refusal, not a presence: negotiation runs through the shared
+    // Compression primitives, so answering gzip here would mean the adapter
+    // read Accept-Encoding itself instead.
+    var client = HttpClient.newHttpClient();
+    try (var server = start(Pipelines.of(routes()))) {
+      var resp =
+          client.send(
+              HttpRequest.newBuilder(uri(server, "/big"))
+                  .header("Accept-Encoding", "gzip;q=0")
+                  .GET()
+                  .timeout(Duration.ofSeconds(10))
+                  .build(),
+              HttpResponse.BodyHandlers.ofByteArray());
+      assertEquals(200, resp.statusCode());
+      assertFalse(
+          resp.headers().firstValue("Content-Encoding").isPresent(),
+          engineName() + " must honor q=0 through the shared Compression negotiation");
+    }
+  }
+
   private static List<Route> routes() {
     return List.of(
         Route.get("/big", ctx -> ctx.send(200, BIG_BODY)),

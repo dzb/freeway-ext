@@ -9,9 +9,10 @@ import java.util.List;
 
 /**
  * The pipeline a contract test starts from: the routes under test plus any WebSocket groups, with
- * CORS and health disabled. It hands the parts to {@link com.jujin.freeway.http.WebServerBuilder}
- * instead of prebuilding a {@code RequestComponents}, so a contract test starts its server the same
- * way a standalone application does — noop event sink sentinel, default error handler appended.
+ * CORS and health disabled. It is contributed into {@link com.jujin.freeway.http.HttpModule}
+ * instead of prebuilding an {@code HttpPipeline}, so a contract test starts its server the same way
+ * a standalone application does — the container's event sink and the default error handler
+ * included.
  */
 public record Pipelines(
     List<Route> routes, List<WebSocketGroup> webSocketGroups, List<ErrorHandler> errorHandlers) {

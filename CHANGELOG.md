@@ -21,7 +21,7 @@
   contract test could pass against a server no application ever got. `TestServers` now composes
   `Freeway.create(new HttpModule(), …)`, binds the engine and the engine contract
   (`HttpServerConfig`) through `.id("adapter").primary()`, contributes the pipeline parts, and returns
-  a `TestServer` (the container plus the `WebServer`) whose `close()` shuts the container down;
+  a `TestServer` (the container plus the `HttpServer`) whose `close()` shuts the container down;
   `EngineFixture.start` and the benchmark's `ServerHarness` follow the same shape. Assembling through
   the module also means the container's event sink is live during contracts and benchmarks — measured
   absolute numbers shift slightly, the comparison between engines does not, because every engine pays it.
@@ -29,9 +29,40 @@
   component that owns the key material. `UndertowWebEngine` and `JettyWebEngine` resolve the shared
   `freeway.http.ssl.*` section the same way their connector builder does, so the scheme a cloud registry
   publishes can no longer disagree with the socket actually serving.
+- **core renamed `WebServer` → `HttpServer`, `RequestComponents` → `HttpPipeline`,
+  `withErrorMapper` → `withErrorHandlers`; moved `internal.SslReloader` → `engine.SslReloader`;
+  pulled `h2Reset*` out of `HttpServerConfig` into `FreewayHttpEngine.Wiring`** — the testkit's
+  `TestServer` record, `UndertowFrameProbeTest` and the benchmark harness follow the type rename (the
+  harness qualifies the core type as `com.jujin.freeway.http.HttpServer` because it already imports
+  `com.sun.net.httpserver.HttpServer`); javadoc references were re-pointed and `Pipelines`' class
+  comment now names `HttpModule`. No `withErrorMapper` caller, `SslReloader` reference or `h2Reset*`
+  read existed here — and with `h2Reset*` gone, every remaining `HttpServerConfig` field applies to
+  every engine, these two included.
+- **transport fields an adapter cannot map report at startup** (honor contract: applied or reported,
+  never silent) — `UndertowWebEngine` warns when `freeway.http.server.max-connections` is tuned (the
+  default `0` already means unlimited, which Undertow's no-limit default matches) or
+  `freeway.http.server.write-timeout` differs from the default; `JettyWebEngine` warns the same for
+  `write-timeout`, the one field it does not map. The comment that documented Undertow's two gaps
+  privately is now a startup report.
 
 ### Added
 
+- **contract pins for the core honor contract** — four contract-typed edges no type enforces, pinned
+  so every adapter (and any new engine inheriting the testkit) carries them:
+  - `ContextContract.oversizedBodyIsRejectedByTheSharedAccounting` — `maxBodySize` must surface as
+    413 through the shared `AbstractHttpContext.readBody`, not a transport's own entity-limit spelling
+    or a silent truncation;
+  - `CompressionContract.gzipRefusedByQZeroIsNotCompressed` — `gzip;q=0` is a refusal, so negotiation
+    must run through the shared `Compression` primitives, not a presence check the adapter wrote;
+  - `WebSocketUpgradeContract` (new shared contract, both adapters run it) — a positive control plus
+    two negatives proving `ExchangeHandler.websocket(method, path, origin)` is consulted for every
+    upgrade candidate: a path no route declared and an origin outside the CORS list must abort the
+    handshake;
+  - `JettyTransportContractTest.maxConnectionsCapsConcurrencyAndReleasesWhenASlotFrees` — the
+    applied half of the per-field config contract. The assertion pins the semantic (nothing beyond
+    the cap is ever served, admission resumes when a slot frees), not the mechanism: Jetty's
+    `NetworkConnectionLimit` enforces by stopping acceptance while the built-in engine closes the
+    excess socket on the spot.
 - **Jetty adapter: `freeway.http.jetty.dispatch-io` knob** — mirrors the Undertow adapter's key. The
   root handler used to be an undeclared-BLOCKING `Handler.Abstract`, so every request paid the
   pool hand-off from the connection's producer thread. `false` declares the handler `NON_BLOCKING`

@@ -23,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.http.route.Route;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashSet;
 import java.util.List;
@@ -61,7 +62,7 @@ public abstract class ContextContract extends EngineFixture {
   @Test
   void keystorePresenceActivatesTlsAndTheFactsFollow() throws Exception {
     // Only the keystore is configured: the shared three-state semantic says a
-    // configured keystore is an HTTPS server, and WebServer.secure() reports it
+    // configured keystore is an HTTPS server, and HttpServer.secure() reports it
     // — the adapter must not quietly serve plaintext while the framework says
     // otherwise.
     System.setProperty("freeway.http.ssl.key-store", resource(KEYSTORE_RESOURCE).toString());
@@ -135,6 +136,28 @@ public abstract class ContextContract extends EngineFixture {
     }
   }
 
+  @Test
+  void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
+    // maxBodySize is per-exchange policy: the engine pushes it into the context
+    // and the shared AbstractHttpContext.readBody does the accounting — the 413
+    // must be the same answer from every engine, never a silent truncation or
+    // a transport's own entity limit spelling.
+    var config = defaultConfig().withMaxBodySize(16);
+    try (var server = start(Pipelines.of(routes()), config)) {
+      var resp =
+          HttpClient.newHttpClient()
+              .send(
+                  HttpRequest.newBuilder(uri(server, "/echo"))
+                      .POST(HttpRequest.BodyPublishers.ofString("x".repeat(64)))
+                      .build(),
+                  HttpResponse.BodyHandlers.ofString());
+      assertEquals(
+          413,
+          resp.statusCode(),
+          engineName() + " must answer the shared maxBodySize accounting with 413");
+    }
+  }
+
   private static String get(HttpClient client, String uri) throws Exception {
     return client.send(HttpClients.request(uri, null), HttpResponse.BodyHandlers.ofString()).body();
   }
@@ -152,6 +175,12 @@ public abstract class ContextContract extends EngineFixture {
                         + "|"
                         + (ctx.sslSession() != null)
                         + "|"
-                        + !ctx.remoteAddress().isBlank())));
+                        + !ctx.remoteAddress().isBlank())),
+        Route.post(
+            "/echo",
+            ctx -> {
+              ctx.body();
+              ctx.send(200, "ok");
+            }));
   }
 }

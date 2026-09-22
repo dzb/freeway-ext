@@ -19,6 +19,7 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
+import com.jujin.freeway.http.HttpConfigKeys;
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
@@ -90,7 +91,7 @@ public final class JettyWebEngine implements HttpEngine {
   /**
    * This adapter's own listener verdict: it resolves the shared {@code freeway.http.ssl.*} section
    * exactly as {@code buildConnector}/{@code start} does when it decides whether to install a TLS
-   * listener, so the transport the engine serves and the {@link com.jujin.freeway.http.WebServer}
+   * listener, so the transport the engine serves and the {@link com.jujin.freeway.http.HttpServer}
    * reports are the same answer from the same rule.
    */
   @Override
@@ -123,6 +124,13 @@ public final class JettyWebEngine implements HttpEngine {
       // connection-limit listener), matching the built-in engine's
       // max-connections semantics.
       server.addBean(new NetworkConnectionLimit(config.maxConnections(), server));
+    }
+    // Honor contract: a field with no applied counterpart says so at startup
+    // rather than looking applied.
+    if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
+      LOG.warn(
+          "{} is not applied: Jetty has no write-timeout counterpart",
+          HttpConfigKeys.SERVER_WRITE_TIMEOUT);
     }
 
     ServerWebSocketContainer webSocketContainer = ServerWebSocketContainer.ensure(server);
@@ -218,7 +226,7 @@ public final class JettyWebEngine implements HttpEngine {
   private ServerConnector buildConnector(Server server, HttpServerConfig config) {
     // The shared TLS section, resolved once by core: the same keys, defaults
     // and three-state activation the built-in engine and Undertow use, so the
-    // WebServer's secure() verdict and this adapter cannot disagree.
+    // HttpServer's secure() verdict and this adapter cannot disagree.
     SslSettings tls = SslSettings.from(symbols);
     boolean sslEnabled = tls.enabled();
     boolean alpnHttp2 = sslEnabled && tls.http2();

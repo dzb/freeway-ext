@@ -18,8 +18,8 @@ package com.jujin.freeway.http.testkit;
 
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpModule;
+import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.ErrorHandler;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -44,7 +44,7 @@ public final class TestServers {
    * A server under contract test, with the container that assembled it. {@link #close()} closes the
    * container, which disposes the server it realized.
    */
-  public record TestServer(Container container, WebServer server) implements AutoCloseable {
+  public record TestServer(Container container, HttpServer server) implements AutoCloseable {
 
     /** Starts the server and returns it, so a call site can open a try-with-resources on it. */
     public TestServer start() {
@@ -86,17 +86,22 @@ public final class TestServers {
 
   /** Assembles (without starting) a server on {@code engine} with {@code pipeline}. */
   public static TestServer server(HttpEngine engine, HttpServerConfig config, Pipelines pipeline) {
+    return server(engine, config, pipeline, Pipelines.disabledCors());
+  }
+
+  /**
+   * Assembles with an explicit CORS policy: the shape a contract needs when it must prove the
+   * origin check (WebSocket upgrades) instead of disabling CORS as noise.
+   */
+  public static TestServer server(
+      HttpEngine engine, HttpServerConfig config, Pipelines pipeline, CorsFilter cors) {
     Container container =
         Freeway.create(
             new HttpModule(),
             binder -> binder.bind(HttpEngine.class).to(c -> engine).id("adapter").primary(),
             binder -> binder.bind(HttpServerConfig.class).to(c -> config).id("adapter").primary(),
             binder -> {
-              binder
-                  .bind(CorsFilter.class)
-                  .to(c -> Pipelines.disabledCors())
-                  .id("adapter")
-                  .primary();
+              binder.bind(CorsFilter.class).to(c -> cors).id("adapter").primary();
               binder
                   .bind(HealthFilter.class)
                   .to(c -> Pipelines.disabledHealth())
@@ -112,12 +117,18 @@ public final class TestServers {
                 binder.contribute(ErrorHandler.class).add(handler);
               }
             });
-    return new TestServer(container, container.get(WebServer.class));
+    return new TestServer(container, container.get(HttpServer.class));
   }
 
   /** Starts a server on the given engine with the pipeline under test. */
   public static TestServer start(HttpEngine engine, HttpServerConfig config, Pipelines pipeline) {
     return server(engine, config, pipeline).start();
+  }
+
+  /** Starts a server with an explicit CORS policy. */
+  public static TestServer start(
+      HttpEngine engine, HttpServerConfig config, Pipelines pipeline, CorsFilter cors) {
+    return server(engine, config, pipeline, cors).start();
   }
 
   private TestServers() {}

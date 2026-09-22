@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
-import com.jujin.freeway.http.WebServer;
+import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketListener;
@@ -62,7 +62,7 @@ class UndertowFrameProbeTest {
     System.setProperty("freeway.http.server.port", String.valueOf(port));
 
     app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
-    assertTrue(app.get(WebServer.class).isRunning());
+    assertTrue(app.get(HttpServer.class).isRunning());
 
     try (Socket socket = new Socket("127.0.0.1", port)) {
       socket.setSoTimeout(5000);

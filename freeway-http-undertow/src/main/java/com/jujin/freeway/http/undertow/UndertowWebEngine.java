@@ -92,7 +92,7 @@ public final class UndertowWebEngine implements HttpEngine {
   /**
    * This adapter's own listener verdict: it resolves the shared {@code freeway.http.ssl.*} section
    * exactly as {@code buildConnector}/{@code start} does when it decides whether to install a TLS
-   * listener, so the transport the engine serves and the {@link com.jujin.freeway.http.WebServer}
+   * listener, so the transport the engine serves and the {@link com.jujin.freeway.http.HttpServer}
    * reports are the same answer from the same rule.
    */
   @Override
@@ -137,7 +137,7 @@ public final class UndertowWebEngine implements HttpEngine {
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
     // The shared TLS section, resolved once by core: the same keys, defaults
     // and three-state activation the built-in engine and Jetty use, so the
-    // WebServer's secure() verdict and this adapter cannot disagree.
+    // HttpServer's secure() verdict and this adapter cannot disagree.
     SslSettings tls = SslSettings.from(symbols);
     boolean sslEnabled = tls.enabled();
     Undertow.Builder builder =
@@ -198,6 +198,19 @@ public final class UndertowWebEngine implements HttpEngine {
       }
     } else {
       builder.addHttpListener(config.port(), config.host());
+    }
+    // Honor contract: a field with no Undertow counterpart says so at startup
+    // rather than looking applied (maxConnections 0 already means unlimited,
+    // which Undertow's no-limit default matches — only a tuned value is news).
+    if (config.maxConnections() > 0) {
+      LOG.warn(
+          "{} is not applied: Undertow has no max-connections counterpart",
+          HttpConfigKeys.SERVER_MAX_CONNECTIONS);
+    }
+    if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
+      LOG.warn(
+          "{} is not applied: Undertow has no write-timeout counterpart",
+          HttpConfigKeys.SERVER_WRITE_TIMEOUT);
     }
     Undertow server = builder.build();
     server.start();

@@ -236,7 +236,7 @@ public final class ServerHarness implements AutoCloseable {
                 binder.contribute(WebSocketGroup.class).add(group);
               }
             });
-    var srv = container.get(WebServer.class);
+    var srv = container.get(com.jujin.freeway.http.HttpServer.class);
     srv.start();
     return new ServerHarness(container, srv.port());
   }

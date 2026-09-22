@@ -89,7 +89,7 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 
 - **A new engine passes the testkit contracts** (`CompressionContract`,
   `ContextContract`, `RemoteRpcContract`) instead of copying another adapter's tests.
-  `EngineFixture` assembles the server through `WebServerBuilder` and `Pipelines`, so a
+  `EngineFixture` assembles the server through `HttpModule` and `Pipelines`, so a
   contract cannot depend on one engine's assembly style.
 - **Tests that need a real service are gated by an environment variable**
   (`FREEWAY_TEST_KAFKA`) and must be usable both ways: skipped without it, red against a

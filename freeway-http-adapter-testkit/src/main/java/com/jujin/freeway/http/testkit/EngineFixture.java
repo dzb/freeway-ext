@@ -21,6 +21,7 @@ import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.filter.CorsFilter;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
@@ -52,6 +53,15 @@ public abstract class EngineFixture {
    */
   protected final TestServers.TestServer start(Pipelines pipeline, HttpServerConfig config) {
     return TestServers.start(newEngine(), config, pipeline);
+  }
+
+  /**
+   * Starts a server with an explicit CORS policy (used by the WebSocket upgrade contract, which
+   * must prove the origin check instead of disabling it).
+   */
+  protected final TestServers.TestServer start(
+      Pipelines pipeline, HttpServerConfig config, CorsFilter cors) {
+    return TestServers.start(newEngine(), config, pipeline, cors);
   }
 
   /** The shared test configuration: loopback, ephemeral port, short timeouts. */

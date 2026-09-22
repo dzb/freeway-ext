@@ -4,6 +4,10 @@
 
 ### Changed
 
+- **all POMs track core `1.5.4-SNAPSHOT`** (parent `freeway-parent` and `freeway.version`), so the
+  adaptations below resolve. Building this tree now requires the matching core installed locally
+  (`mvn install` in the core repo) or published to the snapshot repository.
+
 - **core deleted `CorsFilter.Builder`, `CorsFilter.DEFAULT`/`HealthFilter.DEFAULT` and the bare-noun
   `StaticResourceMount` withers** — a builder that restates the policy defaults is a second owner of
   the same answer, so the shape is now `defaults()` plus `withX` withers: `Pipelines.disabledCors()`

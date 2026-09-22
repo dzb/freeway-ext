@@ -19,6 +19,7 @@ package com.jujin.freeway.bench.harness;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.*;
+import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -29,7 +30,6 @@ import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
 import com.jujin.freeway.ioc.Freeway;
-import com.sun.net.httpserver.HttpServer;
 import io.undertow.Undertow;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.handlers.BlockingHandler;
@@ -236,10 +236,7 @@ public final class ServerHarness implements AutoCloseable {
                 binder.contribute(WebSocketGroup.class).add(group);
               }
             });
-    // Fully qualified: the simple name resolves to the JDK's imported
-    // com.sun HttpServer — unqualified HttpServer.class compiles but finds
-    // no such binding at runtime.
-    var srv = container.get(com.jujin.freeway.http.HttpServer.class);
+    var srv = container.get(HttpServer.class);
     srv.start();
     return new ServerHarness(container, srv.port());
   }
@@ -301,6 +298,10 @@ public final class ServerHarness implements AutoCloseable {
 
   // ---------------------------------------------------------------
   // Engine: JDK HttpServer / Robaho (both share the bare HttpServer API)
+  //
+  // Freeway's HttpServer is imported by name above; the com.sun one — which
+  // this section and bareHandler are the only users of — stays fully
+  // qualified here, so the bare simple name always means Freeway's server.
   // ---------------------------------------------------------------
 
   /**
@@ -329,7 +330,8 @@ public final class ServerHarness implements AutoCloseable {
               + "' would be measured with the wrong server. Run each bare engine in its own"
               + " invocation (one --engines value).");
     }
-    var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
+    var server =
+        com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 128);
     server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
     server.createContext("/", bareHandler(ScenarioSpec.of(scenario)));
     server.start();

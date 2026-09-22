@@ -148,7 +148,8 @@ public final class UndertowWebEngine implements HttpEngine {
             // deadlines and allow a 1 MiB header budget, exposing slow-loris
             // and per-connection memory abuse. Map the shared Freeway config
             // (readTimeout, backlog, socket buffers) onto Undertow's options;
-            // maxConnections and writeTimeout have no Undertow equivalent.
+            // maxConnections and writeTimeout have no Undertow equivalent
+            // (both reported at startup below).
             // Freeway's contract is "0 disables the timeout"; Undertow spells
             // disabled as a negative value for both of these, and 0 means
             // "already expired" for the parse timeout — a slow or segmented
@@ -204,13 +205,15 @@ public final class UndertowWebEngine implements HttpEngine {
     // which Undertow's no-limit default matches — only a tuned value is news).
     if (config.maxConnections() > 0) {
       LOG.warn(
-          "{} is not applied: Undertow has no max-connections counterpart",
-          HttpConfigKeys.SERVER_MAX_CONNECTIONS);
+          "{}={} is not applied: Undertow has no max-connections counterpart",
+          HttpConfigKeys.SERVER_MAX_CONNECTIONS,
+          config.maxConnections());
     }
     if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
       LOG.warn(
-          "{} is not applied: Undertow has no write-timeout counterpart",
-          HttpConfigKeys.SERVER_WRITE_TIMEOUT);
+          "{}={} is not applied: Undertow has no write-timeout counterpart",
+          HttpConfigKeys.SERVER_WRITE_TIMEOUT,
+          config.writeTimeout());
     }
     Undertow server = builder.build();
     server.start();

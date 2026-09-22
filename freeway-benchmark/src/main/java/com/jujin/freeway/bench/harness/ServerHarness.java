@@ -236,6 +236,9 @@ public final class ServerHarness implements AutoCloseable {
                 binder.contribute(WebSocketGroup.class).add(group);
               }
             });
+    // Fully qualified: the simple name resolves to the JDK's imported
+    // com.sun HttpServer — unqualified HttpServer.class compiles but finds
+    // no such binding at runtime.
     var srv = container.get(com.jujin.freeway.http.HttpServer.class);
     srv.start();
     return new ServerHarness(container, srv.port());

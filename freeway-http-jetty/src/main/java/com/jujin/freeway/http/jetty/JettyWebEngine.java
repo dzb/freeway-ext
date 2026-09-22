@@ -125,12 +125,13 @@ public final class JettyWebEngine implements HttpEngine {
       // max-connections semantics.
       server.addBean(new NetworkConnectionLimit(config.maxConnections(), server));
     }
-    // Honor contract: a field with no applied counterpart says so at startup
-    // rather than looking applied.
+    // Honor contract: a field Jetty cannot apply says so at startup rather
+    // than looking applied.
     if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
       LOG.warn(
-          "{} is not applied: Jetty has no write-timeout counterpart",
-          HttpConfigKeys.SERVER_WRITE_TIMEOUT);
+          "{}={} is not applied: Jetty has no write-timeout counterpart",
+          HttpConfigKeys.SERVER_WRITE_TIMEOUT,
+          config.writeTimeout());
     }
 
     ServerWebSocketContainer webSocketContainer = ServerWebSocketContainer.ensure(server);

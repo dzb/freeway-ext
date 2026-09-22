@@ -36,7 +36,9 @@ import java.net.URI;
  * <p>It composes the way an application does — place {@link HttpModule}, contribute the parts,
  * override the two bindings the contract varies (the engine and the engine contract) — rather than
  * wiring a server by hand: an adapter test that assembles privately is not testing the server
- * applications actually get. CORS and health are disabled because no contract probes them.
+ * applications actually get. CORS and health are disabled by default because no contract probes
+ * them; a contract that must prove the origin check (WebSocket upgrades) supplies its own policy
+ * through the overload below instead.
  */
 public final class TestServers {
 

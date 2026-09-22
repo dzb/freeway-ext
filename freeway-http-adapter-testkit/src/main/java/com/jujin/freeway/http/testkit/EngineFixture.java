@@ -46,10 +46,11 @@ public abstract class EngineFixture {
   }
 
   /**
-   * Starts a server with an explicit configuration (used by the compression contract). Assembly
-   * goes through {@link HttpModule} — the same composition an application places — so the contracts
-   * run against the same server shape as production: the event sink of a real container, the
-   * built-in error mapper consulted last, and CORS/health explicitly disabled.
+   * Starts a server with an explicit configuration (used when a contract varies configuration —
+   * compression, body limits). Assembly goes through {@link HttpModule} — the same composition an
+   * application places — so the contracts run against the same server shape as production: the
+   * event sink of a real container, the built-in error mapper consulted last, and CORS/health
+   * explicitly disabled.
    */
   protected final TestServers.TestServer start(Pipelines pipeline, HttpServerConfig config) {
     return TestServers.start(newEngine(), config, pipeline);
@@ -72,11 +73,12 @@ public abstract class EngineFixture {
         .withShutdownGrace(Duration.ofSeconds(5));
   }
 
-  /** A route handler that echoes the request body, for engine-agnostic pipelines. */
+  /** A JSON codec for an engine's standalone constructor. */
   protected final JsonCodecDefault jsonCodec() {
     return new JsonCodecDefault();
   }
 
+  /** A coercer for the same constructor. */
   protected final CoercerDefault coercer() {
     return new CoercerDefault();
   }

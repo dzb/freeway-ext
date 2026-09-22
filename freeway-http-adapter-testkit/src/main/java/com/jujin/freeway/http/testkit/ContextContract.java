@@ -138,10 +138,11 @@ public abstract class ContextContract extends EngineFixture {
 
   @Test
   void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
-    // maxBodySize is per-exchange policy: the engine pushes it into the context
-    // and the shared AbstractHttpContext.readBody does the accounting — the 413
-    // must be the same answer from every engine, never a silent truncation or
-    // a transport's own entity limit spelling.
+    // maxBodySize must answer the same 413 whatever layer trips first: the
+    // shared AbstractHttpContext.readBody accounting, or Undertow's native
+    // MAX_ENTITY_SIZE mapped from the same config (surfaced as the shared
+    // BodyTooLargeException). Never a dropped connection, never a body
+    // truncated to look complete.
     var config = defaultConfig().withMaxBodySize(16);
     try (var server = start(Pipelines.of(routes()), config)) {
       var resp =

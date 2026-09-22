@@ -33,7 +33,6 @@ import com.jujin.freeway.cloud.rpc.RpcEndpoint;
 import com.jujin.freeway.cloud.rpc.RpcExport;
 import com.jujin.freeway.cloud.rpc.TransportSecurity;
 import com.jujin.freeway.commons.metrics.NoopMetrics;
-import com.jujin.freeway.http.WebServer;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -70,7 +69,7 @@ public abstract class RemoteRpcContract extends EngineFixture {
     }
   }
 
-  private WebServer server;
+  private TestServers.TestServer server;
   private RemoteCaller caller;
 
   @AfterEach

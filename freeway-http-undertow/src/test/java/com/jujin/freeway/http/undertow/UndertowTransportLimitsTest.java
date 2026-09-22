@@ -21,7 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.WebServer;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.testkit.Pipelines;
 import com.jujin.freeway.http.testkit.TestServers;
@@ -86,11 +85,9 @@ class UndertowTransportLimitsTest {
 
   // ── harness ────────────────────────────────────────────────────────────────
 
-  private static WebServer start(HttpServerConfig config) {
+  private static TestServers.TestServer start(HttpServerConfig config) {
     var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
-    var server = TestServers.start(engine, config, pipeline());
-    server.start();
-    return server;
+    return TestServers.start(engine, config, pipeline());
   }
 
   private static String request(int port, String extraHeaders) throws Exception {

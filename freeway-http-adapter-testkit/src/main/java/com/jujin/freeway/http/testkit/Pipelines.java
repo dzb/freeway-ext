@@ -44,11 +44,11 @@ public record Pipelines(
    * CORS disabled: the contract tests send no {@code Origin}, so an active filter is pure noise.
    */
   public static CorsFilter disabledCors() {
-    return new CorsFilter(false, null, null, null, null, null, false);
+    return CorsFilter.defaults().withEnabled(false);
   }
 
   /** Health disabled: no contract probes it, and every engine must run the same pipeline. */
   public static HealthFilter disabledHealth() {
-    return new HealthFilter(false, "/no-health", null);
+    return HealthFilter.defaults().withEnabled(false);
   }
 }

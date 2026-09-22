@@ -28,6 +28,7 @@ import com.jujin.freeway.http.undertow.UndertowWebEngine;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
+import com.jujin.freeway.ioc.Freeway;
 import com.sun.net.httpserver.HttpServer;
 import io.undertow.Undertow;
 import io.undertow.server.HttpHandler;
@@ -205,33 +206,39 @@ public final class ServerHarness implements AutoCloseable {
    * and stops a new scenario from having to be added three times.
    */
   private static ServerHarness freewayWith(HttpEngine engine, Scenario scenario) throws Exception {
-    // WebServerBuilder — not the raw WebServer constructor — because it is the
-    // standalone assembly production also uses: it installs the noop event sink
-    // sentinel (so no per-request event is built for a server nobody observes)
-    // and appends core's default error handler, which is what makes a 413/400
-    // scenario the response a real application returns instead of an unmapped
-    // failure. CORS and health stay disabled on purpose: they are per-request
-    // work and a route the scenarios never touch, and every engine must measure
-    // the same pipeline.
-    var builder =
-        WebServerBuilder.builder()
-            .engine(engine)
-            .config(
-                HttpServerConfig.defaults()
-                    .withPort(0)
-                    .withBacklog(128)
-                    .withShutdownGrace(Duration.ofSeconds(5)))
-            .cors(disabledCors())
-            .health(disabledHealth());
-    for (var route : freewayRoutes(scenario)) {
-      builder.route(route);
-    }
-    for (var group : freewayWebSocketGroups()) {
-      builder.webSocketGroup(group);
-    }
-    var srv = builder.build();
+    // HttpModule — not a hand-wired server — because that is the assembly every Freeway
+    // application gets: the container's event sink, core's default error mapper consulted last,
+    // and the route/filter contribution semantics of a real module. CORS and health stay disabled
+    // on purpose: they are per-request work and a route the scenarios never touch, and every
+    // engine must measure the same pipeline.
+    var container =
+        Freeway.create(
+            new HttpModule(),
+            binder -> binder.bind(HttpEngine.class).to(c -> engine).id("bench").primary(),
+            binder ->
+                binder
+                    .bind(HttpServerConfig.class)
+                    .to(
+                        c ->
+                            HttpServerConfig.defaults()
+                                .withPort(0)
+                                .withBacklog(128)
+                                .withShutdownGrace(Duration.ofSeconds(5)))
+                    .id("bench")
+                    .primary(),
+            binder -> {
+              binder.bind(CorsFilter.class).to(c -> disabledCors()).id("bench").primary();
+              binder.bind(HealthFilter.class).to(c -> disabledHealth()).id("bench").primary();
+              for (var route : freewayRoutes(scenario)) {
+                binder.contribute(Route.class).add(route);
+              }
+              for (var group : freewayWebSocketGroups()) {
+                binder.contribute(WebSocketGroup.class).add(group);
+              }
+            });
+    var srv = container.get(WebServer.class);
     srv.start();
-    return new ServerHarness(srv, srv.port());
+    return new ServerHarness(container, srv.port());
   }
 
   /** Creates the routes for a Freeway scenario — the builder assembles them into an index. */
@@ -278,12 +285,12 @@ public final class ServerHarness implements AutoCloseable {
    * filter would be per-request work whose cost would land in every engine's numbers.
    */
   private static CorsFilter disabledCors() {
-    return new CorsFilter(false, null, null, null, null, null, false);
+    return CorsFilter.defaults().withEnabled(false);
   }
 
   /** Health disabled on purpose: no scenario probes it, and every engine must run one pipeline. */
   private static HealthFilter disabledHealth() {
-    return new HealthFilter(false, "/no-health", null);
+    return HealthFilter.defaults().withEnabled(false);
   }
 
   /** Record used for JSON scenario responses. */

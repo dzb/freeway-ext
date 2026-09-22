@@ -19,7 +19,6 @@ package com.jujin.freeway.http.engine;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.HealthCheck;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.RouteHandler;
 import java.io.InputStream;
@@ -78,8 +77,8 @@ public class FilterChainBenchmark {
     var coercer = new CoercerDefault();
 
     // Real filter chain: cors -> health -> noop handler
-    var cors = CorsFilter.DEFAULT;
-    var health = new HealthFilter(true, "/healthz", HealthCheck.ALWAYS_OK);
+    var cors = CorsFilter.defaults();
+    var health = HealthFilter.defaults();
     RouteHandler noop = ctx -> {};
     RouteHandler h = ctx -> health.doFilter(ctx, noop);
     chain = ctx -> cors.doFilter(ctx, h);

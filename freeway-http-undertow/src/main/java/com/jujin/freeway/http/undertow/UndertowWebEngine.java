@@ -89,6 +89,17 @@ public final class UndertowWebEngine implements HttpEngine {
         ThreadLocal.withInitial(() -> new UndertowHttpContext(this.jsonCodec, this.coercer));
   }
 
+  /**
+   * This adapter's own listener verdict: it resolves the shared {@code freeway.http.ssl.*} section
+   * exactly as {@code buildConnector}/{@code start} does when it decides whether to install a TLS
+   * listener, so the transport the engine serves and the {@link com.jujin.freeway.http.WebServer}
+   * reports are the same answer from the same rule.
+   */
+  @Override
+  public boolean secure() {
+    return SslSettings.from(symbols).enabled();
+  }
+
   @Override
   public HttpServerHandle start(HttpServerConfig config, ExchangeHandler handler) {
     Objects.requireNonNull(config, "config");

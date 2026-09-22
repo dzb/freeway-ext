@@ -140,8 +140,8 @@ class ServerHarnessTest {
 
   @Test
   void freewayPipelineMapsOversizedBodiesLikeProduction() throws Exception {
-    // The harness assembles through WebServerBuilder, which appends core's
-    // default error handler. Without it an oversized body would be measured as
+    // The harness assembles through HttpModule, which consults core's default error
+    // handler last. Without it an oversized body would be measured as
     // an unmapped failure (dropped connection) instead of the 413 a real
     // application returns — the whole reason the harness does not hand-roll the
     // pipeline.

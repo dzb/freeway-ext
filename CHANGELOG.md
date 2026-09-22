@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### Changed
+
+- **core deleted `CorsFilter.Builder`, `CorsFilter.DEFAULT`/`HealthFilter.DEFAULT` and the bare-noun
+  `StaticResourceMount` withers** — a builder that restates the policy defaults is a second owner of
+  the same answer, so the shape is now `defaults()` plus `withX` withers: `Pipelines.disabledCors()`
+  and the benchmark's `disabledCors()`/`disabledHealth()` read as
+  `CorsFilter.defaults().withEnabled(false)` / `HealthFilter.defaults().withEnabled(false)` instead of
+  a constructor call with five `null`s, and `FilterChainBenchmark` uses `defaults()`. No adapter code
+  was affected — the `HttpServerConfig` binding and `HttpEngine.secure()` above are the real breaks.
+- **core deleted `WebServerBuilder`; the adapters and the testkit assemble through `HttpModule`** —
+  the standalone builder was a second assembly root rather than a second entry point: it kept its own
+  defaults, appended its own copy of the built-in error mapper and re-derived the TLS verdict, so a
+  contract test could pass against a server no application ever got. `TestServers` now composes
+  `Freeway.create(new HttpModule(), …)`, binds the engine and the engine contract
+  (`HttpServerConfig`) through `.id("adapter").primary()`, contributes the pipeline parts, and returns
+  a `TestServer` (the container plus the `WebServer`) whose `close()` shuts the container down;
+  `EngineFixture.start` and the benchmark's `ServerHarness` follow the same shape. Assembling through
+  the module also means the container's event sink is live during contracts and benchmarks — measured
+  absolute numbers shift slightly, the comparison between engines does not, because every engine pays it.
+- **`HttpEngine` gained `secure()`, and both adapters answer it** — the transport verdict moved to the
+  component that owns the key material. `UndertowWebEngine` and `JettyWebEngine` resolve the shared
+  `freeway.http.ssl.*` section the same way their connector builder does, so the scheme a cloud registry
+  publishes can no longer disagree with the socket actually serving.
+
 ### Added
 
 - **Jetty adapter: `freeway.http.jetty.dispatch-io` knob** — mirrors the Undertow adapter's key. The

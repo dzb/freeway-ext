@@ -19,9 +19,8 @@ package com.jujin.freeway.http.testkit;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServerConfig;
-import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.WebServerBuilder;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.Path;
@@ -41,36 +40,18 @@ public abstract class EngineFixture {
   protected abstract String engineName();
 
   /** Starts a server with the test configuration and the given pipeline. */
-  protected final WebServer start(Pipelines pipeline) {
+  protected final TestServers.TestServer start(Pipelines pipeline) {
     return start(pipeline, defaultConfig());
   }
 
   /**
    * Starts a server with an explicit configuration (used by the compression contract). Assembly
-   * goes through {@link WebServerBuilder} — the standalone path an application takes — so the
-   * contracts run against the same server shape as production: the noop event sink sentinel (no
-   * per-request event objects for a server nobody observes), the default error handler appended,
-   * and CORS/health explicitly disabled.
+   * goes through {@link HttpModule} — the same composition an application places — so the contracts
+   * run against the same server shape as production: the event sink of a real container, the
+   * built-in error mapper consulted last, and CORS/health explicitly disabled.
    */
-  protected final WebServer start(Pipelines pipeline, HttpServerConfig config) {
-    var builder =
-        WebServerBuilder.builder()
-            .engine(newEngine())
-            .config(config)
-            .cors(Pipelines.disabledCors())
-            .health(Pipelines.disabledHealth());
-    for (var route : pipeline.routes()) {
-      builder.route(route);
-    }
-    for (var group : pipeline.webSocketGroups()) {
-      builder.webSocketGroup(group);
-    }
-    for (var handler : pipeline.errorHandlers()) {
-      builder.errorHandler(handler);
-    }
-    var server = builder.build();
-    server.start();
-    return server;
+  protected final TestServers.TestServer start(Pipelines pipeline, HttpServerConfig config) {
+    return TestServers.start(newEngine(), config, pipeline);
   }
 
   /** The shared test configuration: loopback, ephemeral port, short timeouts. */
@@ -91,8 +72,8 @@ public abstract class EngineFixture {
   }
 
   /** A URI on the running server. */
-  protected static URI uri(WebServer server, String path) {
-    return URI.create("http://127.0.0.1:" + server.port() + path);
+  protected static URI uri(TestServers.TestServer server, String path) {
+    return server.uri(path);
   }
 
   /** A test resource from the calling module's own test classpath (keystore fixtures). */

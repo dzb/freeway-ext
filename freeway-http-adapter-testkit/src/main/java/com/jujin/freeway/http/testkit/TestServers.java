@@ -1,39 +1,123 @@
+/*
+ * Copyright 2026 dzb
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.jujin.freeway.http.testkit;
 
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.WebServer;
-import com.jujin.freeway.http.WebServerBuilder;
+import com.jujin.freeway.http.filter.CorsFilter;
+import com.jujin.freeway.http.filter.ErrorHandler;
+import com.jujin.freeway.http.filter.HealthFilter;
+import com.jujin.freeway.http.route.Route;
+import com.jujin.freeway.http.websocket.WebSocketGroup;
+import com.jujin.freeway.ioc.Container;
+import com.jujin.freeway.ioc.Freeway;
+import java.net.URI;
 
 /**
  * Starts a server for tests that assemble their own engine (a custom TLS setup, a transport limit
  * probe) instead of going through {@link EngineFixture}.
  *
- * <p>It is deliberately the same assembly path a standalone application takes — CORS and health
- * disabled, the default error handler appended, noop event sink — rather than a hand-built {@code
- * RequestComponents}: an adapter test that wires the server by hand is not testing the server
- * applications actually get. The engine is passed in because these tests configure it themselves.
+ * <p>It composes the way an application does — place {@link HttpModule}, contribute the parts,
+ * override the two bindings the contract varies (the engine and the engine contract) — rather than
+ * wiring a server by hand: an adapter test that assembles privately is not testing the server
+ * applications actually get. CORS and health are disabled because no contract probes them.
  */
 public final class TestServers {
 
+  /**
+   * A server under contract test, with the container that assembled it. {@link #close()} closes the
+   * container, which disposes the server it realized.
+   */
+  public record TestServer(Container container, WebServer server) implements AutoCloseable {
+
+    /** Starts the server and returns it, so a call site can open a try-with-resources on it. */
+    public TestServer start() {
+      server.start();
+      return this;
+    }
+
+    /** Closes the container behind this server. */
+    public void stop() {
+      close();
+    }
+
+    public int port() {
+      return server.port();
+    }
+
+    public String host() {
+      return server.host();
+    }
+
+    public boolean secure() {
+      return server.secure();
+    }
+
+    public boolean isRunning() {
+      return server.isRunning();
+    }
+
+    /** A URI on this server. */
+    public URI uri(String path) {
+      return URI.create("http://" + host() + ":" + port() + path);
+    }
+
+    @Override
+    public void close() {
+      container.close();
+    }
+  }
+
+  /** Assembles (without starting) a server on {@code engine} with {@code pipeline}. */
+  public static TestServer server(HttpEngine engine, HttpServerConfig config, Pipelines pipeline) {
+    Container container =
+        Freeway.create(
+            new HttpModule(),
+            binder -> binder.bind(HttpEngine.class).to(c -> engine).id("adapter").primary(),
+            binder -> binder.bind(HttpServerConfig.class).to(c -> config).id("adapter").primary(),
+            binder -> {
+              binder
+                  .bind(CorsFilter.class)
+                  .to(c -> Pipelines.disabledCors())
+                  .id("adapter")
+                  .primary();
+              binder
+                  .bind(HealthFilter.class)
+                  .to(c -> Pipelines.disabledHealth())
+                  .id("adapter")
+                  .primary();
+              for (Route route : pipeline.routes()) {
+                binder.contribute(Route.class).add(route);
+              }
+              for (WebSocketGroup group : pipeline.webSocketGroups()) {
+                binder.contribute(WebSocketGroup.class).add(group);
+              }
+              for (ErrorHandler handler : pipeline.errorHandlers()) {
+                binder.contribute(ErrorHandler.class).add(handler);
+              }
+            });
+    return new TestServer(container, container.get(WebServer.class));
+  }
+
   /** Starts a server on the given engine with the pipeline under test. */
-  public static WebServer start(HttpEngine engine, HttpServerConfig config, Pipelines pipeline) {
-    var builder =
-        WebServerBuilder.builder()
-            .engine(engine)
-            .config(config)
-            .cors(Pipelines.disabledCors())
-            .health(Pipelines.disabledHealth());
-    for (var route : pipeline.routes()) {
-      builder.route(route);
-    }
-    for (var group : pipeline.webSocketGroups()) {
-      builder.webSocketGroup(group);
-    }
-    for (var handler : pipeline.errorHandlers()) {
-      builder.errorHandler(handler);
-    }
-    return builder.build();
+  public static TestServer start(HttpEngine engine, HttpServerConfig config, Pipelines pipeline) {
+    return server(engine, config, pipeline).start();
   }
 
   private TestServers() {}

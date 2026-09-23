@@ -67,7 +67,7 @@ class KafkaEventSinkTest {
     producer.sendException = new IllegalStateException("broker unavailable");
     KafkaEventSink sink = newSink("", producer);
 
-    sink.send("orders", new PlainTestEvent("v"), EventSink.Channel.CLASS);
+    sink.send("orders", new PlainTestEvent("v"), EventSink.Channel.CLASS, "test-id-1");
 
     assertTrue(producer.history().isEmpty(), "the rejected record must not be reported as sent");
   }
@@ -81,7 +81,7 @@ class KafkaEventSinkTest {
             true, null, new StringSerializer(), new ByteArraySerializer());
     KafkaEventSink sink = newSink("", producer);
 
-    sink.send("orders", null, EventSink.Channel.TOPIC);
+    sink.send("orders", null, EventSink.Channel.TOPIC, "test-id-2");
 
     assertTrue(producer.history().isEmpty(), "nothing to send, nothing sent");
   }
@@ -92,7 +92,7 @@ class KafkaEventSinkTest {
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
     KafkaEventSink sink = newSink("", producer);
-    sink.send("orders", new KeyedTestEvent("agg-42"), EventSink.Channel.CLASS);
+    sink.send("orders", new KeyedTestEvent("agg-42"), EventSink.Channel.CLASS, "test-id-3");
 
     assertEquals(
         "agg-42",
@@ -106,7 +106,7 @@ class KafkaEventSinkTest {
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
     KafkaEventSink sink = newSink("", producer);
-    sink.send("orders", new PlainTestEvent("x"), EventSink.Channel.CLASS);
+    sink.send("orders", new PlainTestEvent("x"), EventSink.Channel.CLASS, "test-id-4");
 
     assertNull(
         producer.history().getFirst().key(), "events without a key must keep a null record key");
@@ -118,7 +118,7 @@ class KafkaEventSinkTest {
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
     KafkaEventSink sink = newSink("node-1", producer);
-    sink.send("orders", new KeyedTestEvent("agg-1"), EventSink.Channel.TOPIC);
+    sink.send("orders", new KeyedTestEvent("agg-1"), EventSink.Channel.TOPIC, "test-id-5");
 
     ProducerRecord<String, byte[]> record = producer.history().getFirst();
     assertEquals(
@@ -131,21 +131,6 @@ class KafkaEventSinkTest {
         "TOPIC", header(record, "X-Event-Channel"), "the dispatch channel must be stamped");
     assertNotNull(header(record, "X-Event-Id"), "every envelope must carry an event id");
     assertFalse(header(record, "X-Event-Id").isBlank());
-  }
-
-  @Test
-  void twoArgSendDefaultsToClassChannel() {
-    var producer =
-        new MockProducer<String, byte[]>(
-            true, null, new StringSerializer(), new ByteArraySerializer());
-    KafkaEventSink sink = newSink("", producer);
-    sink.send("orders", new PlainTestEvent("x"));
-
-    assertEquals(
-        "CLASS",
-        header(producer.history().getFirst(), "X-Event-Channel"),
-        "a direct two-arg send passes a concrete event, so it dispatches on the class channel "
-            + "(matching CloudEventSink)");
   }
 
   @Test

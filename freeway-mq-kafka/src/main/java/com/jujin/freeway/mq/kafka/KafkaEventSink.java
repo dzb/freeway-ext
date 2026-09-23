@@ -24,7 +24,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
-import java.util.UUID;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.Producer;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -85,22 +84,6 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     }
     props.putAll(config.extraProperties());
     return new KafkaProducer<>(props);
-  }
-
-  @Override
-  public void send(String topic, Object event) {
-    // A direct two-argument caller hands us a concrete event object and the
-    // topic is derived from its type — that is the class channel. Matches
-    // CloudEventSink on purpose so the two sinks behave identically.
-    send(topic, event, EventSink.Channel.CLASS);
-  }
-
-  @Override
-  public void send(String topic, Object event, EventSink.Channel channel) {
-    // Only reachable from a direct caller: EventBus always calls the four-arg
-    // form with an id it minted once for the whole dispatch. A direct caller
-    // has no bus-minted id, so mint one here.
-    send(topic, event, channel, UUID.randomUUID().toString());
   }
 
   @Override

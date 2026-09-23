@@ -41,11 +41,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
-class JettyWebEngineContractTest {
+class JettyHttpEngineContractTest {
 
   @Test
   void servesGetWithContentLength() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -72,7 +72,7 @@ class JettyWebEngineContractTest {
 
   @Test
   void headReportsSameContentLengthWithoutBody() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -99,16 +99,16 @@ class JettyWebEngineContractTest {
 
   @Test
   void sanitizesCorrelationIdForResponseHeaders() {
-    assertEquals("abc-123", JettyWebEngine.safeCorrelationId("abc-123"));
-    assertTrue(JettyWebEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
-    assertTrue(JettyWebEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
-    assertTrue(JettyWebEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
-    assertFalse(JettyWebEngine.safeCorrelationId("a\r\nb").contains("\r"));
+    assertEquals("abc-123", JettyHttpEngine.safeCorrelationId("abc-123"));
+    assertTrue(JettyHttpEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
+    assertTrue(JettyHttpEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
+    assertTrue(JettyHttpEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
+    assertFalse(JettyHttpEngine.safeCorrelationId("a\r\nb").contains("\r"));
   }
 
   @Test
   void streamsMultipleSseEventsOnOneConnection() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -161,7 +161,7 @@ class JettyWebEngineContractTest {
 
   @Test
   void rejectsCrlfInResponseHeaderName() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -196,7 +196,7 @@ class JettyWebEngineContractTest {
 
   @Test
   void mapsOversizedBodyToPayloadTooLarge() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)

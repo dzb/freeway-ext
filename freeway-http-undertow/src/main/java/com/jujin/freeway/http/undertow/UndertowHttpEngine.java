@@ -61,8 +61,8 @@ import org.xnio.Sequence;
 import org.xnio.SslClientAuthMode;
 
 /** Undertow transport adapter for the Freeway HTTP engine. */
-public final class UndertowWebEngine implements HttpEngine {
-  private static final Logger LOG = LoggerFactory.getLogger(UndertowWebEngine.class);
+public final class UndertowHttpEngine implements HttpEngine {
+  private static final Logger LOG = LoggerFactory.getLogger(UndertowHttpEngine.class);
   private static final HttpString X_REQUEST_ID = new HttpString("X-Request-Id");
   private static final String INTERNAL_ERROR_BODY = "Internal Server Error";
 
@@ -72,7 +72,7 @@ public final class UndertowWebEngine implements HttpEngine {
   private final ThreadLocal<UndertowHttpContext> contextPool;
   private volatile long wsMaxMessageSize = -1;
 
-  public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer) {
+  public UndertowHttpEngine(JsonCodec jsonCodec, Coercer coercer) {
     this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
   }
 
@@ -81,7 +81,7 @@ public final class UndertowWebEngine implements HttpEngine {
    * knob below through the full cascade (CLI, JVM properties, env, files) instead of JVM properties
    * alone.
    */
-  public UndertowWebEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
+  public UndertowHttpEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
     this.symbols = Objects.requireNonNull(symbols, "symbols");

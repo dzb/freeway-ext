@@ -59,7 +59,7 @@ class JettyTlsHttp2Test {
     // freeway.http.ssl.http2 defaults to true (matching the built-in engine):
     // the ALPN stack is up, but an HTTP/1.1-only client still negotiates 1.1.
     System.setProperty("freeway.http.ssl.http2", "false");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -90,7 +90,7 @@ class JettyTlsHttp2Test {
     // No freeway.http.ssl.http2 property: the adapter must default to true,
     // same as the built-in engine's HttpConfig.
     enableTls();
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -122,7 +122,7 @@ class JettyTlsHttp2Test {
   void servesHttp2OverTlsWithAlpn() throws Exception {
     enableTls();
     System.setProperty("freeway.http.ssl.http2", "true");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -153,7 +153,7 @@ class JettyTlsHttp2Test {
   @Test
   void servesHttp2Cleartext() throws Exception {
     System.setProperty("freeway.http.http2", "true");
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)

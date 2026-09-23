@@ -45,7 +45,7 @@ class JettyWebSocketProbeTest {
 
   @Test
   void probeJettyTextFrameEcho() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -97,7 +97,7 @@ class JettyWebSocketProbeTest {
 
   @Test
   void rejectsOversizedMessageWithClose() throws Exception {
-    var engine = new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)

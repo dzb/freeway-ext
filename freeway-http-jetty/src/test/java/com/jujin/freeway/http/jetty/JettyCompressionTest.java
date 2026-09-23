@@ -25,7 +25,7 @@ class JettyCompressionTest extends CompressionContract {
 
   @Override
   protected com.jujin.freeway.http.HttpEngine newEngine() {
-    return new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    return new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
   }
 
   @Override

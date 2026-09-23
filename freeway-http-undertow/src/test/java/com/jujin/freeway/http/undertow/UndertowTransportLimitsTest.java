@@ -86,7 +86,7 @@ class UndertowTransportLimitsTest {
   // ── harness ────────────────────────────────────────────────────────────────
 
   private static TestServers.TestServer start(HttpServerConfig config) {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     return TestServers.start(engine, config, pipeline());
   }
 

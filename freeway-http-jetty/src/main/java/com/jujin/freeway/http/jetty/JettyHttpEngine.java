@@ -56,8 +56,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /** Jetty 12 transport adapter for the Freeway HTTP engine. */
-public final class JettyWebEngine implements HttpEngine {
-  private static final Logger LOG = LoggerFactory.getLogger(JettyWebEngine.class);
+public final class JettyHttpEngine implements HttpEngine {
+  private static final Logger LOG = LoggerFactory.getLogger(JettyHttpEngine.class);
   private static final byte[] INTERNAL_ERROR_BODY =
       "Internal Server Error".getBytes(StandardCharsets.UTF_8);
   private static final byte[] NOT_FOUND_BODY = "Not Found".getBytes(StandardCharsets.UTF_8);
@@ -71,7 +71,7 @@ public final class JettyWebEngine implements HttpEngine {
   private final SymbolSource symbols;
   private final ThreadLocal<JettyHttpContext> contextPool;
 
-  public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer) {
+  public JettyHttpEngine(JsonCodec jsonCodec, Coercer coercer) {
     this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
   }
 
@@ -80,7 +80,7 @@ public final class JettyWebEngine implements HttpEngine {
    * knob below through the full cascade (CLI, JVM properties, env, files) instead of JVM properties
    * alone.
    */
-  public JettyWebEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
+  public JettyHttpEngine(JsonCodec jsonCodec, Coercer coercer, SymbolSource symbols) {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
     this.symbols = Objects.requireNonNull(symbols, "symbols");

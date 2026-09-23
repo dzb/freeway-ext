@@ -49,7 +49,7 @@ class UndertowEngineConfigTest {
     // "banana" exists nowhere in system properties: only the injected
     // cascade source can deliver it to startup.
     var engine =
-        new UndertowWebEngine(
+        new UndertowHttpEngine(
             new JsonCodecDefault(),
             new CoercerDefault(),
             symbols(Map.of("freeway.http.websocket.max-frame-size", "banana")));
@@ -68,7 +68,7 @@ class UndertowEngineConfigTest {
   @Test
   void injectedMaxFrameSizeReachesStartup() throws Exception {
     var engine =
-        new UndertowWebEngine(
+        new UndertowHttpEngine(
             new JsonCodecDefault(),
             new CoercerDefault(),
             symbols(Map.of("freeway.http.websocket.max-frame-size", "12345")));
@@ -78,7 +78,7 @@ class UndertowEngineConfigTest {
             .withBacklog(64)
             .withShutdownGrace(Duration.ofSeconds(5));
     try (var handle = engine.start(config, ctx -> {})) {
-      Field field = UndertowWebEngine.class.getDeclaredField("wsMaxMessageSize");
+      Field field = UndertowHttpEngine.class.getDeclaredField("wsMaxMessageSize");
       field.setAccessible(true);
       assertEquals(12345L, field.getLong(engine));
     }
@@ -91,8 +91,8 @@ class UndertowEngineConfigTest {
     // the assertion: any unresolvable parameter fails here with
     // MissingBindingException instead of silently falling back.
     // create() injects without the singleton proxy, exposing the engine.
-    try (Container container = Freeway.create(new HttpModule(), new UndertowWebEngineModule())) {
-      UndertowWebEngine engine = container.create(UndertowWebEngine.class);
+    try (Container container = Freeway.create(new HttpModule(), new UndertowHttpEngineModule())) {
+      UndertowHttpEngine engine = container.create(UndertowHttpEngine.class);
       assertNotNull(readField(engine, "symbols"));
     }
   }

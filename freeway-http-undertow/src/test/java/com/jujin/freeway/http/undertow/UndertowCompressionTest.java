@@ -25,7 +25,7 @@ class UndertowCompressionTest extends CompressionContract {
 
   @Override
   protected com.jujin.freeway.http.HttpEngine newEngine() {
-    return new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    return new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
   }
 
   @Override

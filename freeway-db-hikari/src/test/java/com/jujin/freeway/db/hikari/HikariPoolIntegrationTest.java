@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.DatabaseBuilder;
 import com.jujin.freeway.db.DatabaseStats;
 import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.db.PooledConnection;
@@ -65,7 +64,7 @@ class HikariPoolIntegrationTest {
   void pingAndStatsReflectHikariPool() {
     PoolConfig config = PoolConfig.defaults(newDb(), "sa", "");
     HikariPool pool = new HikariPool(config);
-    Database db = new DatabaseBuilder().config(config).pool(pool).build();
+    Database db = Database.create(Database.Wiring.defaults(config).withPool(pool));
 
     try (db) {
       assertTrue(db.ping(), "ping should succeed with HikariCP");
@@ -84,7 +83,7 @@ class HikariPoolIntegrationTest {
   void executeAndQueryWorkThroughHikariCP() {
     PoolConfig config = PoolConfig.defaults(newDb(), "sa", "");
     HikariPool pool = new HikariPool(config);
-    Database db = new DatabaseBuilder().config(config).pool(pool).build();
+    Database db = Database.create(Database.Wiring.defaults(config).withPool(pool));
 
     try (db) {
       db.execute("create table items (id int primary key, name varchar(50))");
@@ -121,7 +120,7 @@ class HikariPoolIntegrationTest {
             Duration.ofSeconds(30));
 
     HikariPool pool = new HikariPool(config);
-    Database db = new DatabaseBuilder().config(config).pool(pool).build();
+    Database db = Database.create(Database.Wiring.defaults(config).withPool(pool));
 
     try (db) {
       DatabaseStats stats = db.stats();
@@ -447,7 +446,7 @@ class HikariPoolIntegrationTest {
       PoolConfig config = singleConnectionConfig("jdbc:freeway-hikari-restore:tx");
       HikariPool pool = new HikariPool(config);
       Database db =
-          new DatabaseBuilder().config(config).pool(pool).dialect(new H2Dialect()).build();
+          Database.create(Database.Wiring.defaults(config).withPool(pool).withDialect(new H2Dialect()));
       try (db) {
         db.execute("create table t (id int)");
 

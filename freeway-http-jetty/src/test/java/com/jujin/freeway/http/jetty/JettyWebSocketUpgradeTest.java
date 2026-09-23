@@ -26,7 +26,7 @@ class JettyWebSocketUpgradeTest extends WebSocketUpgradeContract {
 
   @Override
   protected HttpEngine newEngine() {
-    return new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    return new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
   }
 
   @Override

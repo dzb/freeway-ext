@@ -68,7 +68,7 @@ class UndertowHttpContractTest {
 
   @Test
   void servesGetAndHead() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -104,7 +104,7 @@ class UndertowHttpContractTest {
 
   @Test
   void echoBodyWorksWhenDispatchedToWorker() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -128,16 +128,16 @@ class UndertowHttpContractTest {
 
   @Test
   void sanitizesCorrelationIdForResponseHeaders() {
-    assertEquals("abc-123", UndertowWebEngine.safeCorrelationId("abc-123"));
-    assertTrue(UndertowWebEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowWebEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowWebEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
-    assertFalse(UndertowWebEngine.safeCorrelationId("a\r\nb").contains("\r"));
+    assertEquals("abc-123", UndertowHttpEngine.safeCorrelationId("abc-123"));
+    assertTrue(UndertowHttpEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
+    assertTrue(UndertowHttpEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
+    assertTrue(UndertowHttpEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
+    assertFalse(UndertowHttpEngine.safeCorrelationId("a\r\nb").contains("\r"));
   }
 
   @Test
   void rejectsCrlfInResponseHeaderName() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -172,7 +172,7 @@ class UndertowHttpContractTest {
 
   @Test
   void streamsMultipleSseEventsOnOneConnection() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -225,7 +225,7 @@ class UndertowHttpContractTest {
 
   @Test
   void mapsOversizedBodyToPayloadTooLarge() throws Exception {
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)

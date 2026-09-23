@@ -48,7 +48,7 @@ class JettyEngineConfigTest {
     // "banana" exists nowhere in system properties: only the injected
     // cascade source can deliver it to startup.
     var engine =
-        new JettyWebEngine(
+        new JettyHttpEngine(
             new JsonCodecDefault(),
             new CoercerDefault(),
             symbols(Map.of("freeway.http.websocket.max-frame-size", "banana")));
@@ -71,8 +71,8 @@ class JettyEngineConfigTest {
     // the assertion: any unresolvable parameter fails here with
     // MissingBindingException instead of silently falling back.
     // create() injects without the singleton proxy, exposing the engine.
-    try (Container container = Freeway.create(new HttpModule(), new JettyWebEngineModule())) {
-      JettyWebEngine engine = container.create(JettyWebEngine.class);
+    try (Container container = Freeway.create(new HttpModule(), new JettyHttpEngineModule())) {
+      JettyHttpEngine engine = container.create(JettyHttpEngine.class);
       assertNotNull(readField(engine, "symbols"));
     }
   }

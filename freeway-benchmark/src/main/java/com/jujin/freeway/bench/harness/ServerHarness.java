@@ -23,9 +23,9 @@ import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.http.engine.FreewayHttpEngine;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
-import com.jujin.freeway.http.jetty.JettyWebEngine;
+import com.jujin.freeway.http.jetty.JettyHttpEngine;
 import com.jujin.freeway.http.route.Route;
-import com.jujin.freeway.http.undertow.UndertowWebEngine;
+import com.jujin.freeway.http.undertow.UndertowHttpEngine;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketRoute;
@@ -191,13 +191,13 @@ public final class ServerHarness implements AutoCloseable {
 
   /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness jettyAdapter(Scenario scenario) throws Exception {
-    return freewayWith(new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
+    return freewayWith(new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
   }
 
   /** Freeway + Undertow adapter — measures the adapter path vs built-in engine. */
   private static ServerHarness undertowAdapter(Scenario scenario) throws Exception {
     return freewayWith(
-        new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
+        new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault()), scenario);
   }
 
   /**

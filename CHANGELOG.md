@@ -26,7 +26,7 @@
   the module also means the container's event sink is live during contracts and benchmarks — measured
   absolute numbers shift slightly, the comparison between engines does not, because every engine pays it.
 - **`HttpEngine` gained `secure()`, and both adapters answer it** — the transport verdict moved to the
-  component that owns the key material. `UndertowWebEngine` and `JettyWebEngine` resolve the shared
+  component that owns the key material. `UndertowHttpEngine` and `JettyHttpEngine` resolve the shared
   `freeway.http.ssl.*` section the same way their connector builder does, so the scheme a cloud registry
   publishes can no longer disagree with the socket actually serving.
 - **core renamed `WebServer` → `HttpServer`, `RequestComponents` → `HttpPipeline`,
@@ -39,11 +39,19 @@
   read existed here — and with `h2Reset*` gone, every remaining `HttpServerConfig` field applies to
   every engine, these two included.
 - **transport fields an adapter cannot map report at startup** (honor contract: applied or reported,
-  never silent) — `UndertowWebEngine` warns when `freeway.http.server.max-connections` is tuned (the
+  never silent) — `UndertowHttpEngine` warns when `freeway.http.server.max-connections` is tuned (the
   default `0` already means unlimited, which Undertow's no-limit default matches) or
-  `freeway.http.server.write-timeout` differs from the default; `JettyWebEngine` warns the same for
+  `freeway.http.server.write-timeout` differs from the default; `JettyHttpEngine` warns the same for
   `write-timeout`, the one field it does not map. The comment that documented Undertow's two gaps
   privately is now a startup report.
+- **`UndertowWebEngine` → `UndertowHttpEngine`, `JettyWebEngine` → `JettyHttpEngine`** — the types
+  implement core's `HttpEngine` and plug into the `HttpServer`/`HttpModule`/`HttpServerConfig`
+  family, so "Web" survived only in the adapter type names. The modules follow:
+  `UndertowWebEngineModule` → `UndertowHttpEngineModule`, `JettyWebEngineModule` →
+  `JettyHttpEngineModule`, and `JettyWebEngineContractTest` → `JettyHttpEngineContractTest` (the
+  Undertow twin was already `UndertowHttpContractTest`). The jar's `META-INF/services` registrations
+  were rewritten with the new FQCNs. Migration is one find-and-replace on `WebEngine`; every Java
+  reference is a compile-time class name, so the compiler reports whatever the sweep misses.
 
 ### Added
 

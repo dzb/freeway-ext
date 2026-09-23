@@ -58,7 +58,7 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.enabled", "true");
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)
@@ -91,7 +91,7 @@ class UndertowTlsTest {
     System.setProperty("freeway.http.ssl.enabled", "true");
     System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
     System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
-    var engine = new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
         HttpServerConfig.defaults()
             .withPort(0)

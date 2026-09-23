@@ -53,18 +53,18 @@ class JettyDispatchIoTest {
           .withBacklog(64)
           .withShutdownGrace(Duration.ofSeconds(5));
 
-  private static JettyWebEngine engine(Map<String, String> symbols) {
-    return new JettyWebEngine(new JsonCodecDefault(), new CoercerDefault(), Symbols.of(symbols));
+  private static JettyHttpEngine engine(Map<String, String> symbols) {
+    return new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault(), Symbols.of(symbols));
   }
 
   @Test
   void onlyFalseOptsOutOfDispatch() {
-    assertEquals(Invocable.InvocationType.NON_BLOCKING, JettyWebEngine.invocationType("false"));
-    assertEquals(Invocable.InvocationType.NON_BLOCKING, JettyWebEngine.invocationType("FALSE"));
-    assertEquals(Invocable.InvocationType.BLOCKING, JettyWebEngine.invocationType("true"));
+    assertEquals(Invocable.InvocationType.NON_BLOCKING, JettyHttpEngine.invocationType("false"));
+    assertEquals(Invocable.InvocationType.NON_BLOCKING, JettyHttpEngine.invocationType("FALSE"));
+    assertEquals(Invocable.InvocationType.BLOCKING, JettyHttpEngine.invocationType("true"));
     // A malformed value keeps the safe default, as the Undertow knob does.
-    assertEquals(Invocable.InvocationType.BLOCKING, JettyWebEngine.invocationType("banana"));
-    assertEquals(Invocable.InvocationType.BLOCKING, JettyWebEngine.invocationType(null));
+    assertEquals(Invocable.InvocationType.BLOCKING, JettyHttpEngine.invocationType("banana"));
+    assertEquals(Invocable.InvocationType.BLOCKING, JettyHttpEngine.invocationType(null));
   }
 
   private static Invocable.InvocationType installedInvocationType(HttpServerHandle handle)

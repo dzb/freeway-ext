@@ -14,16 +14,16 @@
  * limitations under the License.
  */
 
-package com.jujin.freeway.http.undertow;
+package com.jujin.freeway.http.jetty;
 
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
 
-/** IoC module that installs the Undertow HTTP engine as the primary engine. */
-public final class UndertowWebEngineModule implements ModuleEx {
+/** IoC module that installs the Jetty HTTP engine as the primary engine. */
+public final class JettyHttpEngineModule implements ModuleEx {
   @Override
   public void bind(Binder binder) {
-    binder.bind(HttpEngine.class).to(UndertowWebEngine.class).id("undertow").primary();
+    binder.bind(HttpEngine.class).to(JettyHttpEngine.class).id("jetty").primary();
   }
 }

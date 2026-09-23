@@ -96,10 +96,10 @@ Supported engines:
 | `robaho-native`    | Robaho's `HttpServer` implementation (`robaho.net.httpserver`) |
 | `undertow-native`  | Native Undertow server (`io.undertow.Undertow`) with a platform worker pool |
 | `undertow-vt`      | Native Undertow with a virtual-thread worker pool (XNIO external executor) |
-| `undertow-adapter` | Freeway's Undertow adapter (`UndertowWebEngine`) |
+| `undertow-adapter` | Freeway's Undertow adapter (`UndertowHttpEngine`) |
 | `jetty-native`     | Native Jetty server with a platform `QueuedThreadPool` |
 | `jetty-vt`         | Native Jetty with virtual threads for blocking work (`QueuedThreadPool` + virtual-thread executor) |
-| `jetty-adapter`    | Freeway's Jetty adapter (`JettyWebEngine`) |
+| `jetty-adapter`    | Freeway's Jetty adapter (`JettyHttpEngine`) |
 
 ## JMH Microbenchmarks
 

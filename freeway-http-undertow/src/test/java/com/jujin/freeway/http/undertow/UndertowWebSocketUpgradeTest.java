@@ -26,7 +26,7 @@ class UndertowWebSocketUpgradeTest extends WebSocketUpgradeContract {
 
   @Override
   protected HttpEngine newEngine() {
-    return new UndertowWebEngine(new JsonCodecDefault(), new CoercerDefault());
+    return new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
   }
 
   @Override

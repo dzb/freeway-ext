@@ -61,7 +61,7 @@ class UndertowFrameProbeTest {
     System.setProperty("freeway.http.server.host", "127.0.0.1");
     System.setProperty("freeway.http.server.port", String.valueOf(port));
 
-    app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
+    app = FreewayApp.run(new String[0], new UndertowHttpEngineModule(), new TestAppModule());
     assertTrue(app.get(HttpServer.class).isRunning());
 
     try (Socket socket = new Socket("127.0.0.1", port)) {
@@ -98,7 +98,7 @@ class UndertowFrameProbeTest {
     System.setProperty("freeway.http.server.port", String.valueOf(port));
     System.setProperty("freeway.http.websocket.max-frame-size", "64");
 
-    app = FreewayApp.run(new String[0], new UndertowWebEngineModule(), new TestAppModule());
+    app = FreewayApp.run(new String[0], new UndertowHttpEngineModule(), new TestAppModule());
 
     try (Socket socket = new Socket("127.0.0.1", port)) {
       socket.setSoTimeout(5000);

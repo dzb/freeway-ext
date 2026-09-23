@@ -45,7 +45,7 @@ class JettyTransportContractTest extends EngineFixture {
 
   @Override
   protected HttpEngine newEngine() {
-    return new JettyWebEngine(jsonCodec(), coercer());
+    return new JettyHttpEngine(jsonCodec(), coercer());
   }
 
   @Override

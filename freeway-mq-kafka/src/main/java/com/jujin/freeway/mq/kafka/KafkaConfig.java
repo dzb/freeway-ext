@@ -54,7 +54,8 @@ public record KafkaConfig(
     int maxRetries,
     long retryBackoffMs,
     int concurrency,
-    boolean suppressOwn) {
+    boolean suppressOwn,
+    int dedupCapacity) {
 
   /** Poison-message policy: {@code SKIP} logs and continues, {@code FAIL} stops the subscriber. */
   public enum PoisonPolicy {
@@ -85,6 +86,8 @@ public record KafkaConfig(
       SymbolSpec.of("freeway.kafka.retry-backoff-ms", Long.class, 1000L, Long::parseLong);
   private static final SymbolSpec<Integer> CONCURRENCY =
       SymbolSpec.of("freeway.kafka.concurrency", Integer.class, 1, Integer::parseInt);
+  private static final SymbolSpec<Integer> DEDUP_CAPACITY =
+      SymbolSpec.of("freeway.kafka.dedup-capacity", Integer.class, 0, Integer::parseInt);
 
   /**
    * Coercer-parsed on purpose: an unreadable value fails naming the key instead of silently
@@ -109,7 +112,8 @@ public record KafkaConfig(
         symbols.resolve(MAX_RETRIES),
         symbols.resolve(RETRY_BACKOFF_MS),
         symbols.resolve(CONCURRENCY),
-        symbols.resolve(SUPPRESS_OWN));
+        symbols.resolve(SUPPRESS_OWN),
+        symbols.resolve(DEDUP_CAPACITY));
   }
 
   /**
@@ -127,7 +131,8 @@ public record KafkaConfig(
       int maxRetries,
       long retryBackoffMs,
       int concurrency,
-      boolean suppressOwn) {
+      boolean suppressOwn,
+      int dedupCapacity) {
     if (!isValidPoisonPolicy(poisonPolicyRaw)) {
       throw new IllegalArgumentException(
           "freeway.kafka.poison-policy must be 'skip' or 'fail', got: '" + poisonPolicyRaw + "'");
@@ -145,6 +150,10 @@ public record KafkaConfig(
       throw new IllegalArgumentException(
           "freeway.kafka.concurrency must be >= 1, got: " + concurrency);
     }
+    if (dedupCapacity < 0) {
+      throw new IllegalArgumentException(
+          "freeway.kafka.dedup-capacity must be >= 0, got: " + dedupCapacity);
+    }
     return new KafkaConfig(
         bootstrapServers,
         groupId,
@@ -156,7 +165,8 @@ public record KafkaConfig(
         maxRetries,
         retryBackoffMs,
         concurrency,
-        suppressOwn);
+        suppressOwn,
+        dedupCapacity);
   }
 
   /**

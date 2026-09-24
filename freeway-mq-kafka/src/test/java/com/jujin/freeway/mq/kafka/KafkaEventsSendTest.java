@@ -39,7 +39,7 @@ class KafkaEventsSendTest {
   private static KafkaEvents newPlane(String clientId, MockProducer<String, byte[]> producer) {
     var config =
         KafkaConfig.of(
-            "localhost:9092", "test-group", clientId, "orders", "skip", "", "", 1, 0, 1, true);
+            "localhost:9092", "test-group", clientId, "orders", "skip", "", "", 1, 0, 1, true, 0);
     return new KafkaEvents(config, new JsonCodecDefault(), producer);
   }
 

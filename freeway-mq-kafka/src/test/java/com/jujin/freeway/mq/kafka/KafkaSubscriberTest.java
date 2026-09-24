@@ -66,7 +66,8 @@ class KafkaSubscriberTest {
         1,
         0,
         concurrency,
-        suppress);
+        suppress,
+        0);
   }
 
   /** A plane wired to a mock producer (its outbound half is unused here). */

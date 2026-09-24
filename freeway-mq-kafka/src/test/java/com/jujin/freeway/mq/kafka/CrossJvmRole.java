@@ -68,7 +68,7 @@ public final class CrossJvmRole {
   private static void subscriber(String broker, String topic) throws Exception {
     var config =
         KafkaConfig.of(
-            broker, "freeway-xjvm-sub", "xjvm-subscriber", topic, "skip", "", "", 1, 500, 1, true);
+            broker, "freeway-xjvm-sub", "xjvm-subscriber", topic, "skip", "", "", 1, 500, 1, true, 0);
     var classEvent = new AtomicReference<CrossJvmOrder>();
     var textEvent = new AtomicReference<String>();
     var both = new CountDownLatch(2);
@@ -112,7 +112,7 @@ public final class CrossJvmRole {
   private static void publisher(String broker, String topic) throws Exception {
     var config =
         KafkaConfig.of(
-            broker, "freeway-xjvm-pub", "xjvm-publisher", topic, "skip", "", "", 1, 500, 1, true);
+            broker, "freeway-xjvm-pub", "xjvm-publisher", topic, "skip", "", "", 1, 500, 1, true, 0);
     try (KafkaEvents plane = new KafkaEvents(config, new JsonCodecDefault())) {
       plane.send(topic, new CrossJvmOrder("order-42", 7), "order-42");
       plane.send(topic, "hello-from-the-publisher");

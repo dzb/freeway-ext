@@ -29,12 +29,12 @@ class KafkaConfigTest {
 
   private static KafkaConfig config(String topics, String policy) {
     return KafkaConfig.of(
-        "localhost:9092", "test-group", "", topics, policy, "", "", 1, 1000, 1, true);
+        "localhost:9092", "test-group", "", topics, policy, "", "", 1, 1000, 1, true, 0);
   }
 
   private static KafkaConfig config(String clientId, String topics, String policy) {
     return KafkaConfig.of(
-        "localhost:9092", "test-group", clientId, topics, policy, "", "", 1, 1000, 1, true);
+        "localhost:9092", "test-group", clientId, topics, policy, "", "", 1, 1000, 1, true, 0);
   }
 
   @Test
@@ -86,7 +86,7 @@ class KafkaConfigTest {
     assertTrue(config("orders", "skip").suppressOwn());
     assertFalse(
         KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 1, false)
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 1, false, 0)
             .suppressOwn());
   }
 
@@ -104,7 +104,7 @@ class KafkaConfigTest {
             1,
             1000,
             1,
-            true);
+            true, 0);
     Properties props = config.extraProperties();
     assertEquals(2, props.size());
     assertEquals("SASL_SSL", props.getProperty("security.protocol"));
@@ -132,7 +132,8 @@ class KafkaConfigTest {
                 1,
                 1000,
                 1,
-                true));
+                true,
+                0));
   }
 
   @Test
@@ -150,7 +151,7 @@ class KafkaConfigTest {
             1,
             1000,
             1,
-            true);
+            true, 0);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -160,16 +161,42 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "", -1, 1000, 1, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", -1, 1000, 1, true, 0));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, -1, 1, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, -1, 1, true, 0));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 0, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 0, true, 0));
+    IllegalArgumentException ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                KafkaConfig.of(
+                    "localhost:9092",
+                    "test-group",
+                    "",
+                    "orders",
+                    "skip",
+                    "",
+                    "",
+                    1,
+                    1000,
+                    1,
+                    true,
+                    -1));
+    assertTrue(
+        ex.getMessage().contains("freeway.kafka.dedup-capacity"),
+        "a negative window must fail naming the key, not silently disable: "
+            + ex.getMessage());
+  }
+
+  @Test
+  void dedupCapacityDefaultsToOff() {
+    assertEquals(0, config("orders", "skip").dedupCapacity());
   }
 }

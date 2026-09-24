@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **Kafka redelivery window (`freeway.kafka.dedup-capacity`, default `0` = off)** — opt-in
+  suppression of same-record redelivery (rebalance/restart replays carry the same CE id):
+  a bounded insertion-ordered seen-set inside `KafkaEvents`, keyed on the record's CE id,
+  consulted after match + successful decode and before dispatch, so poison still throws
+  (DLQ path untouched) and unmatched records never occupy the window. Hits return normally
+  so offsets advance; `KafkaStats` gains a trailing `duplicatesDropped` counter; a crash
+  between claim and commit redelivers into a claimed id (dropped — the documented
+  at-most-once hole inside this at-least-once plane). Single-transport only: no shared
+  identity is minted, nothing touches the bus — the carve-out to rule ② recorded in the
+  core CHANGELOG, not a bridge coming back.
+
 ## 1.5.5
 
 ### Changed

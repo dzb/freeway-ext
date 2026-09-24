@@ -59,7 +59,12 @@ because the record itself decoded fine.
 With `fail`, the failing offset is not committed, so already-processed events
 from the same batch may be redelivered after a restart (at-least-once
 semantics). Consumers that need exactly-once deduplicate by their own business
-key — the `send` partition key is the natural one.
+key — the `send` partition key is the natural one. Transports without a
+natural business key (signal events, handlers not written idempotent) can
+instead arm the bounded redelivery window — `freeway.kafka.dedup-capacity`
+(default `0`, off) remembers the last N dispatch ids and drops second copies
+before dispatch. Poison still throws first, so the DLQ path is unaffected;
+unmatched records never occupy the window.
 
 ### Kafka plane topology
 
@@ -90,6 +95,7 @@ These are applied last and override adapter defaults.
 | `freeway.kafka.retry-backoff-ms` | `1000` | Base backoff between retries; each attempt doubles it (exponential). |
 | `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
 | `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
+| `freeway.kafka.dedup-capacity` | `0` (off) | Bound on remembered dispatch ids for redelivery suppression (rebalance/restart replays carry the same CE id); second copies are dropped before dispatch. Poison still throws first, so the DLQ path is unaffected. |
 
 Records sent by `KafkaEvents` carry the optional `send` partition key as the
 Kafka record key (per-aggregate ordering on the broker, per-key parallel

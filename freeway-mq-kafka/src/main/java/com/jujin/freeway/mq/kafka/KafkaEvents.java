@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -59,7 +60,10 @@ import org.slf4j.LoggerFactory;
  * that need exactly-once deduplicate by their own business key — the record key ({@code send}'s
  * third argument) is the natural one. Records still carry a CE {@code id} header (fresh per send)
  * and the producer's class name in {@code ce-type} as informational metadata — older subscriber
- * builds route by those, this one ignores them.
+ * builds route by those, this one ignores them. Transports without a natural business key
+ * (signal events, handlers not written idempotent) can instead arm the bounded redelivery
+ * window — {@code freeway.kafka.dedup-capacity} remembers the last N dispatch ids and drops
+ * second copies before dispatch (poison still throws first, so the DLQ path is unaffected).
  *
  * <p>Lifecycle is owned by the {@link KafkaModule} hook: {@link #start()} begins polling the
  * configured topics (if any), {@link #close()} stops the poller and closes the producer with a
@@ -88,6 +92,12 @@ public final class KafkaEvents implements AutoCloseable {
   private final LongAdder delivered = new LongAdder();
   private final LongAdder skippedNoSubscription = new LongAdder();
   private final LongAdder handlerFailures = new LongAdder();
+  private final LongAdder duplicatesDropped = new LongAdder();
+  /**
+   * Redelivery window, or null when {@code dedup-capacity} is unset — single-transport,
+   * opt-in, dies with this plane (a restart colds the window, preserving at-least-once).
+   */
+  private final SeenIds seenIds;
 
   private volatile KafkaSubscriber subscriber;
 
@@ -101,6 +111,7 @@ public final class KafkaEvents implements AutoCloseable {
     this.codec = Objects.requireNonNull(codec, "codec");
     this.producer = Objects.requireNonNull(producer, "producer");
     this.origin = config.origin();
+    this.seenIds = config.dedupCapacity() > 0 ? new SeenIds(config.dedupCapacity()) : null;
   }
 
   private static Producer<String, byte[]> createProducer(KafkaConfig config) {
@@ -232,34 +243,54 @@ public final class KafkaEvents implements AutoCloseable {
     if (tracestate != null) trace.put(EventTrace.TRACESTATE, tracestate);
 
     String json = new String(record.value(), StandardCharsets.UTF_8);
+    // Decode every match before claiming: a record nobody can read is poison
+    // however the window is configured — claiming it would swallow the
+    // redelivery the DLQ path needs, and poison must stay loud.
+    record Ready(Subscription sub, Object payload) {}
+    List<Ready> ready = new ArrayList<>(hits.size());
     Exception decodeFailure = null;
-    int deliverable = 0;
     for (Subscription sub : hits) {
-      Object payload;
       try {
-        payload = codec.fromJson(json, sub.type());
+        ready.add(new Ready(sub, codec.fromJson(json, sub.type())));
       } catch (Exception ex) {
         // Undecodable for the declared type: if nobody can read it, the
         // record itself is poison (retry → DLQ by policy).
         decodeFailure = ex;
-        continue;
       }
-      deliverable++;
-      final Object delivered0 = payload;
+    }
+    if (ready.isEmpty()) {
+      throw new RuntimeException(
+          "No subscription could decode the record: " + decodeFailure.getMessage(), decodeFailure);
+    }
+    // Claim only what is about to be delivered: unmatched records never
+    // occupy the window, and poison (above) never reaches it. A crash between
+    // claim and commit redelivers into a claimed id — dropped, never
+    // dispatched — the documented at-most-once hole inside this at-least-once
+    // plane.
+    if (seenIds != null) {
+      String id = KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ID, null);
+      if (!seenIds.claim(id)) {
+        duplicatesDropped.increment();
+        LOG.debug(
+            "Duplicate redelivery of '{}' (id {}) — dropped", record.topic(), id);
+        return;
+      }
+    }
+    for (Ready r : ready) {
+      final Object delivered0 = r.payload();
       try {
-        EventTrace.runWithTrace(trace, () -> sub.handler().accept(delivered0));
+        EventTrace.runWithTrace(trace, () -> r.sub().handler().accept(delivered0));
         delivered.increment();
       } catch (RuntimeException ex) {
         // A handler failure is a consumer bug, not a record defect — the
         // record already decoded; neither retry nor DLQ would fix it.
         handlerFailures.increment();
         LOG.warn(
-            "Kafka handler failed for topic '{}' (prefix '{}')", record.topic(), sub.prefix(), ex);
+            "Kafka handler failed for topic '{}' (prefix '{}')",
+            record.topic(),
+            r.sub().prefix(),
+            ex);
       }
-    }
-    if (deliverable == 0 && decodeFailure != null) {
-      throw new RuntimeException(
-          "No subscription could decode the record: " + decodeFailure.getMessage(), decodeFailure);
     }
   }
 
@@ -285,7 +316,8 @@ public final class KafkaEvents implements AutoCloseable {
         sendFailures.sum(),
         delivered.sum(),
         skippedNoSubscription.sum(),
-        handlerFailures.sum());
+        handlerFailures.sum(),
+        duplicatesDropped.sum());
   }
 
   /**
@@ -294,15 +326,53 @@ public final class KafkaEvents implements AutoCloseable {
    * @param delivered successful handler invocations
    * @param skippedNoSubscription polled records matching no subscription
    * @param handlerFailures throwing handlers (isolated, never poison)
+   * @param duplicatesDropped redeliveries dropped by the dedup window (zero unless
+   *     {@code dedup-capacity} is set)
    */
   public record KafkaStats(
       long sent,
       long sendFailures,
       long delivered,
       long skippedNoSubscription,
-      long handlerFailures) {}
+      long handlerFailures,
+      long duplicatesDropped) {}
 
   private record Subscription(String prefix, Class<?> type, Consumer<Object> handler) {}
+
+  /**
+   * Bounded insertion-ordered set of recently seen dispatch ids — the opt-in redelivery
+   * suppressor for this plane alone (no cross-transport identity, no bus coupling).
+   * Insertion order (not access order) is deliberate: re-seeing an id must not extend
+   * its life, or a hot id would pin itself in the window forever. Shared across the
+   * key-bucket worker threads, hence synchronized — one cheap claim per record.
+   */
+  private static final class SeenIds {
+    private final int capacity;
+    private final LinkedHashSet<String> seen = new LinkedHashSet<>();
+
+    SeenIds(int capacity) {
+      this.capacity = capacity;
+    }
+
+    /**
+     * @return true if {@code id} was new (now claimed); false if already present.
+     *     A null or blank id carries no identity to correlate on and always delivers.
+     */
+    synchronized boolean claim(String id) {
+      if (id == null || id.isBlank()) {
+        return true;
+      }
+      if (!seen.add(id)) {
+        return false;
+      }
+      if (seen.size() > capacity) {
+        var oldest = seen.iterator();
+        oldest.next();
+        oldest.remove();
+      }
+      return true;
+    }
+  }
 
   @Override
   public void close() {

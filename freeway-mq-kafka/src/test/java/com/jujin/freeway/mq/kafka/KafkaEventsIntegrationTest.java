@@ -41,10 +41,10 @@ class KafkaEventsIntegrationTest {
     // the subscriber plane can therefore only come over the broker.
     var publisherConfig =
         KafkaConfig.of(
-            BROKER, "freeway-it-pub", "it-producer", TOPIC, "skip", "", "", 1, 1000, 1, true);
+            BROKER, "freeway-it-pub", "it-producer", TOPIC, "skip", "", "", 1, 1000, 1, true, 0);
     var subscriberConfig =
         KafkaConfig.of(
-            BROKER, "freeway-it-sub", "it-consumer", TOPIC, "skip", "", "", 1, 1000, 1, true);
+            BROKER, "freeway-it-sub", "it-consumer", TOPIC, "skip", "", "", 1, 1000, 1, true, 0);
     publisher = new KafkaEvents(publisherConfig, new JsonCodecDefault());
     subscriberPlane = new KafkaEvents(subscriberConfig, new JsonCodecDefault());
     subscriberPlane.start();

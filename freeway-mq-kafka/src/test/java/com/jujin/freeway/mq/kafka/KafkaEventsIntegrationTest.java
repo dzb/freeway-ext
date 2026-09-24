@@ -14,14 +14,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 /**
- * Real-broker contract test for the durable stream plane: a live Apache Kafka
- * instance must be reachable at {@code FREEWAY_TEST_KAFKA} (host:port),
- * defaulting to {@code 127.0.0.1:9092}. Skips cleanly when no broker is
- * present — the mock-based suites stay the default CI path.
+ * Real-broker contract test for the durable stream plane: a live Apache Kafka instance must be
+ * reachable at {@code FREEWAY_TEST_KAFKA} (host:port), defaulting to {@code 127.0.0.1:9092}. Skips
+ * cleanly when no broker is present — the mock-based suites stay the default CI path.
  *
- * <p>Verifies the full wire loop the mocks cannot: send → broker → poll →
- * typed delivery into the receiving plane's subscriptions, exact-once arrival,
- * the partition key, and own-origin suppression on a shared plane.</p>
+ * <p>Verifies the full wire loop the mocks cannot: send → broker → poll → typed delivery into the
+ * receiving plane's subscriptions, exact-once arrival, the partition key, and own-origin
+ * suppression on a shared plane.
  */
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_KAFKA", matches = ".*")
 class KafkaEventsIntegrationTest {

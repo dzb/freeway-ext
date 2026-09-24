@@ -40,8 +40,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  * the broker.
  *
  * <p>Requires a live broker at {@code FREEWAY_TEST_KAFKA} (host:port) and is skipped without it,
- * like {@link KafkaEventsIntegrationTest}. The bridge topic is created per run, so concurrent
- * runs and stale offsets cannot interfere.
+ * like {@link KafkaEventsIntegrationTest}. The bridge topic is created per run, so concurrent runs
+ * and stale offsets cannot interfere.
  */
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_KAFKA", matches = ".*")
 class CrossJvmEventTest {

@@ -20,9 +20,9 @@ import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.event.BenchEventListener;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
-import com.jujin.freeway.ioc.event.EventSubscriber;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
+import com.jujin.freeway.ioc.event.EventSubscriber;
 import java.util.LinkedHashMap;
 import java.util.Map;
 

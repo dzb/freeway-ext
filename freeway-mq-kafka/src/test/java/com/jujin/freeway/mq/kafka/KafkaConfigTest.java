@@ -122,8 +122,17 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "just-a-key", "",
-                1, 1000, 1, true));
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "skip",
+                "just-a-key",
+                "",
+                1,
+                1000,
+                1,
+                true));
   }
 
   @Test
@@ -131,8 +140,17 @@ class KafkaConfigTest {
     assertFalse(config("orders", "skip").dlqEnabled());
     var enabled =
         KafkaConfig.of(
-            "localhost:9092", "test-group", "", "orders", "skip", "", "orders-dlq",
-            1, 1000, 1, true);
+            "localhost:9092",
+            "test-group",
+            "",
+            "orders",
+            "skip",
+            "",
+            "orders-dlq",
+            1,
+            1000,
+            1,
+            true);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -142,19 +160,16 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "",
-                -1, 1000, 1, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", -1, 1000, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "",
-                1, -1, 1, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, -1, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "",
-                1, 1000, 0, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 0, true));
   }
 }

@@ -22,19 +22,18 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Child-JVM entry point for {@link CrossJvmEventTest}: one role per process,
- * so the two sides of the stream share nothing but the broker — each enters
- * the plane by name ({@link KafkaEvents#send} / {@link KafkaEvents#subscribe}).
+ * Child-JVM entry point for {@link CrossJvmEventTest}: one role per process, so the two sides of
+ * the stream share nothing but the broker — each enters the plane by name ({@link KafkaEvents#send}
+ * / {@link KafkaEvents#subscribe}).
  *
  * <pre>
  * java CrossJvmRole subscriber &lt;broker&gt; &lt;topic&gt;
  * java CrossJvmRole publisher  &lt;broker&gt; &lt;topic&gt;
  * </pre>
  *
- * <p>The subscriber prints {@code SUBSCRIBER-READY} once its consumer is
- * polling, then one {@code RECEIVED ...} line per delivered event, and
- * finally {@code SUBSCRIBER-OK} (exit 0) or {@code SUBSCRIBER-TIMEOUT}
- * (exit 1). The publisher prints {@code PUBLISHED ...} after the records are
+ * <p>The subscriber prints {@code SUBSCRIBER-READY} once its consumer is polling, then one {@code
+ * RECEIVED ...} line per delivered event, and finally {@code SUBSCRIBER-OK} (exit 0) or {@code
+ * SUBSCRIBER-TIMEOUT} (exit 1). The publisher prints {@code PUBLISHED ...} after the records are
  * written.
  */
 public final class CrossJvmRole {
@@ -62,9 +61,9 @@ public final class CrossJvmRole {
   }
 
   /**
-   * Polls the topic and reports what its declared subscriptions received.
-   * The two subscriptions are the allowlist: a typed record and a String
-   * record under the same topic decode into the declared type each.
+   * Polls the topic and reports what its declared subscriptions received. The two subscriptions are
+   * the allowlist: a typed record and a String record under the same topic decode into the declared
+   * type each.
    */
   private static void subscriber(String broker, String topic) throws Exception {
     var config =
@@ -74,16 +73,22 @@ public final class CrossJvmRole {
     var textEvent = new AtomicReference<String>();
     var both = new CountDownLatch(2);
     KafkaEvents plane = new KafkaEvents(config, new JsonCodecDefault());
-    plane.subscribe(topic, CrossJvmOrder.class, event -> {
-      classEvent.set(event);
-      System.out.println("RECEIVED typed " + event);
-      both.countDown();
-    });
-    plane.subscribe(topic, String.class, text -> {
-      textEvent.set(text);
-      System.out.println("RECEIVED string " + text);
-      both.countDown();
-    });
+    plane.subscribe(
+        topic,
+        CrossJvmOrder.class,
+        event -> {
+          classEvent.set(event);
+          System.out.println("RECEIVED typed " + event);
+          both.countDown();
+        });
+    plane.subscribe(
+        topic,
+        String.class,
+        text -> {
+          textEvent.set(text);
+          System.out.println("RECEIVED string " + text);
+          both.countDown();
+        });
     plane.start();
     try {
       // The consumer group has to join before the publisher writes, otherwise a fresh group

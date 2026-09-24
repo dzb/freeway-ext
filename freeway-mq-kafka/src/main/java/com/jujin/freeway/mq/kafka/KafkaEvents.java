@@ -38,37 +38,32 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The durable event stream plane: explicit Kafka records with per-key
- * ordering, consumer-group delivery, poison handling and an optional DLQ —
- * entered by name, at the call site.
+ * The durable event stream plane: explicit Kafka records with per-key ordering, consumer-group
+ * delivery, poison handling and an optional DLQ — entered by name, at the call site.
  *
- * <p>{@link #send} publishes to the topic you name (the record topic IS the
- * routing topic; no bridge override repoints it). {@link #subscribe}
- * registers interest in a topic prefix with a declared payload type: the
- * declared type is also the inbound allowlist — a record matching no
- * subscription is acknowledged and skipped without deserialization, so an
- * undeclared class can never be loaded off the wire. Handler failures are
- * isolated and counted (a consumer bug must not DLQ a healthy record);
- * records that no matching subscription can decode are the poison the
- * retry/DLQ policy moves.</p>
+ * <p>{@link #send} publishes to the topic you name (the record topic IS the routing topic; no
+ * bridge override repoints it). {@link #subscribe} registers interest in a topic prefix with a
+ * declared payload type: the declared type is also the inbound allowlist — a record matching no
+ * subscription is acknowledged and skipped without deserialization, so an undeclared class can
+ * never be loaded off the wire. Handler failures are isolated and counted (a consumer bug must not
+ * DLQ a healthy record); records that no matching subscription can decode are the poison the
+ * retry/DLQ policy moves.
  *
- * <p><b>This plane is separate from the local bus and from the cloud mesh.</b>
- * A sent record is a Kafka record; it is not also a local fact, and an
- * inbound record is not injected into any bus. A fact that must live on two
- * planes is published twice, on purpose. The mesh's at-most-once volatility
- * and Kafka's at-least-once durability are different promises; wanting the
- * durable one is what this class is for.</p>
+ * <p><b>This plane is separate from the local bus and from the cloud mesh.</b> A sent record is a
+ * Kafka record; it is not also a local fact, and an inbound record is not injected into any bus. A
+ * fact that must live on two planes is published twice, on purpose. The mesh's at-most-once
+ * volatility and Kafka's at-least-once durability are different promises; wanting the durable one
+ * is what this class is for.
  *
- * <p><b>At-least-once:</b> broker retries and consumer rebalances can
- * deliver duplicates; consumers that need exactly-once deduplicate by their
- * own business key — the record key ({@code send}'s third argument) is the
- * natural one. Records still carry a CE {@code id} header (fresh per send)
- * and the producer's class name in {@code ce-type} as informational
- * metadata — older subscriber builds route by those, this one ignores them.</p>
+ * <p><b>At-least-once:</b> broker retries and consumer rebalances can deliver duplicates; consumers
+ * that need exactly-once deduplicate by their own business key — the record key ({@code send}'s
+ * third argument) is the natural one. Records still carry a CE {@code id} header (fresh per send)
+ * and the producer's class name in {@code ce-type} as informational metadata — older subscriber
+ * builds route by those, this one ignores them.
  *
- * <p>Lifecycle is owned by the {@link KafkaModule} hook: {@link #start()}
- * begins polling the configured topics (if any), {@link #close()} stops the
- * poller and closes the producer with a bounded wait.</p>
+ * <p>Lifecycle is owned by the {@link KafkaModule} hook: {@link #start()} begins polling the
+ * configured topics (if any), {@link #close()} stops the poller and closes the producer with a
+ * bounded wait.
  */
 public final class KafkaEvents implements AutoCloseable {
 
@@ -81,8 +76,11 @@ public final class KafkaEvents implements AutoCloseable {
   private final JsonCodec codec;
   private final Producer<String, byte[]> producer;
   private final String origin;
-  /** Runtime interest (this plane's poll set is broker-side group state; no peer needs
-   *  advance notice, so registration stays open after composition). */
+
+  /**
+   * Runtime interest (this plane's poll set is broker-side group state; no peer needs advance
+   * notice, so registration stays open after composition).
+   */
   private final CopyOnWriteArrayList<Subscription> subscriptions = new CopyOnWriteArrayList<>();
 
   private final LongAdder sent = new LongAdder();
@@ -112,8 +110,7 @@ public final class KafkaEvents implements AutoCloseable {
     // broker metrics (the DLQ producer already uses a -dlq suffix).
     props.put("client.id", config.clientId() + "-producer");
     props.putAll(config.extraProperties());
-    return new KafkaProducer<>(
-        props, new StringSerializer(), new ByteArraySerializer());
+    return new KafkaProducer<>(props, new StringSerializer(), new ByteArraySerializer());
   }
 
   // ==================== publish ====================
@@ -124,9 +121,8 @@ public final class KafkaEvents implements AutoCloseable {
   }
 
   /**
-   * Publish with a partition key: the broker keeps records of the same key
-   * ordered, consumers parallelize across keys. The key also rides the CE
-   * {@code subject} attribute.
+   * Publish with a partition key: the broker keeps records of the same key ordered, consumers
+   * parallelize across keys. The key also rides the CE {@code subject} attribute.
    */
   public void send(String topic, Object payload, String key) {
     Objects.requireNonNull(topic, "topic");
@@ -189,13 +185,12 @@ public final class KafkaEvents implements AutoCloseable {
   // ==================== receive ====================
 
   /**
-   * Register interest in a topic prefix. The payload is deserialized into
-   * {@code type} per record — the declaration is the allowlist. Matching is
-   * prefix-based, so {@code "orders"} covers {@code orders.created} and
-   * {@code orders.shipped}.
+   * Register interest in a topic prefix. The payload is deserialized into {@code type} per record —
+   * the declaration is the allowlist. Matching is prefix-based, so {@code "orders"} covers {@code
+   * orders.created} and {@code orders.shipped}.
    *
-   * <p>Handlers run on the poll worker for that key bucket, under the
-   * record's restored trace; a throwing handler is isolated and counted.</p>
+   * <p>Handlers run on the poll worker for that key bucket, under the record's restored trace; a
+   * throwing handler is isolated and counted.
    */
   public <T> void subscribe(String topicPrefix, Class<T> type, Consumer<T> handler) {
     Objects.requireNonNull(topicPrefix, "topicPrefix");
@@ -203,10 +198,13 @@ public final class KafkaEvents implements AutoCloseable {
     Objects.requireNonNull(handler, "handler");
     subscriptions.add(
         new Subscription(topicPrefix, type, payload -> handler.accept(type.cast(payload))));
-    if (config.topics().stream().noneMatch(t -> t.startsWith(topicPrefix)
-        || topicPrefix.isEmpty())) {
-      LOG.warn("Kafka subscription for prefix '{}' matches none of the polled topics {}"
-          + " — it will receive nothing", topicPrefix, config.topics());
+    if (config.topics().stream()
+        .noneMatch(t -> t.startsWith(topicPrefix) || topicPrefix.isEmpty())) {
+      LOG.warn(
+          "Kafka subscription for prefix '{}' matches none of the polled topics {}"
+              + " — it will receive nothing",
+          topicPrefix,
+          config.topics());
     }
   }
 
@@ -220,18 +218,16 @@ public final class KafkaEvents implements AutoCloseable {
     }
     if (hits.isEmpty()) {
       skippedNoSubscription.increment();
-      LOG.debug("No kafka subscription for topic '{}' — acknowledged without reading",
-          record.topic());
+      LOG.debug(
+          "No kafka subscription for topic '{}' — acknowledged without reading", record.topic());
       return;
     }
     // The inbound trace, restored around decode and delivery so handlers
     // observe the sender's causality. Absent runs bare — a traceless record
     // must not clear the poll worker's ambient.
     Map<String, String> trace = new LinkedHashMap<>();
-    String traceparent =
-        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACEPARENT, null);
-    String tracestate =
-        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACESTATE, null);
+    String traceparent = KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACEPARENT, null);
+    String tracestate = KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACESTATE, null);
     if (traceparent != null) trace.put(EventTrace.TRACEPARENT, traceparent);
     if (tracestate != null) trace.put(EventTrace.TRACESTATE, tracestate);
 
@@ -257,14 +253,13 @@ public final class KafkaEvents implements AutoCloseable {
         // A handler failure is a consumer bug, not a record defect — the
         // record already decoded; neither retry nor DLQ would fix it.
         handlerFailures.increment();
-        LOG.warn("Kafka handler failed for topic '{}' (prefix '{}')",
-            record.topic(), sub.prefix(), ex);
+        LOG.warn(
+            "Kafka handler failed for topic '{}' (prefix '{}')", record.topic(), sub.prefix(), ex);
       }
     }
     if (deliverable == 0 && decodeFailure != null) {
       throw new RuntimeException(
-          "No subscription could decode the record: " + decodeFailure.getMessage(),
-          decodeFailure);
+          "No subscription could decode the record: " + decodeFailure.getMessage(), decodeFailure);
     }
   }
 
@@ -286,20 +281,26 @@ public final class KafkaEvents implements AutoCloseable {
   /** This plane's counters — kept separate from every other plane's books. */
   public KafkaStats stats() {
     return new KafkaStats(
-        sent.sum(), sendFailures.sum(), delivered.sum(),
-        skippedNoSubscription.sum(), handlerFailures.sum());
+        sent.sum(),
+        sendFailures.sum(),
+        delivered.sum(),
+        skippedNoSubscription.sum(),
+        handlerFailures.sum());
   }
 
   /**
-   * @param sent                records the broker acknowledged
-   * @param sendFailures        send outcomes that were logged and dropped
-   * @param delivered           successful handler invocations
+   * @param sent records the broker acknowledged
+   * @param sendFailures send outcomes that were logged and dropped
+   * @param delivered successful handler invocations
    * @param skippedNoSubscription polled records matching no subscription
-   * @param handlerFailures     throwing handlers (isolated, never poison)
+   * @param handlerFailures throwing handlers (isolated, never poison)
    */
   public record KafkaStats(
-      long sent, long sendFailures, long delivered,
-      long skippedNoSubscription, long handlerFailures) {}
+      long sent,
+      long sendFailures,
+      long delivered,
+      long skippedNoSubscription,
+      long handlerFailures) {}
 
   private record Subscription(String prefix, Class<?> type, Consumer<Object> handler) {}
 

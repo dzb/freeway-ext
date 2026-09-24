@@ -160,8 +160,7 @@ class KafkaEventsSendTest {
     KafkaEvents plane = newPlane("node-1", producer);
     plane.send("orders", new PlainTestEvent("x"));
     assertNull(
-        header(producer.history().getFirst(), "ce-traceparent"),
-        "a traceless send stamps nothing");
+        header(producer.history().getFirst(), "ce-traceparent"), "a traceless send stamps nothing");
 
     var trace =
         new TraceContext(

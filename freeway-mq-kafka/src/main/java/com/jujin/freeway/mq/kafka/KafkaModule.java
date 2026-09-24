@@ -24,20 +24,17 @@ import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
 /**
- * IoC module wiring the durable stream plane ({@link KafkaEvents}) into the
- * container.
+ * IoC module wiring the durable stream plane ({@link KafkaEvents}) into the container.
  *
- * <p>Its bindings carry no {@code .id(...)}/{@code .primary()}: the plane has
- * no framework-provided default to step aside for, so a plain binding is the
- * honest one — an application that binds its own gets the duplicate-binding
- * error instead of being silently outranked. Adapters that substitute a core
- * role do the opposite: {@code HikariPool} binds {@code Pool} with
- * {@code .id("hikari").primary()} so the built-in default steps aside.</p>
+ * <p>Its bindings carry no {@code .id(...)}/{@code .primary()}: the plane has no framework-provided
+ * default to step aside for, so a plain binding is the honest one — an application that binds its
+ * own gets the duplicate-binding error instead of being silently outranked. Adapters that
+ * substitute a core role do the opposite: {@code HikariPool} binds {@code Pool} with {@code
+ * .id("hikari").primary()} so the built-in default steps aside.
  *
- * <p>Lifecycle (start polling, then close the poller and the producer) is
- * contributed as the {@value #LIFECYCLE_HOOK} runtime hook. Publishing and
- * subscribing are calls on the plane itself — nothing is installed onto any
- * other component at runtime.</p>
+ * <p>Lifecycle (start polling, then close the poller and the producer) is contributed as the
+ * {@value #LIFECYCLE_HOOK} runtime hook. Publishing and subscribing are calls on the plane itself —
+ * nothing is installed onto any other component at runtime.
  */
 public final class KafkaModule implements ModuleEx {
 

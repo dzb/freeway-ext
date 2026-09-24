@@ -16,9 +16,9 @@
 
 package com.jujin.freeway.mq.kafka;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -71,12 +71,15 @@ class KafkaModuleContainerTest {
             new KafkaModule(),
             binder -> {
               binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
-              binder.bind(KafkaEvents.class)
-                  .to(c -> new KafkaEvents(
-                      c.get(KafkaConfig.class),
-                      c.get(JsonCodec.class),
-                      new MockProducer<>(
-                          true, null, new StringSerializer(), new ByteArraySerializer())))
+              binder
+                  .bind(KafkaEvents.class)
+                  .to(
+                      c ->
+                          new KafkaEvents(
+                              c.get(KafkaConfig.class),
+                              c.get(JsonCodec.class),
+                              new MockProducer<>(
+                                  true, null, new StringSerializer(), new ByteArraySerializer())))
                   .primary();
             })) {
       KafkaConfig config = container.get(KafkaConfig.class);
@@ -121,7 +124,8 @@ class KafkaModuleContainerTest {
     System.setProperty("freeway.kafka.suppress-own", "no");
     try (Container container =
         Freeway.create(
-            new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
+            new KafkaModule(),
+            binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
       assertFalse(container.get(KafkaConfig.class).suppressOwn());
     } finally {
       System.clearProperty("freeway.kafka.suppress-own");
@@ -137,8 +141,7 @@ class KafkaModuleContainerTest {
                 try (Container container =
                     Freeway.create(
                         new KafkaModule(),
-                        binder ->
-                            binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
+                        binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
                   container.get(KafkaConfig.class);
                 }
               });
@@ -163,12 +166,15 @@ class KafkaModuleContainerTest {
             new KafkaModule(),
             binder -> {
               binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
-              binder.bind(KafkaEvents.class)
-                  .to(c -> new KafkaEvents(
-                      c.get(KafkaConfig.class),
-                      c.get(JsonCodec.class),
-                      new MockProducer<>(
-                          true, null, new StringSerializer(), new ByteArraySerializer())))
+              binder
+                  .bind(KafkaEvents.class)
+                  .to(
+                      c ->
+                          new KafkaEvents(
+                              c.get(KafkaConfig.class),
+                              c.get(JsonCodec.class),
+                              new MockProducer<>(
+                                  true, null, new StringSerializer(), new ByteArraySerializer())))
                   .primary();
             })) {
       KafkaEvents plane = container.get(KafkaEvents.class);

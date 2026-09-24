@@ -49,9 +49,24 @@ class KafkaSubscriberTest {
   record TestEvent(String value) {}
 
   private static KafkaConfig config(
-      String clientId, String topics, String poison, String dlq, int concurrency, boolean suppress) {
+      String clientId,
+      String topics,
+      String poison,
+      String dlq,
+      int concurrency,
+      boolean suppress) {
     return KafkaConfig.of(
-        "localhost:9092", "test-group", clientId, topics, poison, "", dlq, 1, 0, concurrency, suppress);
+        "localhost:9092",
+        "test-group",
+        clientId,
+        topics,
+        poison,
+        "",
+        dlq,
+        1,
+        0,
+        concurrency,
+        suppress);
   }
 
   /** A plane wired to a mock producer (its outbound half is unused here). */
@@ -62,7 +77,8 @@ class KafkaSubscriberTest {
         new MockProducer<>(true, null, new StringSerializer(), new ByteArraySerializer()));
   }
 
-  private static KafkaSubscriber poller(KafkaConfig config, KafkaEvents plane, MockConsumer<String, byte[]> consumer) {
+  private static KafkaSubscriber poller(
+      KafkaConfig config, KafkaEvents plane, MockConsumer<String, byte[]> consumer) {
     return new KafkaSubscriber(config, plane, consumer, null);
   }
 
@@ -74,8 +90,8 @@ class KafkaSubscriberTest {
     return new KafkaSubscriber(config, plane, consumer, dlqProducer);
   }
 
-  private static void rebalance(KafkaSubscriber subscriber,
-      MockConsumer<String, byte[]> consumer, TopicPartition topic) {
+  private static void rebalance(
+      KafkaSubscriber subscriber, MockConsumer<String, byte[]> consumer, TopicPartition topic) {
     consumer.updateBeginningOffsets(Map.of(topic, 0L));
     subscriber.start(); // consumer.subscribe(...) first — dynamic assignment
     consumer.rebalance(Set.of(topic));
@@ -242,9 +258,12 @@ class KafkaSubscriberTest {
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
     var plane = plane(config);
-    plane.subscribe("orders", TestEvent.class, e -> {
-      throw new IllegalStateException("handler bug");
-    });
+    plane.subscribe(
+        "orders",
+        TestEvent.class,
+        e -> {
+          throw new IllegalStateException("handler bug");
+        });
 
     var subscriber = poller(config, plane, consumer, (MockProducer<String, byte[]>) null);
     rebalance(subscriber, consumer, topic);
@@ -256,7 +275,8 @@ class KafkaSubscriberTest {
       Thread.sleep(20);
     }
     assertEquals(1, plane.stats().handlerFailures(), "the failure is counted");
-    assertFalse(consumer.closed(),
+    assertFalse(
+        consumer.closed(),
         "the poison policy must not react to a handler bug — even under the fail policy");
 
     subscriber.close();
@@ -275,8 +295,7 @@ class KafkaSubscriberTest {
     rebalance(subscriber, consumer, topic);
 
     for (int i = 0; i < 10; i++) {
-      consumer.addRecord(
-          record("orders", i, "key-" + (i % 3), ("{\"i\":" + i + "}"), null, null));
+      consumer.addRecord(record("orders", i, "key-" + (i % 3), ("{\"i\":" + i + "}"), null, null));
     }
 
     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -432,9 +451,7 @@ class KafkaSubscriberTest {
             "ce-traceparent",
             "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
                 .getBytes(StandardCharsets.UTF_8));
-    record
-        .headers()
-        .add("ce-tracestate", "rojo=00f067aa0ba902b7".getBytes(StandardCharsets.UTF_8));
+    record.headers().add("ce-tracestate", "rojo=00f067aa0ba902b7".getBytes(StandardCharsets.UTF_8));
     consumer.addRecord(record);
 
     var captured = seen.poll(5, TimeUnit.SECONDS);

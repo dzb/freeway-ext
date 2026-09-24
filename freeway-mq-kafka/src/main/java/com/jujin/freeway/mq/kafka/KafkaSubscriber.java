@@ -42,16 +42,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The poll machinery of the durable stream plane: consumes configured Kafka topics
- * and hands each record to {@link KafkaEvents#handle} — matching subscriptions,
- * decoding, delivery and the trace context are the plane's business; this class owns
- * the consumer thread, offset commits, key-bucket parallelism, retry backoff, poison
- * policy and the DLQ.
+ * The poll machinery of the durable stream plane: consumes configured Kafka topics and hands each
+ * record to {@link KafkaEvents#handle} — matching subscriptions, decoding, delivery and the trace
+ * context are the plane's business; this class owns the consumer thread, offset commits, key-bucket
+ * parallelism, retry backoff, poison policy and the DLQ.
  *
- * <p><b>Internal machinery</b> — applications enter through {@link KafkaModule} (which
- * builds and owns the plane) and {@link KafkaEvents#subscribe}, not here. The declared
- * subscription types are the inbound allowlist: a record matching no subscription is
- * acknowledged and skipped without being read at all.
+ * <p><b>Internal machinery</b> — applications enter through {@link KafkaModule} (which builds and
+ * owns the plane) and {@link KafkaEvents#subscribe}, not here. The declared subscription types are
+ * the inbound allowlist: a record matching no subscription is acknowledged and skipped without
+ * being read at all.
  */
 final class KafkaSubscriber implements AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(KafkaSubscriber.class);

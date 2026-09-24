@@ -446,7 +446,8 @@ class HikariPoolIntegrationTest {
       PoolConfig config = singleConnectionConfig("jdbc:freeway-hikari-restore:tx");
       HikariPool pool = new HikariPool(config);
       Database db =
-          Database.create(Database.Wiring.defaults(config).withPool(pool).withDialect(new H2Dialect()));
+          Database.create(
+              Database.Wiring.defaults(config).withPool(pool).withDialect(new H2Dialect()));
       try (db) {
         db.execute("create table t (id int)");
 

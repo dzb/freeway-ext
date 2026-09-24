@@ -22,9 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 /**
  * Configuration for the Kafka adapter. Every key's name, type and default is declared exactly once
@@ -34,14 +32,12 @@ import java.util.stream.Collectors;
  * <p><b>The three keys that must agree across nodes:</b>
  *
  * <ul>
- *   <li>{@code freeway.kafka.topics} is the bridge topic list: the sink produces to it and the
- *       subscriber polls it. Both sides must configure the same list, or records are written to a
- *       topic nobody consumes (the local dispatch topic travels in the {@code ce-fwtopic} header
- *       instead, so one bridge topic serves every local topic).
- *   <li>{@code freeway.kafka.allowed-event-types} is the subscriber's accept list and must name
- *       every bridged event class: a record whose type header is not listed is rejected as poison,
- *       and string-topic events carry {@code java.lang.String} as their type, so bridging those
- *       needs that entry too. An empty list accepts nothing.
+ *   <li>{@code freeway.kafka.topics} is the subscriber's poll set: {@code send} targets topics by
+ *       name, so a topic nobody polls receives nothing. {@code KafkaEvents.subscribe} warns when a
+ *       registered prefix can match none of the polled topics.
+ *   <li>There is no inbound type allowlist to configure: each {@code subscribe} declares the
+ *       payload type it can read, and that declaration is the allowlist — a record matching no
+ *       subscription is acknowledged and skipped without being deserialized at all.
  *   <li>{@code freeway.kafka.client-id} is the node identity behind {@code suppress-own}: each node
  *       needs its own value (unset falls back to a per-JVM UUID). Two nodes sharing one id treat
  *       each other's events as their own and drop them.
@@ -52,7 +48,6 @@ public record KafkaConfig(
     String groupId,
     String clientId,
     List<String> topics,
-    Set<String> allowedEventTypes,
     PoisonPolicy poisonPolicy,
     Properties extraProperties,
     String dlqTopic,
@@ -78,8 +73,6 @@ public record KafkaConfig(
       SymbolSpec.of("freeway.kafka.client-id", String.class, "");
   private static final SymbolSpec<String> TOPICS =
       SymbolSpec.of("freeway.kafka.topics", String.class, "");
-  private static final SymbolSpec<String> ALLOWED_EVENT_TYPES =
-      SymbolSpec.of("freeway.kafka.allowed-event-types", String.class, "");
   private static final SymbolSpec<String> POISON_POLICY =
       SymbolSpec.of("freeway.kafka.poison-policy", String.class, "skip");
   private static final SymbolSpec<String> EXTRA_PROPERTIES =
@@ -110,7 +103,6 @@ public record KafkaConfig(
         symbols.resolve(GROUP_ID),
         symbols.resolve(CLIENT_ID),
         symbols.resolve(TOPICS),
-        symbols.resolve(ALLOWED_EVENT_TYPES),
         symbols.resolve(POISON_POLICY),
         symbols.resolve(EXTRA_PROPERTIES),
         symbols.resolve(DLQ_TOPIC),
@@ -129,7 +121,6 @@ public record KafkaConfig(
       String groupId,
       String clientId,
       String topicsRaw,
-      String allowedEventTypesRaw,
       String poisonPolicyRaw,
       String propertiesRaw,
       String dlqTopic,
@@ -159,7 +150,6 @@ public record KafkaConfig(
         groupId,
         clientId,
         parseList(topicsRaw),
-        parseSet(allowedEventTypesRaw),
         poisonPolicy,
         parseProperties(propertiesRaw),
         dlqTopic,
@@ -198,14 +188,6 @@ public record KafkaConfig(
   private static List<String> parseList(String raw) {
     if (raw == null || raw.isBlank()) return List.of();
     return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
-  }
-
-  private static Set<String> parseSet(String raw) {
-    if (raw == null || raw.isBlank()) return Set.of();
-    return Arrays.stream(raw.split(","))
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
-        .collect(Collectors.toUnmodifiableSet());
   }
 
   /**

@@ -23,79 +23,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Properties;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class KafkaConfigTest {
 
-  private static KafkaConfig config(String topics, String allowed, String policy) {
+  private static KafkaConfig config(String topics, String policy) {
     return KafkaConfig.of(
-        "localhost:9092", "test-group", "", topics, allowed, policy, "", "", 1, 1000, 1, true);
+        "localhost:9092", "test-group", "", topics, policy, "", "", 1, 1000, 1, true);
   }
 
-  private static KafkaConfig config(String clientId, String topics, String allowed, String policy) {
+  private static KafkaConfig config(String clientId, String topics, String policy) {
     return KafkaConfig.of(
-        "localhost:9092",
-        "test-group",
-        clientId,
-        topics,
-        allowed,
-        policy,
-        "",
-        "",
-        1,
-        1000,
-        1,
-        true);
+        "localhost:9092", "test-group", clientId, topics, policy, "", "", 1, 1000, 1, true);
   }
 
   @Test
   void topicsParsesCommaSeparatedList() {
-    assertEquals(List.of(), config("", "", "skip").topics());
-    assertEquals(List.of(), config(null, "", "skip").topics());
-    assertEquals(List.of("orders", "payments"), config(" orders , payments ", "", "skip").topics());
-  }
-
-  @Test
-  void allowedEventTypesDefaultsToEmptyAllowlist() {
-    assertTrue(config("orders", "", "skip").allowedEventTypes().isEmpty());
-    assertTrue(config("orders", null, "skip").allowedEventTypes().isEmpty());
-    assertEquals(
-        Set.of("com.acme.OrderCreated", "com.acme.PaymentReceived"),
-        config("orders", "com.acme.OrderCreated, com.acme.PaymentReceived", "skip")
-            .allowedEventTypes());
+    assertEquals(List.of(), config("", "skip").topics());
+    assertEquals(List.of(), config(null, "skip").topics());
+    assertEquals(List.of("orders", "payments"), config(" orders , payments ", "skip").topics());
   }
 
   @Test
   void poisonPolicyParsing() {
-    assertFalse(config("orders", "", "skip").failOnPoison());
-    assertFalse(config("orders", "", "SKIP").failOnPoison());
-    assertFalse(config("orders", "", " skip ").failOnPoison());
-    assertTrue(config("orders", "", "fail").failOnPoison());
-    assertTrue(config("orders", "", "FAIL").failOnPoison());
+    assertFalse(config("orders", "skip").failOnPoison());
+    assertFalse(config("orders", "SKIP").failOnPoison());
+    assertFalse(config("orders", " skip ").failOnPoison());
+    assertTrue(config("orders", "fail").failOnPoison());
+    assertTrue(config("orders", "FAIL").failOnPoison());
   }
 
   @Test
   void unknownPoisonPolicyIsRejected() {
-    assertThrows(IllegalArgumentException.class, () -> config("orders", "", "retry"));
-    assertThrows(IllegalArgumentException.class, () -> config("orders", "", ""));
+    assertThrows(IllegalArgumentException.class, () -> config("orders", "retry"));
+    assertThrows(IllegalArgumentException.class, () -> config("orders", ""));
   }
 
   @Test
   void clientIdDefaultsToEmpty() {
-    assertEquals("", config("orders", "", "skip").clientId());
-    assertEquals("bench-producer", config("bench-producer", "orders", "", "skip").clientId());
+    assertEquals("", config("orders", "skip").clientId());
+    assertEquals("bench-producer", config("bench-producer", "orders", "skip").clientId());
   }
 
   @Test
   void originUsesClientIdWhenConfigured() {
-    assertEquals("node-1", config("node-1", "orders", "", "skip").origin());
+    assertEquals("node-1", config("node-1", "orders", "skip").origin());
   }
 
   @Test
   void originFallsBackToStableProcessIdentity() {
-    String fromClientIdHelper = config("", "orders", "", "skip").origin();
-    String fromTopicsHelper = config("orders", "", "skip").origin();
+    String fromClientIdHelper = config("", "orders", "skip").origin();
+    String fromTopicsHelper = config("orders", "skip").origin();
     assertFalse(fromClientIdHelper.isBlank(), "origin must never be blank");
     assertEquals(
         fromClientIdHelper,
@@ -105,10 +83,10 @@ class KafkaConfigTest {
 
   @Test
   void suppressOwnDefaultsToTrue() {
-    assertTrue(config("orders", "", "skip").suppressOwn());
+    assertTrue(config("orders", "skip").suppressOwn());
     assertFalse(
         KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 1000, 1, false)
+                "localhost:9092", "test-group", "", "orders", "skip", "", "", 1, 1000, 1, false)
             .suppressOwn());
   }
 
@@ -120,7 +98,6 @@ class KafkaConfigTest {
             "test-group",
             "",
             "orders",
-            "",
             "skip",
             "security.protocol=SASL_SSL; sasl.mechanism = PLAIN ;",
             "",
@@ -136,7 +113,7 @@ class KafkaConfigTest {
 
   @Test
   void extraPropertiesDefaultsToEmpty() {
-    assertTrue(config("orders", "", "skip").extraProperties().isEmpty());
+    assertTrue(config("orders", "skip").extraProperties().isEmpty());
   }
 
   @Test
@@ -145,37 +122,17 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092",
-                "test-group",
-                "",
-                "orders",
-                "",
-                "skip",
-                "just-a-key",
-                "",
-                1,
-                1000,
-                1,
-                true));
+                "localhost:9092", "test-group", "", "orders", "skip", "just-a-key", "",
+                1, 1000, 1, true));
   }
 
   @Test
   void dlqDefaultsToDisabled() {
-    assertFalse(config("orders", "", "skip").dlqEnabled());
+    assertFalse(config("orders", "skip").dlqEnabled());
     var enabled =
         KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            "",
-            "skip",
-            "",
-            "orders-dlq",
-            1,
-            1000,
-            1,
-            true);
+            "localhost:9092", "test-group", "", "orders", "skip", "", "orders-dlq",
+            1, 1000, 1, true);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -185,38 +142,19 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092",
-                "test-group",
-                "",
-                "orders",
-                "",
-                "skip",
-                "",
-                "",
-                -1,
-                1000,
-                1,
-                true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "",
+                -1, 1000, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, -1, 1, true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "",
+                1, -1, 1, true));
     assertThrows(
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092",
-                "test-group",
-                "",
-                "orders",
-                "",
-                "skip",
-                "",
-                "",
-                1,
-                1000,
-                0,
-                true));
+                "localhost:9092", "test-group", "", "orders", "skip", "", "",
+                1, 1000, 0, true));
   }
 }

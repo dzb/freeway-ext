@@ -4,6 +4,27 @@
 
 ### Changed
 
+- **kafka became an explicit plane: `KafkaEvents` replaces `KafkaEventSink` + `publishInbound`** —
+  the core removed the bus-to-transport bridge (`EventSink`/`EventBusInbound`/`EventBridgePolicy`
+  are gone from `freeway-ioc`), and the durable stream stopped being a shadow of the local bus.
+  `KafkaModule` now binds one `KafkaEvents` (producer + subscription table + poller behind the
+  `freeway.kafka.lifecycle` hook); entering the plane is a call-site decision:
+  `events.send(topic, payload[, key])` publishes, `events.subscribe(prefix, Type.class, handler)`
+  receives. The declared type is the inbound allowlist (the `freeway.kafka.allowed-event-types`
+  key is gone — unmatched records are skipped unread, no reflection for undeclared classes),
+  `send`'s third argument is the partition key and `ce-subject` (`EventBus.Keyed` is gone),
+  and the bridge-topic override is gone: the topic you send to is the topic you poll
+  (`freeway.kafka.topics` is now purely the poll set; `subscribe` warns when its prefix can match
+  nothing polled). Poison stays poison (undecodable records retry then skip/DLQ); a throwing
+  handler is isolated and counted, never poison — the record itself decoded fine. The ce- headers
+  and `X-Event-*` legacy reads keep wire compat both ways; the package-name denylist
+  (`com.jujin.freeway.boot.*`) and the class-channel branch died with the bridge — the only way
+  a local event reaches Kafka now is calling `send`. Tests reshaped accordingly
+  (`KafkaEventSinkTest` → `KafkaEventsSendTest`, `KafkaSubscriberTest` drives the plane's
+  subscription table, `KafkaDeserializationTest` deleted with `resolveEventType`, integration and
+  cross-JVM roles now enter the plane by name). **This requires the bridge-removed
+  `1.5.5-SNAPSHOT` core in the local repository; 1.5.5 ships core and ext as one train.**
+
 - **all POMs track core `1.5.5-SNAPSHOT`** (parent `freeway-parent` and `freeway.version`), so the
   adaptations below resolve. Building this tree now requires the matching core installed locally
   (`mvn install` in the core repo) or published to the snapshot repository.

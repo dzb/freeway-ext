@@ -35,44 +35,47 @@ one exception — comparing engines requires both of them — and is excluded fr
 
 ## Kafka security note
 
-The Kafka subscriber only deserializes messages whose `ce-type` header is on
-the `freeway.kafka.allowed-event-types` allowlist (comma-separated class names).
-Messages without the header are treated as plain JSON `Map`. If the allowlist is
-empty (the default), **typed messages are rejected** instead of being
-deserialized into arbitrary classes from the classpath. String-topic events
-(`java.lang.String` type header) also need `java.lang.String` in the list.
+The receiving plane deserializes a record only into the payload type a
+`KafkaEvents.subscribe(prefix, type, handler)` declared — the subscription
+table is the inbound allowlist. A record whose topic matches no subscription is
+acknowledged and skipped without being read at all, so an undeclared class can
+never be loaded off the wire. The former `freeway.kafka.allowed-event-types`
+key is gone: declaring a subscription is the only way to receive, and there is
+no "silent empty allowlist" state to misconfigure.
 
-> ⚠️ This is a breaking change from earlier versions. Existing consumers that
-> rely on typed events must configure the allowlist, for example:
+> ⚠️ This replaces the old class-name allowlist. Consumers that bridged typed
+> events now declare the type per subscription instead:
 >
+> ```java
+> events.subscribe("orders", OrderCreated.class, handler);
 > ```
-> -Dfreeway.kafka.allowed-event-types=com.acme.OrderCreated,com.acme.PaymentReceived,java.lang.String
-> ```
->
-> An empty allowlist is indistinguishable from "the broker is silent" — the
-> subscriber now warns at startup when `freeway.kafka.allowed-event-types` is
-> empty.
->
-> Rejected messages follow the poison-message policy: they are retried once,
-> then either logged and skipped (default `freeway.kafka.poison-policy=skip`) or
-> fail the subscriber without committing (`fail`).
->
-> With `fail`, the failing offset is not committed, so already-published events
-> from the same batch may be redelivered after a restart (at-least-once
-> semantics).
 
-### Kafka bridge topology
+Rejected (undecodable) messages follow the poison-message policy: they are
+retried, then either logged and moved on (default
+`freeway.kafka.poison-policy=skip`) or fail the subscriber without committing
+(`fail`). A throwing *handler* is never poison — it is isolated and counted,
+because the record itself decoded fine.
 
-`KafkaEventSink` writes to the configured **bridge topic** (`freeway.kafka.topics`)
-and stamps the local dispatch topic in a `ce-fwtopic` header. The subscriber
-polls the same bridge topic and re-publishes inbound events under that header, so
-class dispatch uses the type header and string topics keep their name across the
-bridge. **The bridge topic must appear in `freeway.kafka.topics` on every node** —
-if the sink writes to a topic nobody polls, cross-JVM events are lost.
+With `fail`, the failing offset is not committed, so already-processed events
+from the same batch may be redelivered after a restart (at-least-once
+semantics). Consumers that need exactly-once deduplicate by their own business
+key — the `send` partition key is the natural one.
 
-`KafkaEventSink.send` swallows synchronous producer failures and skips null
-payloads, as the `EventSink` contract requires. The bridge is wired at startup
-via `freeway.kafka.lifecycle` (matching core's `freeway.<module>.<thing>` naming).
+### Kafka plane topology
+
+`KafkaEvents.send(topic, payload)` writes to the **named topic itself** — the
+routing topic and the wire topic are one, and the old bridge-topic override
+(the record always going to `freeway.kafka.topics` with the local topic riding
+a `ce-fwtopic` header) is gone. `freeway.kafka.topics` is now purely the
+subscriber's **poll set**: a topic nobody polls receives nothing, and
+`subscribe` warns at registration when its prefix can match no polled topic.
+
+`send` never throws at the caller: synchronous producer failures are logged
+and counted, and a null payload is skipped (in Kafka a null value is a
+compaction tombstone, not an event). The plane is started and closed by the
+`freeway.kafka.lifecycle` hook (matching core's `freeway.<module>.<thing>`
+naming); `send` works before the hook too (the producer is live from
+construction — only the poll loop waits for lifecycle).
 
 Additional Kafka client options (TLS, SASL, etc.) can be passed through with
 `freeway.kafka.properties` as semicolon-separated `key=value` pairs, e.g.
@@ -88,9 +91,11 @@ These are applied last and override adapter defaults.
 | `freeway.kafka.dlq-topic` | (unset) | When set, poison messages are published to this dead-letter topic instead of being skipped. The original topic/offset and a reason are preserved in `X-DLQ-Original-Topic` / `X-DLQ-Original-Offset` / `X-DLQ-Reason` headers. |
 | `freeway.kafka.concurrency` | `1` | Number of poll/processing workers; when > 1 messages are fanned out by key so ordering per key is preserved. |
 
-Messages published by `KafkaEventSink` carry the event's class name as the Kafka
-record key (for class dispatch) or null (for string topics), so keyed fan-out
-applies only to class events. Keys set by other producers are honored.
+Records sent by `KafkaEvents` carry the optional `send` partition key as the
+Kafka record key (per-aggregate ordering on the broker, per-key parallel
+consumption), and the same key rides the `ce-subject` header. Sends without a
+key have a null record key — no cross-broker ordering promise. Keys set by
+other producers are honored.
 
 Without a DLQ topic, poison messages follow `freeway.kafka.poison-policy` as
 described above. With a DLQ topic, they are moved to the DLQ first and the

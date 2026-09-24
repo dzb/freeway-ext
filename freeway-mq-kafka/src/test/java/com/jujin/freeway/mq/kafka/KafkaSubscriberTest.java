@@ -23,9 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.cloud.context.InvocationContext;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.ioc.Container;
-import com.jujin.freeway.ioc.EventBus;
-import com.jujin.freeway.ioc.Freeway;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -49,537 +46,429 @@ import org.junit.jupiter.api.Test;
 @SuppressWarnings("deprecation")
 class KafkaSubscriberTest {
 
-  /** Typed event used to verify class-channel dispatch across the sink. */
   record TestEvent(String value) {}
 
+  private static KafkaConfig config(
+      String clientId, String topics, String poison, String dlq, int concurrency, boolean suppress) {
+    return KafkaConfig.of(
+        "localhost:9092", "test-group", clientId, topics, poison, "", dlq, 1, 0, concurrency, suppress);
+  }
+
+  /** A plane wired to a mock producer (its outbound half is unused here). */
+  private static KafkaEvents plane(KafkaConfig config) {
+    return new KafkaEvents(
+        config,
+        new JsonCodecDefault(),
+        new MockProducer<>(true, null, new StringSerializer(), new ByteArraySerializer()));
+  }
+
+  private static KafkaSubscriber poller(KafkaConfig config, KafkaEvents plane, MockConsumer<String, byte[]> consumer) {
+    return new KafkaSubscriber(config, plane, consumer, null);
+  }
+
+  private static KafkaSubscriber poller(
+      KafkaConfig config,
+      KafkaEvents plane,
+      MockConsumer<String, byte[]> consumer,
+      MockProducer<String, byte[]> dlqProducer) {
+    return new KafkaSubscriber(config, plane, consumer, dlqProducer);
+  }
+
+  private static void rebalance(KafkaSubscriber subscriber,
+      MockConsumer<String, byte[]> consumer, TopicPartition topic) {
+    consumer.updateBeginningOffsets(Map.of(topic, 0L));
+    subscriber.start(); // consumer.subscribe(...) first — dynamic assignment
+    consumer.rebalance(Set.of(topic));
+  }
+
+  private static ConsumerRecord<String, byte[]> record(
+      String topic, long offset, String key, String value, String originHeader, String origin) {
+    var record =
+        new ConsumerRecord<>(topic, 0, offset, key, value.getBytes(StandardCharsets.UTF_8));
+    if (origin != null) {
+      record.headers().add(originHeader, origin.getBytes(StandardCharsets.UTF_8));
+    }
+    return record;
+  }
+
   @Test
-  void consumesAndPublishesMessagesUntilClosed() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 1, 0, 1, true);
+  void deliversToDeclaredSubscriptionsUntilClosed() throws Exception {
+    var config = config("", "orders", "skip", "", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", Map.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var received = new LinkedBlockingQueue<Object>();
-      bus.subscribe("orders", received::add);
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    consumer.addRecord(record("orders", 0L, "key-1", "{\"x\":1}", null, null));
 
-      consumer.addRecord(
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8)));
+    Object event = received.poll(5, TimeUnit.SECONDS);
+    assertNotNull(event, "a matching subscription must receive the payload");
+    assertTrue(event instanceof Map, "payloads decode into the declared type");
 
-      Object event = received.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "message should be published to the EventBus");
-      assertTrue(event instanceof Map, "untyped messages deserialize as Map");
+    subscriber.close();
+    assertTrue(consumer.closed(), "consumer should be closed by the poll loop");
+  }
 
-      subscriber.close();
-      assertTrue(consumer.closed(), "consumer should be closed by the poll loop");
+  @Test
+  void recordsWithoutAnySubscriptionAreSkippedWithoutBeingRead() throws Exception {
+    // The subscription table is the inbound gate: no match means the value is
+    // never even parsed — garbage is fine here and stays NOT poison.
+    var config = config("", "orders", "skip", "", 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
+
+    consumer.addRecord(record("orders", 0L, "k", "this is not json", null, null));
+
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (plane.stats().skippedNoSubscription() == 0 && System.nanoTime() < deadline) {
+      Thread.sleep(20);
     }
+    assertEquals(1, plane.stats().skippedNoSubscription());
+    assertFalse(consumer.closed(), "an unmatched record never triggers the poison policy");
+
+    subscriber.close();
   }
 
   @Test
   void poisonMessageIsForwardedToDlq() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            "",
-            "skip",
-            "",
-            "orders-dlq",
-            1,
-            0,
-            1,
-            true);
+    var config = config("", "orders", "skip", "orders-dlq", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var dlqProducer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", TestEvent.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var received = new LinkedBlockingQueue<Object>();
-      bus.subscribe("orders", received::add);
+    var subscriber = poller(config, plane, consumer, dlqProducer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber =
-          new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, dlqProducer);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    // Subscribed type cannot decode this value -> poison -> DLQ.
+    consumer.addRecord(record("orders", 0L, "key-1", "this is not json", null, null));
 
-      // Typed message whose type is not allowlisted -> poison -> DLQ.
-      var record =
-          new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
+    List<ProducerRecord<String, byte[]>> dlq;
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    do {
+      dlq = dlqProducer.history();
+      if (!dlq.isEmpty()) {
+        break;
+      }
+      Thread.sleep(20);
+    } while (System.nanoTime() < deadline);
 
-      List<ProducerRecord<String, byte[]>> dlq;
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      do {
-        dlq = dlqProducer.history();
-        if (!dlq.isEmpty()) {
-          break;
-        }
-        Thread.sleep(20);
-      } while (System.nanoTime() < deadline);
+    assertEquals(1, dlq.size(), "poison message should reach the DLQ");
+    assertEquals("orders-dlq", dlq.getFirst().topic());
+    assertEquals(
+        "orders",
+        new String(
+            dlq.getFirst().headers().lastHeader("X-DLQ-Original-Topic").value(),
+            StandardCharsets.UTF_8));
+    assertNotNull(dlq.getFirst().headers().lastHeader("X-DLQ-Reason"));
+    assertTrue(received.isEmpty(), "poison message must not reach any handler");
+    assertFalse(consumer.closed(), "the skip policy keeps the subscriber running");
 
-      assertEquals(1, dlq.size(), "poison message should reach the DLQ");
-      assertEquals("orders-dlq", dlq.getFirst().topic());
-      assertEquals(
-          "orders",
-          new String(
-              dlq.getFirst().headers().lastHeader("X-DLQ-Original-Topic").value(),
-              StandardCharsets.UTF_8));
-      assertNotNull(dlq.getFirst().headers().lastHeader("X-DLQ-Reason"));
-      assertTrue(received.isEmpty(), "poison message must not reach the EventBus");
-      assertFalse(consumer.closed(), "the skip policy keeps the subscriber running");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
+    subscriber.close();
+    assertTrue(consumer.closed());
   }
 
   @Test
   void poisonPolicyFailStopsTheSubscriberAfterTheDlq() throws Exception {
     // README contract: with a DLQ the record is preserved first, and the policy
     // still decides whether processing continues (skip) or stops (fail).
-    var config =
-        KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            "",
-            "fail",
-            "",
-            "orders-dlq",
-            1,
-            0,
-            1,
-            true);
+    var config = config("", "orders", "fail", "orders-dlq", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var dlqProducer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    plane.subscribe("orders", TestEvent.class, e -> {});
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var subscriber =
-          new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, dlqProducer);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    var subscriber = poller(config, plane, consumer, dlqProducer);
+    rebalance(subscriber, consumer, topic);
 
-      var record =
-          new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
+    consumer.addRecord(record("orders", 0L, "key-1", "not json", null, null));
 
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (dlqProducer.history().isEmpty() && System.nanoTime() < deadline) {
-        Thread.sleep(20);
-      }
-      assertEquals(1, dlqProducer.history().size(), "the record is preserved in the DLQ first");
-
-      // The fail policy then stops the loop: it closes the consumer in its
-      // finally block, so nothing after the poison record is consumed and the
-      // offset stays uncommitted for redelivery.
-      long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (!consumer.closed() && System.nanoTime() < stopDeadline) {
-        Thread.sleep(20);
-      }
-      assertTrue(consumer.closed(), "the fail policy must stop the subscriber after the DLQ");
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (dlqProducer.history().isEmpty() && System.nanoTime() < deadline) {
+      Thread.sleep(20);
     }
+    assertEquals(1, dlqProducer.history().size(), "the record is preserved in the DLQ first");
+
+    // The fail policy then stops the loop: it closes the consumer in its
+    // finally block, so nothing after the poison record is consumed and the
+    // offset stays uncommitted for redelivery.
+    long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!consumer.closed() && System.nanoTime() < stopDeadline) {
+      Thread.sleep(20);
+    }
+    assertTrue(consumer.closed(), "the fail policy must stop the subscriber after the DLQ");
   }
 
   @Test
   void poisonPolicyFailWithoutADlqStopsTheSubscriber() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "", "orders", "", "fail", "", "", 1, 0, 1, true);
+    var config = config("", "orders", "fail", "", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    plane.subscribe("orders", TestEvent.class, e -> {});
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    var subscriber = poller(config, plane, consumer, (MockProducer<String, byte[]>) null);
+    rebalance(subscriber, consumer, topic);
 
-      var record =
-          new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
+    consumer.addRecord(record("orders", 0L, "key-1", "not json", null, null));
 
-      long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (!consumer.closed() && System.nanoTime() < stopDeadline) {
-        Thread.sleep(20);
-      }
-      assertTrue(consumer.closed(), "the fail policy stops the subscriber without a DLQ too");
+    long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (!consumer.closed() && System.nanoTime() < stopDeadline) {
+      Thread.sleep(20);
     }
+    assertTrue(consumer.closed(), "the fail policy stops the subscriber without a DLQ too");
+  }
+
+  @Test
+  void handlerFailureIsIsolatedAndNeverPoison() throws Exception {
+    // A throwing handler is a consumer bug, not a record defect: the record
+    // decoded fine, so retrying or DLQ-ing it would fix nothing.
+    var config = config("", "orders", "fail", "", 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    plane.subscribe("orders", TestEvent.class, e -> {
+      throw new IllegalStateException("handler bug");
+    });
+
+    var subscriber = poller(config, plane, consumer, (MockProducer<String, byte[]>) null);
+    rebalance(subscriber, consumer, topic);
+
+    consumer.addRecord(record("orders", 0L, "k", "{\"value\":\"ok\"}", null, null));
+
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (plane.stats().handlerFailures() == 0 && System.nanoTime() < deadline) {
+      Thread.sleep(20);
+    }
+    assertEquals(1, plane.stats().handlerFailures(), "the failure is counted");
+    assertFalse(consumer.closed(),
+        "the poison policy must not react to a handler bug — even under the fail policy");
+
+    subscriber.close();
   }
 
   @Test
   void concurrentConsumptionDeliversAllMessages() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "", "orders", "", "skip", "", "", 0, 0, 2, true);
+    var config = config("", "orders", "skip", "", 2, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", Map.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var received = new LinkedBlockingQueue<Object>();
-      bus.subscribe("orders", received::add);
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
-
-      for (int i = 0; i < 10; i++) {
-        consumer.addRecord(
-            new ConsumerRecord<>(
-                "orders",
-                0,
-                i,
-                "key-" + (i % 3),
-                ("{\"i\":" + i + "}").getBytes(StandardCharsets.UTF_8)));
-      }
-
-      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-      while (received.size() < 10 && System.nanoTime() < deadline) {
-        Thread.sleep(20);
-      }
-      assertEquals(10, received.size(), "all messages should be delivered with concurrency=2");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
+    for (int i = 0; i < 10; i++) {
+      consumer.addRecord(
+          record("orders", i, "key-" + (i % 3), ("{\"i\":" + i + "}"), null, null));
     }
+
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+    while (received.size() < 10 && System.nanoTime() < deadline) {
+      Thread.sleep(20);
+    }
+    assertEquals(10, received.size(), "all messages should be delivered with concurrency=2");
+
+    subscriber.close();
+    assertTrue(consumer.closed());
   }
 
   @Test
-  void typedClassEventIsDispatchedByClassChannel() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            TestEvent.class.getName(),
-            "skip",
-            "",
-            "",
-            1,
-            0,
-            1,
-            true);
+  void legacyRecordsAreRoutedBySubscriptionNotByTheirHeaders() throws Exception {
+    // Pre-teardown records carry a class-channel marker and an X-Event-*
+    // origin. Neither header routes anything now: the record's topic and the
+    // subscription's declared type decide delivery — and the legacy origin
+    // header is still honored for own-suppression.
+    var config = config("node-9", "orders", "skip", "", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", TestEvent.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var byClass = new LinkedBlockingQueue<Object>();
-      var byTopic = new LinkedBlockingQueue<Object>();
-      bus.subscribe(TestEvent.class, byClass::add);
-      bus.subscribe("orders", byTopic::add);
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    var legacy =
+        new ConsumerRecord<>(
+            "orders", 0, 0L, "key-1", "{\"value\":\"legacy\"}".getBytes(StandardCharsets.UTF_8));
+    legacy
+        .headers()
+        .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+    legacy.headers().add("X-Event-Channel", "CLASS".getBytes(StandardCharsets.UTF_8));
+    legacy.headers().add("X-Event-Origin", "node-2".getBytes(StandardCharsets.UTF_8));
+    legacy.headers().add("X-Event-Id", "legacy-id-1".getBytes(StandardCharsets.UTF_8));
+    consumer.addRecord(legacy);
 
-      // Class-channel envelope: type header + channel marker.
-      var record =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
-      record
-          .headers()
-          .add("ce-type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
-      record.headers().add("ce-fwchannel", "CLASS".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
+    // And a legacy record from THIS node's origin: suppressed.
+    var own =
+        new ConsumerRecord<>(
+            "orders", 0, 1L, "key-2", "{\"value\":\"mine\"}".getBytes(StandardCharsets.UTF_8));
+    own.headers().add("X-Event-Origin", "node-9".getBytes(StandardCharsets.UTF_8));
+    consumer.addRecord(own);
 
-      Object event = byClass.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "class-channel event must reach class subscribers");
-      assertTrue(event instanceof TestEvent, "typed event must deserialize to the declared class");
-      assertEquals("hi", ((TestEvent) event).value());
-      assertTrue(byTopic.isEmpty(), "class-channel event must not dispatch on the topic channel");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
-  }
-
-  @Test
-  void legacyEnvelopeHeadersAreStillHonored() throws Exception {
-    // Wire compat, not API compat: the log is durable, so a rolling upgrade
-    // meets records stamped with the pre-CE X-Event-* names. Every read
-    // prefers ce- and falls back to X- — one test pins the whole fallback row.
-    var config =
-        KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "node-9",
-            "orders",
-            TestEvent.class.getName(),
-            "skip",
-            "",
-            "",
-            1,
-            0,
-            1,
-            true);
-    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
-    var topic = new TopicPartition("orders", 0);
-
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var byClass = new LinkedBlockingQueue<Object>();
-      bus.subscribe(TestEvent.class, byClass::add);
-
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
-
-      var record =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"value\":\"legacy\"}".getBytes(StandardCharsets.UTF_8));
-      record
-          .headers()
-          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Channel", "CLASS".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Origin", "node-2".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Id", "legacy-id-1".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Topic", "orders".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
-
-      Object event = byClass.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "a legacy-header record must still be delivered");
-      assertTrue(event instanceof TestEvent);
-      assertEquals("legacy", ((TestEvent) event).value());
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
-  }
-
-  @Test
-  void typedMessageWithoutChannelHeaderDefaultsToTopicDispatch() throws Exception {
-    // Backward compatibility: producers that predate the channel header
-    // always dispatched inbound events on the topic channel.
-    var config =
-        KafkaConfig.of(
-            "localhost:9092",
-            "test-group",
-            "",
-            "orders",
-            TestEvent.class.getName(),
-            "skip",
-            "",
-            "",
-            1,
-            0,
-            1,
-            true);
-    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
-    var topic = new TopicPartition("orders", 0);
-
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var byClass = new LinkedBlockingQueue<Object>();
-      var byTopic = new LinkedBlockingQueue<Object>();
-      bus.subscribe(TestEvent.class, byClass::add);
-      bus.subscribe("orders", byTopic::add);
-
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
-
-      // Type header present, channel header absent.
-      var record =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
-      record
-          .headers()
-          .add("ce-type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
-
-      Object event = byTopic.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "header-less messages must keep dispatching on the topic channel");
-      assertTrue(event instanceof TestEvent);
-      assertTrue(byClass.isEmpty(), "topic dispatch must not reach class subscribers");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
+    Object event = received.poll(5, TimeUnit.SECONDS);
+    assertNotNull(event, "a legacy-header record must still be delivered by its topic");
+    assertTrue(event instanceof TestEvent);
+    assertEquals("legacy", ((TestEvent) event).value());
+    // A fixed settle: let the broker-side machinery get a chance to deliver
+    // the own-origin record if suppression were broken (it must not).
+    subscriber.close();
+    assertTrue(consumer.closed(), "the poll loop shut down");
+    assertTrue(
+        received.stream().noneMatch(e -> ((TestEvent) e).value().equals("mine")),
+        "the legacy own-origin record must still be suppressed");
   }
 
   @Test
   void ownOriginMessagesAreSuppressed() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
+    var config = config("node-1", "orders", "skip", "", 1, true);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", Map.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var received = new LinkedBlockingQueue<Object>();
-      bus.subscribe("orders", received::add);
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    // This node's own re-broadcast (origin == config origin) -> suppressed.
+    consumer.addRecord(record("orders", 0L, "key-1", "{\"x\":1}", "ce-fworigin", "node-1"));
+    // Foreign event -> delivered.
+    consumer.addRecord(record("orders", 1L, "key-1", "{\"x\":2}", "ce-fworigin", "node-2"));
 
-      // This node's own re-broadcast (origin == config origin) -> suppressed.
-      var own =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      own.headers().add("ce-fworigin", "node-1".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(own);
+    Object event = received.poll(5, TimeUnit.SECONDS);
+    assertNotNull(event, "foreign event must be delivered");
+    assertTrue(event instanceof Map);
+    assertEquals(2, ((Map<?, ?>) event).get("x"), "the own event must be suppressed");
+    assertTrue(received.isEmpty(), "only the foreign event may be delivered");
 
-      // Foreign event -> delivered.
-      var foreign =
-          new ConsumerRecord<>(
-              "orders", 0, 1L, "key-1", "{\"x\":2}".getBytes(StandardCharsets.UTF_8));
-      foreign.headers().add("ce-fworigin", "node-2".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(foreign);
-
-      Object event = received.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "foreign event must be delivered");
-      assertTrue(event instanceof Map);
-      assertEquals(2, ((Map<?, ?>) event).get("x"), "the own event must be suppressed");
-      assertTrue(received.isEmpty(), "only the foreign event may be delivered");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
-  }
-
-  @Test
-  void inboundTraceIsRestoredAroundDispatch() throws Exception {
-    // The sender's span must reach local handlers: a record carrying
-    // ce-traceparent dispatches with that trace bound on the poll thread.
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
-    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
-    var topic = new TopicPartition("orders", 0);
-
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
-      bus.subscribe("orders", payload -> seen.add(InvocationContext.current()));
-
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
-
-      var record =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      record
-          .headers()
-          .add(
-              "ce-traceparent",
-              "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
-                  .getBytes(StandardCharsets.UTF_8));
-      record
-          .headers()
-          .add("ce-tracestate", "rojo=00f067aa0ba902b7".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
-
-      var captured = seen.poll(5, TimeUnit.SECONDS);
-      assertNotNull(captured, "the event must be delivered");
-      var trace = captured.orElseThrow(() -> new AssertionError("no context bound")).trace();
-      assertNotNull(trace, "the wire trace must be restored around dispatch");
-      assertEquals("0af7651916cd43dd8448eb211c80319c", trace.traceId());
-      assertEquals("rojo=00f067aa0ba902b7", trace.traceState());
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
-  }
-
-  @Test
-  void tracelessRecordDispatchesBare() throws Exception {
-    // No trace headers: nothing is fabricated and nothing is cleared — the
-    // fresh poll thread holds no ambient, so handlers observe empty.
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
-    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
-    var topic = new TopicPartition("orders", 0);
-
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
-      bus.subscribe("orders", payload -> seen.add(InvocationContext.current()));
-
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
-
-      var record =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(record);
-
-      var captured = seen.poll(5, TimeUnit.SECONDS);
-      assertNotNull(captured, "the event must be delivered");
-      assertTrue(captured.isEmpty(), "no wire trace means no bound context");
-
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
+    subscriber.close();
+    assertTrue(consumer.closed());
   }
 
   @Test
   void suppressionCanBeDisabled() throws Exception {
-    var config =
-        KafkaConfig.of(
-            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, false);
+    var config = config("node-1", "orders", "skip", "", 1, false);
     var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
     var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", Map.class, received::add);
 
-    try (Container container = Freeway.create()) {
-      EventBus bus = container.get(EventBus.class);
-      var received = new LinkedBlockingQueue<Object>();
-      bus.subscribe("orders", received::add);
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
 
-      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
-      consumer.updateBeginningOffsets(Map.of(topic, 0L));
-      subscriber.start();
-      consumer.rebalance(Set.of(topic));
+    consumer.addRecord(record("orders", 0L, "key-1", "{\"x\":1}", "ce-fworigin", "node-1"));
 
-      var own =
-          new ConsumerRecord<>(
-              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      own.headers().add("ce-fworigin", "node-1".getBytes(StandardCharsets.UTF_8));
-      consumer.addRecord(own);
+    Object event = received.poll(5, TimeUnit.SECONDS);
+    assertNotNull(event, "with suppress-own=false own events are delivered");
+    assertTrue(received.isEmpty());
 
-      Object event = received.poll(5, TimeUnit.SECONDS);
-      assertNotNull(event, "with suppress-own=false own events are delivered");
-      assertTrue(received.isEmpty());
+    subscriber.close();
+    assertTrue(consumer.closed());
+  }
 
-      subscriber.close();
-      assertTrue(consumer.closed());
-    }
+  @Test
+  void tombstoneRecordsAreAcknowledgedWithoutReading() throws Exception {
+    var config = config("", "orders", "skip", "", 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var received = new LinkedBlockingQueue<Object>();
+    plane.subscribe("orders", Map.class, received::add);
+
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
+
+    consumer.addRecord(new ConsumerRecord<>("orders", 0, 0L, "key-1", null));
+    consumer.addRecord(record("orders", 1L, "key-2", "{\"x\":1}", null, null));
+
+    // The live record after the tombstone arrives: the tombstone was skipped,
+    // not retried into a stall.
+    Object event = received.poll(5, TimeUnit.SECONDS);
+    assertNotNull(event, "delivery continues past a tombstone");
+    assertTrue(received.isEmpty(), "the tombstone itself delivered nothing");
+
+    subscriber.close();
+  }
+
+  @Test
+  void inboundTraceIsRestoredAroundDelivery() throws Exception {
+    // The sender's span must reach handlers: a record carrying ce-traceparent
+    // delivers with that trace bound on the poll worker.
+    var config = config("node-1", "orders", "skip", "", 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
+    plane.subscribe("orders", Map.class, payload -> seen.add(InvocationContext.current()));
+
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
+
+    var record =
+        new ConsumerRecord<>(
+            "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+    record
+        .headers()
+        .add(
+            "ce-traceparent",
+            "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+                .getBytes(StandardCharsets.UTF_8));
+    record
+        .headers()
+        .add("ce-tracestate", "rojo=00f067aa0ba902b7".getBytes(StandardCharsets.UTF_8));
+    consumer.addRecord(record);
+
+    var captured = seen.poll(5, TimeUnit.SECONDS);
+    assertNotNull(captured, "the event must be delivered");
+    var trace = captured.orElseThrow(() -> new AssertionError("no context bound")).trace();
+    assertNotNull(trace, "the wire trace must be restored around delivery");
+    assertEquals("0af7651916cd43dd8448eb211c80319c", trace.traceId());
+    assertEquals("rojo=00f067aa0ba902b7", trace.traceState());
+
+    subscriber.close();
+    assertTrue(consumer.closed());
+  }
+
+  @Test
+  void tracelessRecordDeliversBare() throws Exception {
+    // No trace headers: nothing is fabricated and nothing is cleared — the
+    // fresh poll worker holds no ambient, so handlers observe empty.
+    var config = config("node-1", "orders", "skip", "", 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+    var plane = plane(config);
+    var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
+    plane.subscribe("orders", Map.class, payload -> seen.add(InvocationContext.current()));
+
+    var subscriber = poller(config, plane, consumer);
+    rebalance(subscriber, consumer, topic);
+
+    consumer.addRecord(record("orders", 0L, "key-1", "{\"x\":1}", null, null));
+
+    var captured = seen.poll(5, TimeUnit.SECONDS);
+    assertNotNull(captured, "the event must be delivered");
+    assertTrue(captured.isEmpty(), "no wire trace means no bound context");
+
+    subscriber.close();
+    assertTrue(consumer.closed());
   }
 }

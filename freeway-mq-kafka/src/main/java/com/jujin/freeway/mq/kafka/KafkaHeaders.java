@@ -1,13 +1,12 @@
 package com.jujin.freeway.mq.kafka;
 
-import com.jujin.freeway.ioc.EventSink;
 import java.nio.charset.StandardCharsets;
 import org.apache.kafka.common.header.Headers;
 
 /**
- * The wire contract between {@link KafkaEventSink} (writer) and {@link KafkaSubscriber} (reader):
- * one home for every header name and for the channel token. Both sides used to carry their own
- * copies, so a rename on one side would have silently misrouted records instead of failing.
+ * The wire contract between {@link KafkaEvents} (writer) and the poll machinery (reader): one
+ * home for every header name. Both sides used to carry their own copies, so a rename on one side
+ * would have silently misrouted records instead of failing.
  *
  * <p>Headers follow the CloudEvents Kafka binding: every CloudEvents attribute rides as a
  * {@code ce-} header, so a record carries the same logical envelope as the WS mesh's JSON
@@ -16,19 +15,19 @@ import org.apache.kafka.common.header.Headers;
  *
  * <ul>
  *   <li>{@code ce-specversion} = {@code "1.0"}, always;</li>
- *   <li>{@code ce-id} = the bus-minted dispatch identity, shared by every transport;</li>
+ *   <li>{@code ce-id} = a fresh frame identity per send (informational for legacy consumers;
+ *       this plane correlates nothing — cross-transport identity died with the bus bridge);</li>
  *   <li>{@code ce-source} = {@code freeway://{origin}} — the sending node (Kafka has no
  *       service-registry concept, so unlike the mesh's service-based source this names the
  *       node, mirroring {@code ce-fworigin});</li>
- *   <li>{@code ce-type} = the event class name, on both channels — the one deliberate
- *       divergence from the mesh, whose TOPIC frames carry the topic string and treat
- *       the payload as opaque (converging it would break typed topic consumers);</li>
- *   <li>{@code ce-subject} = the {@code Keyed} partitioning key, CLASS channel only;</li>
+ *   <li>{@code ce-type} = the payload class name, informational only — routing never resolves
+ *       classes off the wire; the payload type is whatever the matching subscription declared;</li>
+ *   <li>{@code ce-subject} = the partition key given to {@code send}, when one was given;</li>
  *   <li>{@code ce-time} = send time; {@code ce-datacontenttype} = {@code application/json}
  *       (the record value is the JSON-encoded event);</li>
- *   <li>{@code ce-fwchannel} = the dispatch channel; {@code ce-fworigin} = the sending
- *       node; {@code ce-fwtopic} = the local sink topic (the record's own topic is the
- *       adapter's bridge topic, not the dispatch topic);</li>
+ *   <li>{@code ce-fwchannel} = always {@code topic} on this plane (the class-channel
+ *       vocabulary died with the bus bridge; legacy records may still carry {@code class});
+ *       {@code ce-fworigin} = the sending node (own-origin records are skipped);</li>
  *   <li>{@code ce-traceparent}/{@code ce-tracestate} = the sender's trace, stamped only
  *       when the sending thread holds one — same extensions the mesh carries, restored
  *       around dispatch on receipt (never principal or baggage: nothing on the event
@@ -59,11 +58,7 @@ final class KafkaHeaders {
   static final String DATA_CONTENT_TYPE = "application/json";
 
   /** Pre-CE names — read fallback only, never written. */
-  static final String LEGACY_TYPE = "X-Event-Type";
   static final String LEGACY_ORIGIN = "X-Event-Origin";
-  static final String LEGACY_CHANNEL = "X-Event-Channel";
-  static final String LEGACY_ID = "X-Event-Id";
-  static final String LEGACY_TOPIC = "X-Event-Topic";
 
   static final String DLQ_ORIGINAL_TOPIC = "X-DLQ-Original-Topic";
   static final String DLQ_ORIGINAL_OFFSET = "X-DLQ-Original-Offset";
@@ -103,20 +98,4 @@ final class KafkaHeaders {
     return new String(header.value(), StandardCharsets.UTF_8);
   }
 
-  /** The channel token on the wire: the enum name, never a literal. */
-  static String channelToken(EventSink.Channel channel) {
-    return channel.name();
-  }
-
-  /**
-   * Whether the record travelled on the class dispatch channel. An absent header means an older
-   * producer and falls back to topic dispatch, the pre-channel behavior.
-   */
-  static boolean classChannel(Headers headers) {
-    String channel = read(headers, CE_CHANNEL, LEGACY_CHANNEL);
-    if (channel == null) {
-      return false;
-    }
-    return EventSink.Channel.CLASS.name().equalsIgnoreCase(channel.trim());
-  }
 }

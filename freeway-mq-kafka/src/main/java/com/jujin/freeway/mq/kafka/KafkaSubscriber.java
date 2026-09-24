@@ -17,19 +17,11 @@
 package com.jujin.freeway.mq.kafka;
 
 import com.jujin.freeway.cloud.event.EventOrigin;
-import com.jujin.freeway.cloud.event.EventTrace;
-import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.commons.scoped.Defer;
-import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -50,17 +42,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Consumes Freeway events from Kafka topics and publishes them on the {@link EventBus}.
- * Deserialization is restricted to the configured allowlist; poison messages follow the configured
- * policy.
+ * The poll machinery of the durable stream plane: consumes configured Kafka topics and hands each
+ * record to {@link KafkaEvents#handle} — matching subscriptions, decoding, delivery and the trace
+ * context are the plane's business; this class owns the consumer thread, offset commits,
+ * key-bucket parallelism, retry backoff, poison policy and the DLQ.
  *
- * <p><b>The allowlist is the contract for what this node accepts.</b> It must name every bridged
- * event class; an event whose {@code ce-type} header is not listed is rejected as poison
- * (warn-logged, never delivered). String-topic events carry {@code java.lang.String} as their type,
- * so bridging them requires that entry too — and an <em>empty</em> allowlist accepts nothing at
- * all, which looks exactly like "the broker is silent". The subscriber warns about that at startup.
+ * <p><b>Internal machinery</b> — applications enter through {@link KafkaEvents#subscribe} and the
+ * module hook, not here. The declared subscription types are the inbound allowlist: a record
+ * matching no subscription is acknowledged and skipped without being read at all.</p>
  */
-public class KafkaSubscriber implements AutoCloseable {
+final class KafkaSubscriber implements AutoCloseable {
   private static final Logger LOG = LoggerFactory.getLogger(KafkaSubscriber.class);
   private static final Duration POLL_TIMEOUT = Duration.ofSeconds(1);
   private static final Duration COMMIT_TIMEOUT = Duration.ofSeconds(10);
@@ -70,11 +61,9 @@ public class KafkaSubscriber implements AutoCloseable {
   private static final long MAX_RETRY_BACKOFF_MS = 60_000L;
 
   private final Consumer<String, byte[]> consumer;
-  private final EventBus bus;
-  private final JsonCodec codec;
+  private final KafkaEvents plane;
   private final KafkaConfig config;
   private final List<String> topics;
-  private final Set<String> allowedEventTypes;
   private final Producer<String, byte[]> dlqProducer;
   private final ExecutorService executor;
   private final int concurrency;
@@ -86,35 +75,19 @@ public class KafkaSubscriber implements AutoCloseable {
   private volatile boolean running;
   private volatile Thread pollThread;
 
-  public KafkaSubscriber(KafkaConfig config, EventBus bus) {
-    this(config, bus, new JsonCodecDefault());
-  }
-
-  public KafkaSubscriber(KafkaConfig config, EventBus bus, JsonCodec codec) {
-    this(config, bus, codec, createConsumer(config), createDlqProducer(config));
-  }
-
-  /** Test seam: allows injecting a mock consumer and DLQ producer. */
+  /**
+   * Machinery constructor — {@link KafkaEvents#start()} builds the real one; tests inject a mock
+   * consumer and DLQ producer.
+   */
   KafkaSubscriber(
       KafkaConfig config,
-      EventBus bus,
-      JsonCodec codec,
+      KafkaEvents plane,
       Consumer<String, byte[]> consumer,
       Producer<String, byte[]> dlqProducer) {
     this.config = config;
-    this.bus = bus;
-    this.codec = codec;
+    this.plane = plane;
     // Parse once here — this runs per message on the hot path otherwise.
     this.topics = config.topics();
-    this.allowedEventTypes = config.allowedEventTypes();
-    if (this.allowedEventTypes.isEmpty()) {
-      // Everything consumed with a type header would now be dropped as poison, and the
-      // symptom is "no events arrive" rather than an error — say so once, loudly.
-      LOG.warn(
-          "freeway.kafka.allowed-event-types is empty — every consumed record with a type header"
-              + " (including string-topic events, whose type is java.lang.String) will be rejected"
-              + " as poison; list every bridged event type to receive anything");
-    }
     this.consumer = consumer;
     this.dlqProducer = dlqProducer;
     this.concurrency = config.concurrency();
@@ -130,7 +103,7 @@ public class KafkaSubscriber implements AutoCloseable {
             : null;
   }
 
-  private static KafkaConsumer<String, byte[]> createConsumer(KafkaConfig config) {
+  static KafkaConsumer<String, byte[]> createConsumer(KafkaConfig config) {
     var props = new Properties();
     props.put("bootstrap.servers", config.bootstrapServers());
     props.put("group.id", config.groupId());
@@ -145,7 +118,7 @@ public class KafkaSubscriber implements AutoCloseable {
     return new KafkaConsumer<>(props);
   }
 
-  private static Producer<String, byte[]> createDlqProducer(KafkaConfig config) {
+  static Producer<String, byte[]> createDlqProducer(KafkaConfig config) {
     if (!config.dlqEnabled()) {
       return null;
     }
@@ -160,7 +133,7 @@ public class KafkaSubscriber implements AutoCloseable {
     return new KafkaProducer<>(props);
   }
 
-  public void start() {
+  void start() {
     if (topics.isEmpty()) return;
     running = true;
     consumer.subscribe(topics);
@@ -215,7 +188,7 @@ public class KafkaSubscriber implements AutoCloseable {
       for (var record : batch) {
         if (!running) {
           // Shutdown raced with an already-returned batch; do not
-          // publish into a closing EventBus.
+          // deliver into a closing plane.
           break;
         }
         if (!processWithPolicy(record)) {
@@ -392,61 +365,11 @@ public class KafkaSubscriber implements AutoCloseable {
   }
 
   private void processRecord(ConsumerRecord<String, byte[]> record) {
-    // The inbound trace, restored around the whole processing (deserialize +
-    // dispatch) so downstream handlers observe the sender's causality. Absent
-    // runs bare — a traceless record must not clear the poll thread's ambient.
-    // Outside the Defer scope on purpose: Defer buffers the dispatch until
-    // the scope drains, and a trace bound inside would be released before the
-    // drain runs — the handlers would observe nothing.
-    Map<String, String> trace = new LinkedHashMap<>();
-    trace.put(
-        EventTrace.TRACEPARENT,
-        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACEPARENT, null));
-    trace.put(
-        EventTrace.TRACESTATE,
-        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACESTATE, null));
-    EventTrace.runWithTrace(
-        trace,
-        () -> {
-          Defer.within(
-              () -> {
-                Object event;
-                try {
-                  event = deserialize(record);
-                } catch (Exception e) {
-                  throw new RuntimeException(e);
-                }
-                // Inbound events are never sent back out (publishInbound), so a
-                // consumed event cannot loop back into the queue. The dispatch
-                // channel mirrors the producer's: class events re-enter the
-                // class channel, topic events the topic channel.
-                //
-                // The wire id is what lets the bus recognize this event if the same
-                // one also arrives over another transport: the inbound dedup window
-                // drops the second copy instead of delivering it twice. Null for
-                // records produced before the header existed — that always delivers.
-                String id =
-                    KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ID, KafkaHeaders.LEGACY_ID);
-                if (classChannel(record)) {
-                  bus.publishInbound(event, id);
-                } else {
-                  // The producer writes to the bridge topic and stamps the local topic; without the
-                  // header (an older producer) the Kafka topic name is the local topic.
-                  String localTopic =
-                      KafkaHeaders.read(
-                          record.headers(), KafkaHeaders.CE_TOPIC, KafkaHeaders.LEGACY_TOPIC);
-                  bus.publishInbound(
-                      localTopic != null && !localTopic.isBlank() ? localTopic : record.topic(),
-                      event,
-                      id);
-                }
-              });
-        });
-  }
-
-  /** True when the producer sent this record on the class dispatch channel. */
-  private boolean classChannel(ConsumerRecord<String, byte[]> record) {
-    return KafkaHeaders.classChannel(record.headers());
+    // The plane owns trace restoration, subscription matching, decoding and
+    // delivery; a throwing handler is isolated there, and a record that no
+    // matching subscription can decode surfaces as an exception — the retry
+    // and poison policy above moves it (DLQ by config).
+    plane.handle(record);
   }
 
   /** True when this record was published by this node (its origin header matches ours). */
@@ -454,35 +377,6 @@ public class KafkaSubscriber implements AutoCloseable {
     return EventOrigin.isOwn(
         origin,
         KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ORIGIN, KafkaHeaders.LEGACY_ORIGIN));
-  }
-
-  private Object deserialize(ConsumerRecord<String, byte[]> record) throws Exception {
-    String json = new String(record.value(), StandardCharsets.UTF_8);
-    String typeName =
-        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TYPE, KafkaHeaders.LEGACY_TYPE);
-    Class<?> type = resolveEventType(typeName, allowedEventTypes);
-    return codec.fromJson(json, type);
-  }
-
-  /**
-   * Resolves the declared event type against the configured allowlist. Messages without a type
-   * header are treated as {@code Map}; typed messages are rejected unless the exact class name is
-   * allowed.
-   */
-  static Class<?> resolveEventType(String typeName, Set<String> allowed) {
-    if (typeName == null || typeName.isBlank()) {
-      return Map.class;
-    }
-    String trimmed = typeName.trim();
-    if (!allowed.contains(trimmed)) {
-      throw new SecurityException(
-          "Event type is not in freeway.kafka.allowed-event-types: " + trimmed);
-    }
-    try {
-      return Class.forName(trimmed);
-    } catch (ClassNotFoundException ex) {
-      throw new IllegalArgumentException("Event type not found on classpath: " + trimmed, ex);
-    }
   }
 
   /** Returns true when the record is a Kafka tombstone (deletion marker). */
@@ -500,7 +394,7 @@ public class KafkaSubscriber implements AutoCloseable {
       // sleep (up to 60 s), commitSync (10 s), or DLQ send (10 s) after
       // close(); both interrupt handlers terminate cleanly without
       // committing. Without this, close() would return after the join
-      // timeout while the loop still publishes into a closing EventBus
+      // timeout while the loop still delivers into a closing plane
       // and may hit the already-closed DLQ producer.
       thread.interrupt();
     }

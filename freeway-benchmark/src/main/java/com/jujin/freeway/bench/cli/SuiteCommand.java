@@ -25,7 +25,7 @@ import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.event.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

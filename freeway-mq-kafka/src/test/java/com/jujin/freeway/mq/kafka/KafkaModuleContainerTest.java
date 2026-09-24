@@ -17,8 +17,8 @@
 package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -26,12 +26,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
-import com.jujin.freeway.ioc.EventBus;
-import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.Freeway;
 import com.jujin.freeway.ioc.RuntimeHook;
 import java.util.List;
-import java.util.Set;
 import org.apache.kafka.clients.producer.MockProducer;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
 import org.apache.kafka.common.serialization.StringSerializer;
@@ -46,7 +43,6 @@ class KafkaModuleContainerTest {
     System.clearProperty("freeway.kafka.group-id");
     System.clearProperty("freeway.kafka.client-id");
     System.clearProperty("freeway.kafka.topics");
-    System.clearProperty("freeway.kafka.allowed-event-types");
     System.clearProperty("freeway.kafka.poison-policy");
     System.clearProperty("freeway.kafka.properties");
     System.clearProperty("freeway.kafka.max-retries");
@@ -61,23 +57,22 @@ class KafkaModuleContainerTest {
     System.setProperty("freeway.kafka.group-id", "container-test");
     System.setProperty("freeway.kafka.client-id", "container-client");
     System.setProperty("freeway.kafka.topics", "orders, payments");
-    System.setProperty("freeway.kafka.allowed-event-types", "com.acme.OrderCreated");
     System.setProperty("freeway.kafka.poison-policy", "fail");
     System.setProperty(
         "freeway.kafka.properties", "security.protocol=SASL_SSL;sasl.mechanism=PLAIN");
 
-    // JsonCodec is a builtin of the app runtime, not of a bare container —
-    // and the contributed sink is built at composition time, so both must be
-    // bound even for config-only assertions. The sink binding is overridden
-    // with a mock-backed one: the SASL properties under test would fail real
-    // producer construction.
+    // JsonCodec is a builtin of the app runtime, not of a bare container — and
+    // the plane binding resolves it at composition, so it must be bound even
+    // for config-only assertions. The plane binding is overridden with a
+    // mock-backed one: the SASL properties under test would fail real producer
+    // construction.
     try (Container container =
         Freeway.create(
             new KafkaModule(),
             binder -> {
               binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
-              binder.bind(KafkaEventSink.class)
-                  .to(c -> new KafkaEventSink(
+              binder.bind(KafkaEvents.class)
+                  .to(c -> new KafkaEvents(
                       c.get(KafkaConfig.class),
                       c.get(JsonCodec.class),
                       new MockProducer<>(
@@ -89,7 +84,6 @@ class KafkaModuleContainerTest {
       assertEquals("container-test", config.groupId());
       assertEquals("container-client", config.clientId());
       assertEquals(List.of("orders", "payments"), config.topics());
-      assertEquals(Set.of("com.acme.OrderCreated"), config.allowedEventTypes());
       assertTrue(config.failOnPoison());
       assertTrue(config.suppressOwn(), "suppress-own must default to true");
       assertEquals("SASL_SSL", config.extraProperties().getProperty("security.protocol"));
@@ -127,14 +121,13 @@ class KafkaModuleContainerTest {
     System.setProperty("freeway.kafka.suppress-own", "no");
     try (Container container =
         Freeway.create(
-            new KafkaModule(),
-            binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
+            new KafkaModule(), binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
       assertFalse(container.get(KafkaConfig.class).suppressOwn());
     } finally {
       System.clearProperty("freeway.kafka.suppress-own");
     }
     // …and an unreadable value fails naming the key instead of silently
-    // becoming false, which would silently disable own-event suppression.
+    // becoming false, which would silently disable own-record suppression.
     System.setProperty("freeway.kafka.suppress-own", "maybe");
     try {
       IllegalArgumentException ex =
@@ -158,9 +151,9 @@ class KafkaModuleContainerTest {
   }
 
   @Test
-  void contributedSinkIsTheBoundInstanceAndStopClosesCleanly() throws Exception {
-    // No topics: KafkaSubscriber.start() is a no-op, so this exercises the
-    // hook without a broker.
+  void planeIsOneBoundInstanceAndLifecycleClosesCleanly() throws Exception {
+    // No topics: KafkaEvents.start() is a no-op, so this exercises the hook
+    // without a broker.
     System.setProperty("freeway.kafka.bootstrap-servers", "127.0.0.1:1");
     System.setProperty("freeway.kafka.group-id", "container-test");
 
@@ -168,26 +161,33 @@ class KafkaModuleContainerTest {
     try (Container container =
         Freeway.create(
             new KafkaModule(),
-            binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
-      EventBus bus = container.get(EventBus.class);
-      KafkaEventSink sink = container.get(KafkaEventSink.class);
+            binder -> {
+              binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
+              binder.bind(KafkaEvents.class)
+                  .to(c -> new KafkaEvents(
+                      c.get(KafkaConfig.class),
+                      c.get(JsonCodec.class),
+                      new MockProducer<>(
+                          true, null, new StringSerializer(), new ByteArraySerializer())))
+                  .primary();
+            })) {
+      KafkaEvents plane = container.get(KafkaEvents.class);
+      // KafkaModule contributes exactly one runtime hook (its own lifecycle).
       RuntimeHook hook = container.extension(RuntimeHook.class).all().get(0);
 
-      // One producer, not two: the contributed sink resolves through the
-      // binding, so the stop hook closes the instance the bus fans out to.
-      assertSame(
-          sink,
-          container.extension(EventSink.class).all().get(0),
-          "the contributed sink must be the bound instance");
+      assertSame(plane, container.get(KafkaEvents.class), "the binding is a singleton");
       assertDoesNotThrow(
           () -> {
             hook.start(container);
             hook.stop(container);
           },
-          "stop must close subscriber and producer without touching the bus");
+          "stop must close the poller and producer");
       assertDoesNotThrow(
-          () -> bus.publish("t", "payload"),
-          "publishing after the hook stopped must not reach the closed producer");
+          () -> plane.send("t", "payload"),
+          "sending after the hook stopped must not surface on the publishing thread");
+      assertFalse(
+          container.get(KafkaEvents.class).stats().sendFailures() > 1,
+          "post-stop sends are counted, never thrown");
     }
   }
 }

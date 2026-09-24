@@ -23,6 +23,7 @@ import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.EventSink;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Properties;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -139,10 +140,7 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     if (channel == EventSink.Channel.CLASS && event instanceof EventBus.Keyed k) {
       KafkaHeaders.put(record.headers(), KafkaHeaders.CE_SUBJECT, k.key());
     }
-    KafkaHeaders.put(
-        record.headers(),
-        KafkaHeaders.CE_TIME,
-        java.time.OffsetDateTime.now().toString());
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_TIME, OffsetDateTime.now().toString());
     KafkaHeaders.put(
         record.headers(), KafkaHeaders.CE_DATA_TYPE, KafkaHeaders.DATA_CONTENT_TYPE);
     KafkaHeaders.put(

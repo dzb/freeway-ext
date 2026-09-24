@@ -35,8 +35,9 @@ import com.jujin.freeway.ioc.symbol.SymbolSource;
  * HikariPool} binds {@code Pool} with {@code .id("hikari").primary()} so the built-in default steps
  * aside.
  *
- * <p>Lifecycle (attach the sink to the {@code EventBus}, start and close the subscriber) is
- * contributed as the {@value #LIFECYCLE_HOOK} runtime hook.
+ * <p>Lifecycle (start and close the subscriber, close the producer) is
+ * contributed as the {@value #LIFECYCLE_HOOK} runtime hook. The sink itself
+ * is a sealed contribution above, not a runtime install.
  */
 public final class KafkaModule implements ModuleEx {
 

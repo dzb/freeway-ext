@@ -49,7 +49,6 @@ final class KafkaHeaders {
   static final String CE_DATA_TYPE = "ce-datacontenttype";
   static final String CE_CHANNEL = "ce-fwchannel";
   static final String CE_ORIGIN = "ce-fworigin";
-  static final String CE_TOPIC = "ce-fwtopic";
   /** Trace extensions ride the same binding (no legacy names — trace is new). */
   static final String CE_TRACEPARENT = "ce-traceparent";
   static final String CE_TRACESTATE = "ce-tracestate";

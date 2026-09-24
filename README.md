@@ -35,7 +35,7 @@ one exception — comparing engines requires both of them — and is excluded fr
 
 ## Kafka security note
 
-The Kafka subscriber only deserializes messages whose `X-Event-Type` header is on
+The Kafka subscriber only deserializes messages whose `ce-type` header is on
 the `freeway.kafka.allowed-event-types` allowlist (comma-separated class names).
 Messages without the header are treated as plain JSON `Map`. If the allowlist is
 empty (the default), **typed messages are rejected** instead of being
@@ -64,7 +64,7 @@ deserialized into arbitrary classes from the classpath. String-topic events
 ### Kafka bridge topology
 
 `KafkaEventSink` writes to the configured **bridge topic** (`freeway.kafka.topics`)
-and stamps the local dispatch topic in an `X-Event-Topic` header. The subscriber
+and stamps the local dispatch topic in a `ce-fwtopic` header. The subscriber
 polls the same bridge topic and re-publishes inbound events under that header, so
 class dispatch uses the type header and string topics keep their name across the
 bridge. **The bridge topic must appear in `freeway.kafka.topics` on every node** —

@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.Freeway;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -73,12 +74,12 @@ class KafkaEventSinkIntegrationTest {
             1000,
             1,
             true);
-    pubContainer = Freeway.create();
+    sink = new KafkaEventSink(publisherConfig, new JsonCodecDefault());
+    pubContainer =
+        Freeway.create(binder -> binder.contribute(EventSink.class).add(sink));
     subContainer = Freeway.create();
     bus = pubContainer.get(EventBus.class);
     subBus = subContainer.get(EventBus.class);
-    sink = new KafkaEventSink(publisherConfig, new JsonCodecDefault());
-    bus.addEventSink(sink);
     subscriber = new KafkaSubscriber(subscriberConfig, subBus, new JsonCodecDefault());
     subscriber.start();
     // Allow the consumer group to join and the topic to be created.

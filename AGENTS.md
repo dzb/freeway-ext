@@ -104,7 +104,7 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 
 - **Kafka bridge contract** — all three keys must agree across nodes:
   `freeway.kafka.topics` is the bridge topic the sink writes and the subscriber polls,
-  while the *local* topic travels in the `X-Event-Topic` header;
+  while the *local* topic travels in the `ce-fwtopic` header;
   `freeway.kafka.allowed-event-types` must list every bridged type (including
   `java.lang.String` for string topics — an empty list accepts nothing and warns at
   startup); `freeway.kafka.client-id` must be unique per node, or suppress-own swallows

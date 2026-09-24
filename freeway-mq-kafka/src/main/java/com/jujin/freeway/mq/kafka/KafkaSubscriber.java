@@ -16,6 +16,8 @@
 
 package com.jujin.freeway.mq.kafka;
 
+import com.jujin.freeway.cloud.event.EventOrigin;
+import com.jujin.freeway.cloud.event.EventTrace;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.commons.scoped.Defer;
@@ -23,6 +25,7 @@ import com.jujin.freeway.ioc.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -52,7 +55,7 @@ import org.slf4j.LoggerFactory;
  * policy.
  *
  * <p><b>The allowlist is the contract for what this node accepts.</b> It must name every bridged
- * event class; an event whose {@code X-Event-Type} header is not listed is rejected as poison
+ * event class; an event whose {@code ce-type} header is not listed is rejected as poison
  * (warn-logged, never delivered). String-topic events carry {@code java.lang.String} as their type,
  * so bridging them requires that entry too — and an <em>empty</em> allowlist accepts nothing at
  * all, which looks exactly like "the broker is silent". The subscriber warns about that at startup.
@@ -389,35 +392,55 @@ public class KafkaSubscriber implements AutoCloseable {
   }
 
   private void processRecord(ConsumerRecord<String, byte[]> record) {
-    Defer.within(
+    // The inbound trace, restored around the whole processing (deserialize +
+    // dispatch) so downstream handlers observe the sender's causality. Absent
+    // runs bare — a traceless record must not clear the poll thread's ambient.
+    // Outside the Defer scope on purpose: Defer buffers the dispatch until
+    // the scope drains, and a trace bound inside would be released before the
+    // drain runs — the handlers would observe nothing.
+    Map<String, String> trace = new LinkedHashMap<>();
+    trace.put(
+        EventTrace.TRACEPARENT,
+        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACEPARENT, null));
+    trace.put(
+        EventTrace.TRACESTATE,
+        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TRACESTATE, null));
+    EventTrace.runWithTrace(
+        trace,
         () -> {
-          Object event;
-          try {
-            event = deserialize(record);
-          } catch (Exception e) {
-            throw new RuntimeException(e);
-          }
-          // Inbound events are never sent back out (publishInbound), so a
-          // consumed event cannot loop back into the queue. The dispatch
-          // channel mirrors the producer's: class events re-enter the
-          // class channel, topic events the topic channel.
-          //
-          // The wire id is what lets the bus recognize this event if the same
-          // one also arrives over another transport: the inbound dedup window
-          // drops the second copy instead of delivering it twice. Null for
-          // records produced before the header existed — that always delivers.
-          String id = header(record, KafkaHeaders.EVENT_ID);
-          if (classChannel(record)) {
-            bus.publishInbound(event, id);
-          } else {
-            // The producer writes to the bridge topic and stamps the local topic; without the
-            // header (an older producer) the Kafka topic name is the local topic.
-            String localTopic = header(record, KafkaHeaders.EVENT_TOPIC);
-            bus.publishInbound(
-                localTopic != null && !localTopic.isBlank() ? localTopic : record.topic(),
-                event,
-                id);
-          }
+          Defer.within(
+              () -> {
+                Object event;
+                try {
+                  event = deserialize(record);
+                } catch (Exception e) {
+                  throw new RuntimeException(e);
+                }
+                // Inbound events are never sent back out (publishInbound), so a
+                // consumed event cannot loop back into the queue. The dispatch
+                // channel mirrors the producer's: class events re-enter the
+                // class channel, topic events the topic channel.
+                //
+                // The wire id is what lets the bus recognize this event if the same
+                // one also arrives over another transport: the inbound dedup window
+                // drops the second copy instead of delivering it twice. Null for
+                // records produced before the header existed — that always delivers.
+                String id =
+                    KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ID, KafkaHeaders.LEGACY_ID);
+                if (classChannel(record)) {
+                  bus.publishInbound(event, id);
+                } else {
+                  // The producer writes to the bridge topic and stamps the local topic; without the
+                  // header (an older producer) the Kafka topic name is the local topic.
+                  String localTopic =
+                      KafkaHeaders.read(
+                          record.headers(), KafkaHeaders.CE_TOPIC, KafkaHeaders.LEGACY_TOPIC);
+                  bus.publishInbound(
+                      localTopic != null && !localTopic.isBlank() ? localTopic : record.topic(),
+                      event,
+                      id);
+                }
+              });
         });
   }
 
@@ -428,13 +451,15 @@ public class KafkaSubscriber implements AutoCloseable {
 
   /** True when this record was published by this node (its origin header matches ours). */
   private boolean isOwnEvent(ConsumerRecord<String, byte[]> record) {
-    String recordOrigin = header(record, KafkaHeaders.EVENT_ORIGIN);
-    return recordOrigin != null && recordOrigin.equals(origin);
+    return EventOrigin.isOwn(
+        origin,
+        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ORIGIN, KafkaHeaders.LEGACY_ORIGIN));
   }
 
   private Object deserialize(ConsumerRecord<String, byte[]> record) throws Exception {
     String json = new String(record.value(), StandardCharsets.UTF_8);
-    String typeName = header(record, KafkaHeaders.EVENT_TYPE);
+    String typeName =
+        KafkaHeaders.read(record.headers(), KafkaHeaders.CE_TYPE, KafkaHeaders.LEGACY_TYPE);
     Class<?> type = resolveEventType(typeName, allowedEventTypes);
     return codec.fromJson(json, type);
   }
@@ -463,15 +488,6 @@ public class KafkaSubscriber implements AutoCloseable {
   /** Returns true when the record is a Kafka tombstone (deletion marker). */
   static boolean isTombstone(ConsumerRecord<String, byte[]> record) {
     return record.value() == null;
-  }
-
-  private String header(ConsumerRecord<String, byte[]> record, String name) {
-    var header = record.headers().lastHeader(name);
-    // Kafka allows null header values; treat them as absent.
-    if (header == null || header.value() == null) {
-      return null;
-    }
-    return new String(header.value(), StandardCharsets.UTF_8);
   }
 
   @Override

@@ -20,8 +20,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jujin.freeway.cloud.context.InvocationContext;
+import com.jujin.freeway.cloud.context.TraceContext;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.EventBus;
 import com.jujin.freeway.ioc.EventSink;
@@ -113,7 +116,9 @@ class KafkaEventSinkTest {
   }
 
   @Test
-  void envelopeCarriesTypeOriginChannelAndId() {
+  void envelopeCarriesCloudEventsAttributes() {
+    // CloudEvents Kafka binding: same logical envelope as the WS mesh's JSON
+    // frames, carried as ce- headers; the record value stays the JSON event.
     var producer =
         new MockProducer<String, byte[]>(
             true, null, new StringSerializer(), new ByteArraySerializer());
@@ -123,14 +128,80 @@ class KafkaEventSinkTest {
     ProducerRecord<String, byte[]> record = producer.history().getFirst();
     assertEquals(
         KeyedTestEvent.class.getName(),
-        header(record, "X-Event-Type"),
+        header(record, "ce-type"),
         "the concrete event class must be carried for typed deserialization");
+    assertEquals("1.0", header(record, "ce-specversion"));
     assertEquals(
-        "node-1", header(record, "X-Event-Origin"), "the node identity (clientId) must be stamped");
+        "freeway://node-1",
+        header(record, "ce-source"),
+        "kafka has no service concept: the source names the node");
     assertEquals(
-        "TOPIC", header(record, "X-Event-Channel"), "the dispatch channel must be stamped");
-    assertNotNull(header(record, "X-Event-Id"), "every envelope must carry an event id");
-    assertFalse(header(record, "X-Event-Id").isBlank());
+        "node-1", header(record, "ce-fworigin"), "the node identity (clientId) must be stamped");
+    assertEquals(
+        "TOPIC", header(record, "ce-fwchannel"), "the dispatch channel must be stamped");
+    assertEquals("orders", header(record, "ce-fwtopic"), "the local sink topic must travel");
+    assertEquals(
+        "application/json", header(record, "ce-datacontenttype"), "the value is JSON");
+    assertNotNull(header(record, "ce-time"), "send time must be stamped");
+    assertNotNull(header(record, "ce-id"), "every envelope must carry an event id");
+    assertFalse(header(record, "ce-id").isBlank());
+  }
+
+  @Test
+  void subjectIsStampedOnTheClassChannelOnly() {
+    // Mesh parity: the Keyed ordering key rides ce-subject for typed events;
+    // a topic payload is opaque and carries no subject — like on the mesh.
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    KafkaEventSink sink = newSink("node-1", producer);
+    sink.send("orders", new KeyedTestEvent("agg-1"), EventSink.Channel.CLASS, "test-id-6");
+    sink.send("orders", new KeyedTestEvent("agg-2"), EventSink.Channel.TOPIC, "test-id-7");
+
+    assertEquals(
+        "agg-1",
+        header(producer.history().getFirst(), "ce-subject"),
+        "the partitioning key must ride the envelope on the class channel");
+    assertNull(
+        header(producer.history().getLast(), "ce-subject"),
+        "a topic payload is opaque — no subject, like on the mesh");
+  }
+
+  @Test
+  void ambientTraceIsStampedAsCeHeaders() {
+    // The same traceparent/tracestate the mesh stamps as JSON extensions,
+    // here as ce- headers per the Kafka binding — absent when the sending
+    // thread holds no trace.
+    var producer =
+        new MockProducer<String, byte[]>(
+            true, null, new StringSerializer(), new ByteArraySerializer());
+    KafkaEventSink sink = newSink("node-1", producer);
+    sink.send("orders", new PlainTestEvent("x"), EventSink.Channel.CLASS, "test-id-8");
+    assertNull(
+        header(producer.history().getFirst(), "ce-traceparent"),
+        "a traceless send stamps nothing");
+
+    var trace =
+        new TraceContext(
+            "0af7651916cd43dd8448eb211c80319c",
+            "b7ad6b7169203331",
+            null,
+            "01",
+            "rojo=00f067aa0ba902b7");
+    InvocationContext previous =
+        InvocationContext.replaceAmbient(InvocationContext.of(trace, null, null));
+    try {
+      sink.send("orders", new PlainTestEvent("y"), EventSink.Channel.CLASS, "test-id-9");
+    } finally {
+      InvocationContext.replaceAmbient(previous);
+    }
+
+    ProducerRecord<String, byte[]> stamped = producer.history().getLast();
+    assertEquals(
+        "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01",
+        header(stamped, "ce-traceparent"));
+    assertEquals(
+        "rojo=00f067aa0ba902b7", header(stamped, "ce-tracestate"));
   }
 
   @Test
@@ -144,11 +215,11 @@ class KafkaEventSinkTest {
 
     assertEquals(
         "bus-id-7",
-        header(producer.history().getFirst(), "X-Event-Id"),
+        header(producer.history().getFirst(), "ce-id"),
         "the id handed in by the bus must be reused verbatim, not replaced by a fresh UUID");
     assertEquals(
-        header(producer.history().getFirst(), "X-Event-Id"),
-        header(producer.history().getLast(), "X-Event-Id"),
+        header(producer.history().getFirst(), "ce-id"),
+        header(producer.history().getLast(), "ce-id"),
         "two transports carrying one dispatch must expose one identity");
   }
 }

@@ -17,7 +17,9 @@
 package com.jujin.freeway.mq.kafka;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,10 +27,14 @@ import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.Freeway;
 import com.jujin.freeway.ioc.RuntimeHook;
 import java.util.List;
 import java.util.Set;
+import org.apache.kafka.clients.producer.MockProducer;
+import org.apache.kafka.common.serialization.ByteArraySerializer;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -60,7 +66,24 @@ class KafkaModuleContainerTest {
     System.setProperty(
         "freeway.kafka.properties", "security.protocol=SASL_SSL;sasl.mechanism=PLAIN");
 
-    try (Container container = Freeway.create(new KafkaModule())) {
+    // JsonCodec is a builtin of the app runtime, not of a bare container —
+    // and the contributed sink is built at composition time, so both must be
+    // bound even for config-only assertions. The sink binding is overridden
+    // with a mock-backed one: the SASL properties under test would fail real
+    // producer construction.
+    try (Container container =
+        Freeway.create(
+            new KafkaModule(),
+            binder -> {
+              binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
+              binder.bind(KafkaEventSink.class)
+                  .to(c -> new KafkaEventSink(
+                      c.get(KafkaConfig.class),
+                      c.get(JsonCodec.class),
+                      new MockProducer<>(
+                          true, null, new StringSerializer(), new ByteArraySerializer())))
+                  .primary();
+            })) {
       KafkaConfig config = container.get(KafkaConfig.class);
       assertEquals("kafka-test:9092", config.bootstrapServers());
       assertEquals("container-test", config.groupId());
@@ -102,7 +125,10 @@ class KafkaModuleContainerTest {
   void suppressOwnIsReadStrictly() {
     // The coercer vocabulary ("no", "off", "0") is accepted…
     System.setProperty("freeway.kafka.suppress-own", "no");
-    try (Container container = Freeway.create(new KafkaModule())) {
+    try (Container container =
+        Freeway.create(
+            new KafkaModule(),
+            binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
       assertFalse(container.get(KafkaConfig.class).suppressOwn());
     } finally {
       System.clearProperty("freeway.kafka.suppress-own");
@@ -115,7 +141,11 @@ class KafkaModuleContainerTest {
           assertThrows(
               IllegalArgumentException.class,
               () -> {
-                try (Container container = Freeway.create(new KafkaModule())) {
+                try (Container container =
+                    Freeway.create(
+                        new KafkaModule(),
+                        binder ->
+                            binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
                   container.get(KafkaConfig.class);
                 }
               });
@@ -128,7 +158,7 @@ class KafkaModuleContainerTest {
   }
 
   @Test
-  void hookStopDetachesTheSinkFromTheBus() throws Exception {
+  void contributedSinkIsTheBoundInstanceAndStopClosesCleanly() throws Exception {
     // No topics: KafkaSubscriber.start() is a no-op, so this exercises the
     // hook without a broker.
     System.setProperty("freeway.kafka.bootstrap-servers", "127.0.0.1:1");
@@ -143,16 +173,21 @@ class KafkaModuleContainerTest {
       KafkaEventSink sink = container.get(KafkaEventSink.class);
       RuntimeHook hook = container.extension(RuntimeHook.class).all().get(0);
 
-      hook.start(container);
-      assertTrue(bus.removeEventSink(sink), "hook start installs the sink");
-      bus.addEventSink(sink);
-
-      hook.stop(container);
-
-      assertFalse(
-          bus.removeEventSink(sink),
-          "hook stop must detach the sink — a publish during shutdown must "
-              + "not reach a closed producer");
+      // One producer, not two: the contributed sink resolves through the
+      // binding, so the stop hook closes the instance the bus fans out to.
+      assertSame(
+          sink,
+          container.extension(EventSink.class).all().get(0),
+          "the contributed sink must be the bound instance");
+      assertDoesNotThrow(
+          () -> {
+            hook.start(container);
+            hook.stop(container);
+          },
+          "stop must close subscriber and producer without touching the bus");
+      assertDoesNotThrow(
+          () -> bus.publish("t", "payload"),
+          "publishing after the hook stopped must not reach the closed producer");
     }
   }
 }

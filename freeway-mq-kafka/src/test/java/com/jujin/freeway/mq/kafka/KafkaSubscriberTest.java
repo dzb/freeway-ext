@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.jujin.freeway.cloud.context.InvocationContext;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
@@ -28,6 +29,7 @@ import com.jujin.freeway.ioc.Freeway;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
@@ -117,7 +119,7 @@ class KafkaSubscriberTest {
       // Typed message whose type is not allowlisted -> poison -> DLQ.
       var record =
           new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
       List<ProducerRecord<String, byte[]>> dlq;
@@ -180,7 +182,7 @@ class KafkaSubscriberTest {
 
       var record =
           new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
       long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -217,7 +219,7 @@ class KafkaSubscriberTest {
 
       var record =
           new ConsumerRecord<>("orders", 0, 0L, "key-1", "{}".getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("ce-type", "com.acme.NotAllowed".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
       long stopDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
@@ -304,8 +306,8 @@ class KafkaSubscriberTest {
               "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
       record
           .headers()
-          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
-      record.headers().add("X-Event-Channel", "CLASS".getBytes(StandardCharsets.UTF_8));
+          .add("ce-type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+      record.headers().add("ce-fwchannel", "CLASS".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
       Object event = byClass.poll(5, TimeUnit.SECONDS);
@@ -313,6 +315,60 @@ class KafkaSubscriberTest {
       assertTrue(event instanceof TestEvent, "typed event must deserialize to the declared class");
       assertEquals("hi", ((TestEvent) event).value());
       assertTrue(byTopic.isEmpty(), "class-channel event must not dispatch on the topic channel");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void legacyEnvelopeHeadersAreStillHonored() throws Exception {
+    // Wire compat, not API compat: the log is durable, so a rolling upgrade
+    // meets records stamped with the pre-CE X-Event-* names. Every read
+    // prefers ce- and falls back to X- — one test pins the whole fallback row.
+    var config =
+        KafkaConfig.of(
+            "localhost:9092",
+            "test-group",
+            "node-9",
+            "orders",
+            TestEvent.class.getName(),
+            "skip",
+            "",
+            "",
+            1,
+            0,
+            1,
+            true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var byClass = new LinkedBlockingQueue<Object>();
+      bus.subscribe(TestEvent.class, byClass::add);
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var record =
+          new ConsumerRecord<>(
+              "orders", 0, 0L, "key-1", "{\"value\":\"legacy\"}".getBytes(StandardCharsets.UTF_8));
+      record
+          .headers()
+          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Channel", "CLASS".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Origin", "node-2".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Id", "legacy-id-1".getBytes(StandardCharsets.UTF_8));
+      record.headers().add("X-Event-Topic", "orders".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      Object event = byClass.poll(5, TimeUnit.SECONDS);
+      assertNotNull(event, "a legacy-header record must still be delivered");
+      assertTrue(event instanceof TestEvent);
+      assertEquals("legacy", ((TestEvent) event).value());
 
       subscriber.close();
       assertTrue(consumer.closed());
@@ -358,7 +414,7 @@ class KafkaSubscriberTest {
               "orders", 0, 0L, "key-1", "{\"value\":\"hi\"}".getBytes(StandardCharsets.UTF_8));
       record
           .headers()
-          .add("X-Event-Type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
+          .add("ce-type", TestEvent.class.getName().getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(record);
 
       Object event = byTopic.poll(5, TimeUnit.SECONDS);
@@ -393,14 +449,14 @@ class KafkaSubscriberTest {
       var own =
           new ConsumerRecord<>(
               "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      own.headers().add("X-Event-Origin", "node-1".getBytes(StandardCharsets.UTF_8));
+      own.headers().add("ce-fworigin", "node-1".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(own);
 
       // Foreign event -> delivered.
       var foreign =
           new ConsumerRecord<>(
               "orders", 0, 1L, "key-1", "{\"x\":2}".getBytes(StandardCharsets.UTF_8));
-      foreign.headers().add("X-Event-Origin", "node-2".getBytes(StandardCharsets.UTF_8));
+      foreign.headers().add("ce-fworigin", "node-2".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(foreign);
 
       Object event = received.poll(5, TimeUnit.SECONDS);
@@ -408,6 +464,86 @@ class KafkaSubscriberTest {
       assertTrue(event instanceof Map);
       assertEquals(2, ((Map<?, ?>) event).get("x"), "the own event must be suppressed");
       assertTrue(received.isEmpty(), "only the foreign event may be delivered");
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void inboundTraceIsRestoredAroundDispatch() throws Exception {
+    // The sender's span must reach local handlers: a record carrying
+    // ce-traceparent dispatches with that trace bound on the poll thread.
+    var config =
+        KafkaConfig.of(
+            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
+      bus.subscribe("orders", payload -> seen.add(InvocationContext.current()));
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var record =
+          new ConsumerRecord<>(
+              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+      record
+          .headers()
+          .add(
+              "ce-traceparent",
+              "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01"
+                  .getBytes(StandardCharsets.UTF_8));
+      record
+          .headers()
+          .add("ce-tracestate", "rojo=00f067aa0ba902b7".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      var captured = seen.poll(5, TimeUnit.SECONDS);
+      assertNotNull(captured, "the event must be delivered");
+      var trace = captured.orElseThrow(() -> new AssertionError("no context bound")).trace();
+      assertNotNull(trace, "the wire trace must be restored around dispatch");
+      assertEquals("0af7651916cd43dd8448eb211c80319c", trace.traceId());
+      assertEquals("rojo=00f067aa0ba902b7", trace.traceState());
+
+      subscriber.close();
+      assertTrue(consumer.closed());
+    }
+  }
+
+  @Test
+  void tracelessRecordDispatchesBare() throws Exception {
+    // No trace headers: nothing is fabricated and nothing is cleared — the
+    // fresh poll thread holds no ambient, so handlers observe empty.
+    var config =
+        KafkaConfig.of(
+            "localhost:9092", "test-group", "node-1", "orders", "", "skip", "", "", 1, 0, 1, true);
+    var consumer = new MockConsumer<String, byte[]>(OffsetResetStrategy.EARLIEST);
+    var topic = new TopicPartition("orders", 0);
+
+    try (Container container = Freeway.create()) {
+      EventBus bus = container.get(EventBus.class);
+      var seen = new LinkedBlockingQueue<Optional<InvocationContext>>();
+      bus.subscribe("orders", payload -> seen.add(InvocationContext.current()));
+
+      var subscriber = new KafkaSubscriber(config, bus, new JsonCodecDefault(), consumer, null);
+      consumer.updateBeginningOffsets(Map.of(topic, 0L));
+      subscriber.start();
+      consumer.rebalance(Set.of(topic));
+
+      var record =
+          new ConsumerRecord<>(
+              "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
+      consumer.addRecord(record);
+
+      var captured = seen.poll(5, TimeUnit.SECONDS);
+      assertNotNull(captured, "the event must be delivered");
+      assertTrue(captured.isEmpty(), "no wire trace means no bound context");
 
       subscriber.close();
       assertTrue(consumer.closed());
@@ -435,7 +571,7 @@ class KafkaSubscriberTest {
       var own =
           new ConsumerRecord<>(
               "orders", 0, 0L, "key-1", "{\"x\":1}".getBytes(StandardCharsets.UTF_8));
-      own.headers().add("X-Event-Origin", "node-1".getBytes(StandardCharsets.UTF_8));
+      own.headers().add("ce-fworigin", "node-1".getBytes(StandardCharsets.UTF_8));
       consumer.addRecord(own);
 
       Object event = received.poll(5, TimeUnit.SECONDS);

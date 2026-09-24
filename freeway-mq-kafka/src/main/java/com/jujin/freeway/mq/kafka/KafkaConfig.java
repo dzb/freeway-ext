@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>{@code freeway.kafka.topics} is the bridge topic list: the sink produces to it and the
  *       subscriber polls it. Both sides must configure the same list, or records are written to a
- *       topic nobody consumes (the local dispatch topic travels in the {@code X-Event-Topic} header
+ *       topic nobody consumes (the local dispatch topic travels in the {@code ce-fwtopic} header
  *       instead, so one bridge topic serves every local topic).
  *   <li>{@code freeway.kafka.allowed-event-types} is the subscriber's accept list and must name
  *       every bridged event class: a record whose type header is not listed is rejected as poison,

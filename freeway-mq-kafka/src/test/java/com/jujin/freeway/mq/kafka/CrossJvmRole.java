@@ -19,6 +19,7 @@ package com.jujin.freeway.mq.kafka;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.Freeway;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -135,10 +136,11 @@ public final class CrossJvmRole {
             500,
             1,
             true);
-    try (Container container = Freeway.create();
-        KafkaEventSink sink = new KafkaEventSink(config, new JsonCodecDefault())) {
+    KafkaEventSink sink = new KafkaEventSink(config, new JsonCodecDefault());
+    try (sink;
+        Container container =
+            Freeway.create(binder -> binder.contribute(EventSink.class).add(sink))) {
       EventBus bus = container.get(EventBus.class);
-      bus.addEventSink(sink);
       bus.publish(new CrossJvmOrder("order-42", 7));
       bus.publish(LOCAL_TOPIC, "hello-from-the-publisher");
       // The producer is asynchronous: give it time to flush before the JVM exits.

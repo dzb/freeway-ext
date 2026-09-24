@@ -20,6 +20,7 @@ import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.EventBus;
+import com.jujin.freeway.ioc.EventSink;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
@@ -61,6 +62,14 @@ public final class KafkaModule implements ModuleEx {
                 new KafkaSubscriber(
                     c.get(KafkaConfig.class), c.get(EventBus.class), c.get(JsonCodec.class)));
 
+    // The sink is a sealed contribution, not a runtime install: it needs only
+    // config and codec, both available at composition time. Resolved through
+    // the binding (not built twice) so exactly one producer exists — the one
+    // the stop hook closes.
+    binder
+        .contribute(EventSink.class)
+        .add("freeway.kafka", c -> c.get(KafkaEventSink.class));
+
     binder
         .contribute(RuntimeHook.class)
         .add(
@@ -68,18 +77,15 @@ public final class KafkaModule implements ModuleEx {
             new RuntimeHook() {
               @Override
               public void start(Container container) {
-                container.get(EventBus.class).addEventSink(container.get(KafkaEventSink.class));
                 container.get(KafkaSubscriber.class).start();
               }
 
               @Override
               public void stop(Container container) {
-                // Detach before closing: a publish during shutdown must not
-                // reach a closed producer.
-                KafkaEventSink sink = container.get(KafkaEventSink.class);
-                container.get(EventBus.class).removeEventSink(sink);
+                // The contributed sink needs no detach: post-close publishes
+                // are rejected, so they never reach the closed producer.
                 container.get(KafkaSubscriber.class).close();
-                sink.close();
+                container.get(KafkaEventSink.class).close();
               }
             });
   }

@@ -52,6 +52,31 @@
   Undertow twin was already `UndertowHttpContractTest`). The jar's `META-INF/services` registrations
   were rewritten with the new FQCNs. Migration is one find-and-replace on `WebEngine`; every Java
   reference is a compile-time class name, so the compiler reports whatever the sweep misses.
+- **Kafka envelope speaks CloudEvents**: the bespoke `X-Event-*` headers are now `ce-` headers per
+  the CloudEvents Kafka binding — same logical envelope the WS mesh carries as JSON frames
+  (`ce-specversion/id/source/type`, plus `ce-subject` for `Keyed` on the CLASS channel,
+  `ce-time`, `ce-datacontenttype`, and the `ce-fwchannel/fworigin/fwtopic` extensions). Kafka has
+  no service-registry concept, so `ce-source` names the sending node (`freeway://{origin}`),
+  mirroring `ce-fworigin`. One deliberate divergence stays documented, not silent: on the TOPIC
+  channel the mesh types by topic string and treats the payload as opaque, while Kafka still stamps
+  the payload class (converging that would break typed topic consumers). The log is durable, so
+  reads prefer `ce-` and fall back to `X-Event-*` — writes never emit legacy names
+  (`legacyEnvelopeHeadersAreStillHonored` pins the fallback row). `README`/`AGENTS.md` header names
+  updated; release notes and old CHANGELOG entries describe the past and stay.
+- **Kafka bridge carries the sender's trace**: `ce-traceparent`/`ce-tracestate` headers when the
+  sending thread holds a trace (same extensions the mesh stamps, via shared `EventTrace`), restored
+  around dispatch on receipt — downstream handlers observe the sender's causality; traceless records
+  dispatch bare without touching the poll thread's ambient. Trace only, never principal/baggage
+  (nothing on the event path authenticates the producer). Requires `freeway-cloud` (the context
+  types live there — transports enhance the cloud story, so the dependency direction is declared,
+  not smuggled: it also pulls the http stack transitively). Ordering note: the trace wraps the
+  `Defer` scope from the outside, because a trace bound inside would be released before the
+  deferred drain runs. Async (`publishAsync`/`publishOrdered`) executor threads still drop trace —
+  open follow-up, stated not hidden.
+- **Kafka self-guard delegates to shared `EventOrigin::isOwn`** — identical semantics (null-safe
+  equality, unknown identity never own); the three call sites (mesh fan-out, mesh inbound, Kafka
+  consume) finally read as one rule.
+
 
 ### Added
 

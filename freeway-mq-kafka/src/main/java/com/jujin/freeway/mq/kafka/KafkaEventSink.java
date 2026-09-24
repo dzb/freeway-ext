@@ -16,6 +16,7 @@
 
 package com.jujin.freeway.mq.kafka;
 
+import com.jujin.freeway.cloud.event.EventTrace;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.EventBus;
@@ -34,11 +35,12 @@ import org.slf4j.LoggerFactory;
 
 /**
  * {@link EventSink} that publishes Freeway events to Kafka topics. Events are serialized as JSON
- * with an {@code X-Event-Type} header carrying the concrete class name, plus {@code X-Event-Origin}
- * (this node's identity), {@code X-Event-Channel} (class/topic dispatch channel) and {@code
- * X-Event-Id} (the bus-minted dispatch identity, shared by every transport). Reusing that id rather
- * than minting a per-send one is what makes one event arriving over both Kafka and another
- * transport (e.g. the WS mesh) recognizable as a single event instead of two unrelated copies.
+ * with the record value carrying the payload and CloudEvents attributes as {@code ce-} headers
+ * (see {@link KafkaHeaders} for the mapping — the same logical envelope the WS mesh carries as
+ * JSON frames). In particular {@code ce-id} is the bus-minted dispatch identity, shared by every
+ * transport. Reusing that id rather than minting a per-send one is what makes one event arriving
+ * over both Kafka and another transport (e.g. the WS mesh) recognizable as a single event instead
+ * of two unrelated copies.
  *
  * <p>Events implementing {@link EventBus.Keyed} are published with {@code key()} as the record key,
  * so the broker keeps per-aggregate order and consuming subscribers can parallelize across keys.
@@ -117,14 +119,41 @@ public class KafkaEventSink implements EventSink, AutoCloseable {
     // travels in a header instead, and the subscriber re-publishes under it.
     String wireTopic = bridgeTopics.isEmpty() ? topic : bridgeTopics.getFirst();
     var record = new ProducerRecord<String, byte[]>(wireTopic, key, bytes);
-    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_TYPE, event.getClass().getName());
-    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ORIGIN, origin);
-    KafkaHeaders.put(
-        record.headers(), KafkaHeaders.EVENT_CHANNEL, KafkaHeaders.channelToken(channel));
+    // CloudEvents Kafka binding (see KafkaHeaders): the same logical envelope
+    // the WS mesh carries as JSON, here as ce- headers; the record value stays
+    // the JSON-encoded event.
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_SPECVERSION, KafkaHeaders.SPEC_VERSION);
     // The bus-minted id: one identity shared by every transport this event
     // was dispatched over, so consumers can correlate/dedupe copies.
-    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_ID, eventId);
-    KafkaHeaders.put(record.headers(), KafkaHeaders.EVENT_TOPIC, topic);
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_ID, eventId);
+    // Kafka has no service-registry concept: unlike the mesh's service-based
+    // source, this names the sending node (mirroring ce-fworigin).
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_SOURCE, "freeway://" + origin);
+    // The payload class, on both channels — unlike the mesh, whose TOPIC
+    // frames carry the topic string as type and treat the payload as opaque.
+    // Converging that half (generic topic payloads) would break typed topic
+    // consumers, so it stays a documented divergence, not a silent one.
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_TYPE, event.getClass().getName());
+    // The ordering key rides the envelope like on the mesh — and, separately,
+    // as the record key, which is what the broker actually partitions on.
+    if (channel == EventSink.Channel.CLASS && event instanceof EventBus.Keyed k) {
+      KafkaHeaders.put(record.headers(), KafkaHeaders.CE_SUBJECT, k.key());
+    }
+    KafkaHeaders.put(
+        record.headers(),
+        KafkaHeaders.CE_TIME,
+        java.time.OffsetDateTime.now().toString());
+    KafkaHeaders.put(
+        record.headers(), KafkaHeaders.CE_DATA_TYPE, KafkaHeaders.DATA_CONTENT_TYPE);
+    KafkaHeaders.put(
+        record.headers(), KafkaHeaders.CE_CHANNEL, KafkaHeaders.channelToken(channel));
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_ORIGIN, origin);
+    KafkaHeaders.put(record.headers(), KafkaHeaders.CE_TOPIC, topic);
+    // The ambient trace, when the sending thread holds one — same extensions
+    // the mesh stamps, here as ce- headers per the Kafka binding.
+    for (var entry : EventTrace.injectCurrent().entrySet()) {
+      KafkaHeaders.putExtension(record.headers(), entry.getKey(), entry.getValue());
+    }
     try {
       producer.send(
           record,

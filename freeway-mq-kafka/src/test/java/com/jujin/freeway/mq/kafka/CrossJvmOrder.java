@@ -18,7 +18,7 @@ package com.jujin.freeway.mq.kafka;
 
 /**
  * The event both JVMs of {@link CrossJvmEventTest} must share: it is serialized by name on the wire
- * (the {@code X-Event-Type} header carries this class's binary name), so the subscriber JVM
+ * (the {@code ce-type} header carries this class's binary name), so the subscriber JVM
  * rebuilds it only because the same class is on its classpath too.
  */
 public record CrossJvmOrder(String orderId, int amount) {}

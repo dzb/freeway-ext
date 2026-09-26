@@ -32,9 +32,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Single-transport redelivery suppression: the bounded seen-set in {@link KafkaEvents} drops a
- * second copy of an already-dispatched record (rebalance redelivery carries the same CE id).
- * Opt-in via {@code freeway.kafka.dedup-capacity}; off by default. No cross-transport identity
- * is involved — each plane mints its own ids.
+ * second copy of an already-dispatched record (rebalance redelivery carries the same CE id). Opt-in
+ * via {@code freeway.kafka.dedup-capacity}; off by default. No cross-transport identity is involved
+ * — each plane mints its own ids.
  */
 class KafkaEventsDedupTest {
 
@@ -82,7 +82,8 @@ class KafkaEventsDedupTest {
     plane.subscribe("orders", PlainTestEvent.class, received::add);
 
     assertThrows(
-        RuntimeException.class, () -> plane.handle(record("bad-1", "{invalid")),
+        RuntimeException.class,
+        () -> plane.handle(record("bad-1", "{invalid")),
         "an undecodable record must stay loud with the window armed");
     assertThrows(
         RuntimeException.class,

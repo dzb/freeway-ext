@@ -60,10 +60,10 @@ import org.slf4j.LoggerFactory;
  * that need exactly-once deduplicate by their own business key — the record key ({@code send}'s
  * third argument) is the natural one. Records still carry a CE {@code id} header (fresh per send)
  * and the producer's class name in {@code ce-type} as informational metadata — older subscriber
- * builds route by those, this one ignores them. Transports without a natural business key
- * (signal events, handlers not written idempotent) can instead arm the bounded redelivery
- * window — {@code freeway.kafka.dedup-capacity} remembers the last N dispatch ids and drops
- * second copies before dispatch (poison still throws first, so the DLQ path is unaffected).
+ * builds route by those, this one ignores them. Transports without a natural business key (signal
+ * events, handlers not written idempotent) can instead arm the bounded redelivery window — {@code
+ * freeway.kafka.dedup-capacity} remembers the last N dispatch ids and drops second copies before
+ * dispatch (poison still throws first, so the DLQ path is unaffected).
  *
  * <p>Lifecycle is owned by the {@link KafkaModule} hook: {@link #start()} begins polling the
  * configured topics (if any), {@link #close()} stops the poller and closes the producer with a
@@ -93,9 +93,10 @@ public final class KafkaEvents implements AutoCloseable {
   private final LongAdder skippedNoSubscription = new LongAdder();
   private final LongAdder handlerFailures = new LongAdder();
   private final LongAdder duplicatesDropped = new LongAdder();
+
   /**
-   * Redelivery window, or null when {@code dedup-capacity} is unset — single-transport,
-   * opt-in, dies with this plane (a restart colds the window, preserving at-least-once).
+   * Redelivery window, or null when {@code dedup-capacity} is unset — single-transport, opt-in,
+   * dies with this plane (a restart colds the window, preserving at-least-once).
    */
   private final SeenIds seenIds;
 
@@ -271,8 +272,7 @@ public final class KafkaEvents implements AutoCloseable {
       String id = KafkaHeaders.read(record.headers(), KafkaHeaders.CE_ID, null);
       if (!seenIds.claim(id)) {
         duplicatesDropped.increment();
-        LOG.debug(
-            "Duplicate redelivery of '{}' (id {}) — dropped", record.topic(), id);
+        LOG.debug("Duplicate redelivery of '{}' (id {}) — dropped", record.topic(), id);
         return;
       }
     }
@@ -326,8 +326,8 @@ public final class KafkaEvents implements AutoCloseable {
    * @param delivered successful handler invocations
    * @param skippedNoSubscription polled records matching no subscription
    * @param handlerFailures throwing handlers (isolated, never poison)
-   * @param duplicatesDropped redeliveries dropped by the dedup window (zero unless
-   *     {@code dedup-capacity} is set)
+   * @param duplicatesDropped redeliveries dropped by the dedup window (zero unless {@code
+   *     dedup-capacity} is set)
    */
   public record KafkaStats(
       long sent,
@@ -340,11 +340,11 @@ public final class KafkaEvents implements AutoCloseable {
   private record Subscription(String prefix, Class<?> type, Consumer<Object> handler) {}
 
   /**
-   * Bounded insertion-ordered set of recently seen dispatch ids — the opt-in redelivery
-   * suppressor for this plane alone (no cross-transport identity, no bus coupling).
-   * Insertion order (not access order) is deliberate: re-seeing an id must not extend
-   * its life, or a hot id would pin itself in the window forever. Shared across the
-   * key-bucket worker threads, hence synchronized — one cheap claim per record.
+   * Bounded insertion-ordered set of recently seen dispatch ids — the opt-in redelivery suppressor
+   * for this plane alone (no cross-transport identity, no bus coupling). Insertion order (not
+   * access order) is deliberate: re-seeing an id must not extend its life, or a hot id would pin
+   * itself in the window forever. Shared across the key-bucket worker threads, hence synchronized —
+   * one cheap claim per record.
    */
   private static final class SeenIds {
     private final int capacity;
@@ -355,8 +355,8 @@ public final class KafkaEvents implements AutoCloseable {
     }
 
     /**
-     * @return true if {@code id} was new (now claimed); false if already present.
-     *     A null or blank id carries no identity to correlate on and always delivers.
+     * @return true if {@code id} was new (now claimed); false if already present. A null or blank
+     *     id carries no identity to correlate on and always delivers.
      */
     synchronized boolean claim(String id) {
       if (id == null || id.isBlank()) {

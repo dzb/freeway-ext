@@ -104,7 +104,8 @@ class KafkaConfigTest {
             1,
             1000,
             1,
-            true, 0);
+            true,
+            0);
     Properties props = config.extraProperties();
     assertEquals(2, props.size());
     assertEquals("SASL_SSL", props.getProperty("security.protocol"));
@@ -151,7 +152,8 @@ class KafkaConfigTest {
             1,
             1000,
             1,
-            true, 0);
+            true,
+            0);
     assertTrue(enabled.dlqEnabled());
   }
 
@@ -161,7 +163,18 @@ class KafkaConfigTest {
         IllegalArgumentException.class,
         () ->
             KafkaConfig.of(
-                "localhost:9092", "test-group", "", "orders", "skip", "", "", -1, 1000, 1, true, 0));
+                "localhost:9092",
+                "test-group",
+                "",
+                "orders",
+                "skip",
+                "",
+                "",
+                -1,
+                1000,
+                1,
+                true,
+                0));
     assertThrows(
         IllegalArgumentException.class,
         () ->
@@ -191,8 +204,7 @@ class KafkaConfigTest {
                     -1));
     assertTrue(
         ex.getMessage().contains("freeway.kafka.dedup-capacity"),
-        "a negative window must fail naming the key, not silently disable: "
-            + ex.getMessage());
+        "a negative window must fail naming the key, not silently disable: " + ex.getMessage());
   }
 
   @Test

@@ -22,13 +22,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.bench.db.BenchDbModule;
+import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
+import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.DbModule;
-import com.jujin.freeway.ioc.ModuleNode;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,15 +53,34 @@ class BenchCliTest {
   void medianIndexPicksTheMedianByRpsNotByPosition() {
     var iterations =
         List.of(
-            new BenchRunner.IterationResult(100, 1, 2, 3, 0),
-            new BenchRunner.IterationResult(900, 1, 2, 3, 0),
-            new BenchRunner.IterationResult(500, 1, 2, 3, 0));
+            new BenchRunner.IterationResult(100, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(900, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(500, 1, 2, 3, 0, false));
 
     assertEquals(2, BenchRunner.medianIndex(iterations), "the 500 rps iteration is the median");
     assertEquals(
         1,
         BenchRunner.medianIndex(List.of(iterations.get(1), iterations.get(2), iterations.get(0))),
         "the answer follows rps, not the order the iterations arrived in");
+  }
+
+  @Test
+  void medianIndexWindowReadsTheTailAndKeepsTheOriginalIndex() {
+    var climbing =
+        List.of(
+            new BenchRunner.IterationResult(10, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(20, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(30, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(40, 1, 2, 3, 0, false),
+            new BenchRunner.IterationResult(50, 1, 2, 3, 0, false));
+
+    // Last three (30/40/50): the middle of the tail is 40, at its original index 3 —
+    // the callers index resultIds[]/scores[] with this, so mapping back matters.
+    assertEquals(3, BenchRunner.medianIndex(climbing, 3));
+    // 0 and oversized windows are the full window; a negative one is too (documented).
+    assertEquals(2, BenchRunner.medianIndex(climbing, 0));
+    assertEquals(2, BenchRunner.medianIndex(climbing, 9));
+    assertEquals(2, BenchRunner.medianIndex(climbing, -1));
   }
 
   @Test
@@ -162,6 +182,55 @@ class BenchCliTest {
     assertTrue(badOutput.getMessage().contains(".json"), badOutput.getMessage());
   }
 
+  @Test
+  void forkShapeDrillsAResidentServer() throws Exception {
+    try (AppRuntime app = app()) {
+      var ctx =
+          new Command.Context(
+              CliModule.container(),
+              "suite",
+              Map.of(
+                  "engines", "freeway",
+                  "scenarios", "ping",
+                  "concurrency", "2",
+                  "requests", "20",
+                  "warmup", "10",
+                  "runs", "1",
+                  "fork", "true"));
+      new SuiteCommand().run(ctx);
+
+      var repository =
+          new BenchRepository(
+              CliModule.container().get(Database.class), CliModule.container().get(Coercer.class));
+      var runs = repository.allRuns();
+      assertTrue(!runs.isEmpty(), "the forked suite must persist its run row");
+      assertEquals("freeway", runs.get(runs.size() - 1).engine());
+    }
+  }
+
+  @Test
+  void echoBodyFailsFastWithoutBootingAServer() {
+    try (AppRuntime app = app()) {
+      var before =
+          new BenchRepository(
+                  CliModule.container().get(Database.class),
+                  CliModule.container().get(Coercer.class))
+              .allRuns()
+              .size();
+      var ctx =
+          new Command.Context(
+              CliModule.container(), "run", Map.of("engine", "freeway", "scenario", "echo_body"));
+      assertThrows(UsageException.class, () -> new RunCommand().run(ctx));
+      var after =
+          new BenchRepository(
+                  CliModule.container().get(Database.class),
+                  CliModule.container().get(Coercer.class))
+              .allRuns()
+              .size();
+      assertEquals(before, after, "a rejected cell must not leave a run row behind");
+    }
+  }
+
   private static AppRuntime app() {
     System.setProperty("freeway.db.url", "jdbc:sqlite::memory:");
     System.setProperty("freeway.db.username", "sa");
@@ -169,9 +238,7 @@ class BenchCliTest {
     System.setProperty("freeway.db.pool.max-size", "1");
     // One connection for the in-memory database, and no idle floor above it (as BenchApp does).
     System.setProperty("freeway.db.pool.min-idle", "0");
-    return FreewayApp.create(
-            ModuleNode.app(
-                "freeway-benchmark", BenchDbModule.class, DbModule.class, CliModule.class))
+    return FreewayApp.create(BenchDbModule.class, DbModule.class, CliModule.class)
         .autoDiscovery(false)
         .shutdownHook(false)
         .start();

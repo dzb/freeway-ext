@@ -19,8 +19,8 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
-import com.jujin.freeway.http.HttpConfigKeys;
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpModule.ConfigKeys;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
@@ -130,7 +130,7 @@ public final class JettyHttpEngine implements HttpEngine {
     if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
       LOG.warn(
           "{}={} is not applied: Jetty has no write-timeout counterpart",
-          HttpConfigKeys.SERVER_WRITE_TIMEOUT,
+          ConfigKeys.SERVER_WRITE_TIMEOUT,
           config.writeTimeout());
     }
 

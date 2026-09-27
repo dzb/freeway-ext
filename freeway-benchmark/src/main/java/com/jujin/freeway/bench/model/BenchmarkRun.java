@@ -22,6 +22,7 @@ import com.jujin.freeway.db.schema.Id;
 import com.jujin.freeway.db.schema.Table;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 
 /** A single benchmark run session. */
@@ -38,6 +39,9 @@ public record BenchmarkRun(
     @Column("jdk_info") String jdkInfo,
     @Column("os_info") String osInfo,
     @Column("cpu_info") String cpuInfo,
+    @Column("dirty_files") int dirtyFiles,
+    @Column("jvm_flags") String jvmFlags,
+    @Column("heap_max_mb") long heapMaxMb,
     @Column("created_at") Instant createdAt) {
   public static BenchmarkRun create(
       String engine, String scenario, int concurrency, int requests, int warmup, int runs) {
@@ -53,6 +57,9 @@ public record BenchmarkRun(
         jvm(),
         os(),
         cpu(),
+        dirtyFileCount(),
+        inputArguments(),
+        Runtime.getRuntime().maxMemory() / 1024 / 1024,
         Instant.now());
   }
 
@@ -119,5 +126,38 @@ public record BenchmarkRun(
     int cpus = Runtime.getRuntime().availableProcessors();
     String model = System.getProperty("os.arch");
     return model + " " + cpus + " threads";
+  }
+
+  /**
+   * Uncommitted worktree files at run time (-1 when git is unavailable): a number is part of the
+   * inputs, so a dirty tree is recorded, not forbidden.
+   */
+  private static int dirtyFileCount() {
+    try {
+      var proc = new ProcessBuilder("git", "status", "--short").redirectErrorStream(true).start();
+      int lines = 0;
+      // UTF-8 explicitly: the count is over lines, but a platform default of UTF-16 would split
+      // them wrongly, and every other process read in this module names its charset.
+      try (var reader =
+          new BufferedReader(
+              new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
+        while (reader.readLine() != null) {
+          lines++;
+        }
+      }
+      return proc.waitFor() == 0 ? lines : -1;
+    } catch (Exception ignored) {
+      return -1;
+    }
+  }
+
+  /** JVM flags the run actually started with (empty when none were given). */
+  private static String inputArguments() {
+    try {
+      return String.join(
+          " ", java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments());
+    } catch (Exception ignored) {
+      return "";
+    }
   }
 }

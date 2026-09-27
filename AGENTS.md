@@ -45,7 +45,7 @@ mvn spotless:check                           # format gate — not part of `mvn 
 | `freeway-http-adapter-testkit` | Shared fixtures (`EngineFixture`, `Pipelines`) and the contracts every engine must pass | core http + commons + cloud; JUnit at compile scope (the contracts *are* the API) |
 | `freeway-http-jetty` | Jetty 12 engine adapter (`HttpEngine`) | core ioc + http + commons; jetty-server, jetty-websocket-jetty-server, jetty-http2-server, jetty-alpn-*-server |
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
-| `freeway-mq-kafka` | Kafka `EventSink` plus the subscriber that bridges the event bus over a topic | core ioc + commons; kafka-clients |
+| `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |
 
@@ -65,7 +65,7 @@ exception — comparing engines requires both of them — and it is excluded fro
 ## Design Rules
 
 - **Core first, adapter second**: an adapter implements a core SPI (`HttpEngine`,
-  `Pool`, `EventSink`) and depends on core — never the reverse, and never on another
+  `Pool`) and depends on core — never the reverse, and never on another
   adapter.
 - **Adapters move with the core**: core deletes a superseded API shape instead of keeping
   a compatibility overload beside it, so a compile error after a core upgrade is the
@@ -96,7 +96,7 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
   dead address, green against a live one.
 - **A cross-process test is the only shape that can catch a bridge misconfiguration** —
   same-JVM dispatch satisfies the assertions on its own, which is why `CrossJvmEventTest`
-  spawns real JVMs and `KafkaEventSinkIntegrationTest` uses two containers.
+  spawns real JVMs and `KafkaEventsIntegrationTest` uses two containers.
 - **Reverse-check a fix**: break it, watch the test go red, restore it. A test that passes
   for the wrong reason is worse than no test.
 

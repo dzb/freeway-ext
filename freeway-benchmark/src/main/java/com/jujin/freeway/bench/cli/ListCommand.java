@@ -68,6 +68,7 @@ public final class ListCommand implements Command {
               r.scenario(),
               String.valueOf(r.concurrency()),
               r.commitSha() == null || r.commitSha().isBlank() ? "—" : r.commitSha(),
+              r.dirtyFiles() < 0 ? "?" : r.dirtyFiles() == 0 ? "" : String.valueOf(r.dirtyFiles()),
               r.jdkInfo() != null && r.jdkInfo().length() > 20
                   ? r.jdkInfo().substring(0, 20)
                   : r.jdkInfo() == null ? "" : r.jdkInfo(),
@@ -77,13 +78,14 @@ public final class ListCommand implements Command {
     }
     System.out.println(
         BenchFormat.table(
-            List.of("ID", "Engine", "Scenario", "Concur", "Commit", "JDK", "Created"),
+            List.of("ID", "Engine", "Scenario", "Concur", "Commit", "Dirty", "JDK", "Created"),
             List.of(
                 BenchFormat.Align.RIGHT,
                 BenchFormat.Align.LEFT,
                 BenchFormat.Align.LEFT,
                 BenchFormat.Align.RIGHT,
                 BenchFormat.Align.LEFT,
+                BenchFormat.Align.RIGHT,
                 BenchFormat.Align.LEFT,
                 BenchFormat.Align.LEFT),
             rows));

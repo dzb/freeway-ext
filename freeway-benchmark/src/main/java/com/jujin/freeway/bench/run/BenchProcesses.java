@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -33,6 +34,23 @@ import java.util.List;
 final class BenchProcesses {
 
   private BenchProcesses() {}
+
+  /**
+   * Pins a child command to CPUs (Linux {@code taskset}); blank range leaves the command untouched.
+   * Pinning is per-role on purpose — server and client on disjoint cores is what separates their
+   * contention, and a single inherited mask cannot express that.
+   */
+  static List<String> pinned(List<String> command, String cpuRange) {
+    if (cpuRange == null || cpuRange.isBlank()) {
+      return command;
+    }
+    var pinned = new ArrayList<String>(command.size() + 3);
+    pinned.add("taskset");
+    pinned.add("-c");
+    pinned.add(cpuRange.trim());
+    pinned.addAll(command);
+    return pinned;
+  }
 
   static String javaBinary() {
     return ProcessHandle.current().info().command().orElse("java");

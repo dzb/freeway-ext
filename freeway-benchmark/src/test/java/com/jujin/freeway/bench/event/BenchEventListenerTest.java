@@ -26,7 +26,6 @@ import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.db.DbModule;
-import com.jujin.freeway.ioc.ModuleNode;
 import com.jujin.freeway.ioc.event.EventBus;
 import com.jujin.freeway.ioc.event.EventSubscriber;
 import java.util.ArrayList;
@@ -77,12 +76,7 @@ class BenchEventListenerTest {
     RECEIVED.clear();
     try (AppRuntime app =
         FreewayApp.create(
-                ModuleNode.app(
-                    "bench-events",
-                    BenchEventsModule.class,
-                    BenchDbModule.class,
-                    DbModule.class,
-                    CliModule.class))
+                BenchEventsModule.class, BenchDbModule.class, DbModule.class, CliModule.class)
             .autoDiscovery(false)
             .shutdownHook(false)
             .start()) {

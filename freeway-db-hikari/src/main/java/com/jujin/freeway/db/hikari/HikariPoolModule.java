@@ -20,6 +20,7 @@ import com.jujin.freeway.db.Pool;
 import com.jujin.freeway.db.PoolConfig;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
+import com.jujin.freeway.ioc.symbol.KnownKeys;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 
 /** IoC module that installs HikariCP as the primary connection pool. */
@@ -36,5 +37,27 @@ public final class HikariPoolModule implements ModuleEx {
             })
         .id("hikari")
         .primary();
+
+    // Declared vocabulary for the unknown-key check.
+    binder.contribute(KnownKeys.class).add(KnownKeys.of(ConfigKeys.class, ConfigKeys.PREFIX));
+  }
+
+  /**
+   * This adapter's own config keys, spelled as full literals. The pool settings proper ({@code
+   * freeway.db.*}) are core's {@code DbModule.ConfigKeys}; the key below is the one only this pool
+   * resolves.
+   */
+  public static final class ConfigKeys {
+    private ConfigKeys() {}
+
+    /** The namespace this table is fenced to — shared with the core {@code DbModule}. */
+    public static final String PREFIX = "freeway.db";
+
+    /**
+     * Milliseconds a borrowed connection may be held before HikariCP logs a leak warning (unset
+     * disables leak detection). HikariCP-only: core's {@code PoolDefault} has no counterpart for
+     * it.
+     */
+    public static final String LEAK_DETECTION = "freeway.db.pool.leak-detection";
   }
 }

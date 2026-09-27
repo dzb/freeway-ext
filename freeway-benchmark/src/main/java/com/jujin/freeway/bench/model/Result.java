@@ -36,12 +36,13 @@ public record Result(
     double rps,
     long p50us,
     long p95us,
-    long p99us) {
+    long p99us,
+    boolean saturated) {
   @Override
   public String toString() {
     return String.format(
         Locale.ROOT,
-        "engine=%s mode=%s requests=%d ok=%d errors=%d rps=%.0f p50=%d p95=%d p99=%d",
+        "engine=%s mode=%s requests=%d ok=%d errors=%d rps=%.0f p50=%d p95=%d p99=%d saturated=%s",
         engine,
         mode,
         requests,
@@ -50,23 +51,37 @@ public record Result(
         rps,
         p50us,
         p95us,
-        p99us);
+        p99us,
+        saturated);
   }
 
   /** Median result across iterations (median of each field). */
   public static Result median(List<Result> rs) {
-    var sorted = rs.stream().sorted(Comparator.comparingDouble(Result::rps)).toList();
+    return median(rs, 0);
+  }
+
+  /**
+   * Field-wise median over the last {@code window} iterations — {@code window <= 0} or as large as
+   * the list means all of them. The window is the protocol's reading of a cell (early rounds
+   * measure the JIT ramp, not the engine); the rps field it returns is by construction the same
+   * median-rps round the suite persists, so the printed line and the summary table agree.
+   */
+  public static Result median(List<Result> rs, int window) {
+    List<Result> measured =
+        window > 0 && window < rs.size() ? rs.subList(rs.size() - window, rs.size()) : rs;
+    var sorted = measured.stream().sorted(Comparator.comparingDouble(Result::rps)).toList();
     Result mid = sorted.get(sorted.size() / 2);
     return new Result(
         mid.engine,
         mid.mode,
-        mInt(rs, Result::requests),
-        mInt(rs, Result::ok),
-        mInt(rs, Result::errors),
-        mDbl(rs, Result::rps),
-        mLong(rs, Result::p50us),
-        mLong(rs, Result::p95us),
-        mLong(rs, Result::p99us));
+        mInt(measured, Result::requests),
+        mInt(measured, Result::ok),
+        mInt(measured, Result::errors),
+        mDbl(measured, Result::rps),
+        mLong(measured, Result::p50us),
+        mLong(measured, Result::p95us),
+        mLong(measured, Result::p99us),
+        measured.stream().anyMatch(Result::saturated));
   }
 
   private static int mInt(List<Result> rs, ToIntFunction<Result> g) {
@@ -93,11 +108,18 @@ public record Result(
         Double.parseDouble(val(parts, "rps")),
         Long.parseLong(val(parts, "p50")),
         Long.parseLong(val(parts, "p95")),
-        Long.parseLong(val(parts, "p99")));
+        Long.parseLong(val(parts, "p99")),
+        opt(parts, "saturated", "false").equals("true"));
   }
 
   private static String val(String[] parts, String key) {
     for (String p : parts) if (p.startsWith(key + "=")) return p.substring(key.length() + 1);
     throw new IllegalArgumentException("Missing " + key);
+  }
+
+  /** Optional wire field: old lines predate it and read as the default. */
+  private static String opt(String[] parts, String key, String fallback) {
+    for (String p : parts) if (p.startsWith(key + "=")) return p.substring(key.length() + 1);
+    return fallback;
   }
 }

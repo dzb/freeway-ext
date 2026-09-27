@@ -18,11 +18,13 @@ package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.event.BenchEvent;
+import com.jujin.freeway.bench.harness.ScenarioSpec;
 import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
+import com.jujin.freeway.bench.run.ForkedRunner;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.ioc.event.EventBus;
@@ -75,6 +77,14 @@ public final class SuiteCommand implements Command {
     int requests = ctx.getInt("requests", 2000);
     int warmup = ctx.getInt("warmup", 2_000);
     int runs = ctx.getInt("runs", 5);
+    int pauseMillis = ctx.getInt("pause-millis", 0);
+    // Standing protocol: the tail is the signal (early rounds measure warmup).
+    int medianLast = ctx.getInt("median-last", 0);
+    String tasksetServer = ctx.get("taskset-server", "");
+    String tasksetClient = ctx.get("taskset-client", "");
+    // Split shape through the established fork path (resident server plus client in
+    // separate JVMs). Absent, the server starts in this JVM — the smoke shape.
+    boolean fork = ctx.args().containsKey("fork");
     var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
     var modeLabel = mode.label();
     if (mode.webSocket()) {
@@ -86,7 +96,11 @@ public final class SuiteCommand implements Command {
           throw new UsageException(
               "--mode=ws is not supported for engine '"
                   + engine
-                  + "'; supported: freeway, undertow-native, jetty-native");
+                  + "'; supported: "
+                  + ServerHarness.WS_CAPABLE_ENGINES.stream()
+                      .map(ServerHarness.Engine::label)
+                      .sorted()
+                      .collect(java.util.stream.Collectors.joining(", ")));
         }
       }
     }
@@ -111,6 +125,10 @@ public final class SuiteCommand implements Command {
       var eng = requireEngine(engine);
       for (var scenario : scenarios) {
         var scn = requireScenario(scenario);
+        if (ScenarioSpec.of(scn).echoBody()) {
+          throw new UsageException(
+              "Scenario ECHO_BODY is not measurable: the client cannot send a request body");
+        }
         for (int concurrency : concurrencies) {
           // Create run record
           var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
@@ -123,43 +141,64 @@ public final class SuiteCommand implements Command {
           var scores = new double[runs];
           var resultIds = new long[runs];
           List<BenchRunner.IterationResult> iterationResults = new ArrayList<>();
+          var cell = new Cell(repository, eventBus, runId, engine + "/" + scenario, modeLabel);
 
-          try (var harness = ServerHarness.start(eng, scn)) {
-            int port = harness.port();
+          if (fork) {
+            var forked =
+                ForkedRunner.run(
+                    new ForkedRunner.Options(
+                        engine,
+                        scenario,
+                        modeLabel,
+                        requests,
+                        concurrency,
+                        warmup,
+                        runs,
+                        pauseMillis,
+                        medianLast,
+                        tasksetServer,
+                        tasksetClient));
+            if (forked.size() != runs) {
+              throw new IllegalStateException(
+                  "Forked client returned " + forked.size() + " rounds, expected " + runs);
+            }
             for (int r = 0; r < runs; r++) {
               done++;
-              var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
-              scores[r] = ir.rps();
-              iterationResults.add(ir);
-
-              var result =
-                  BenchmarkResult.forHttpIteration(
-                      runId,
-                      engine + "/" + scenario,
-                      modeLabel,
-                      ir.rps(),
-                      ir.p50us(),
-                      ir.p95us(),
-                      ir.p99us(),
-                      ir.errors());
-              resultIds[r] = repository.insertResult(result);
-              eventBus.publish(new BenchEvent.ResultCollected(result));
-
-              System.out.printf(
-                  "  run %d/%d: rps=%s p50=%s [%d/%d]%n",
-                  r + 1,
-                  runs,
-                  BenchFormat.rps(ir.rps()),
-                  BenchFormat.micros(ir.p50us()),
-                  done,
-                  total);
+              var fr = forked.get(r);
+              var ir =
+                  new BenchRunner.IterationResult(
+                      fr.rps(), fr.p50us(), fr.p95us(), fr.p99us(), fr.errors(), fr.saturated());
+              resultIds[r] = cell.collect(r, ir, scores, iterationResults);
             }
-          }
+            if (iterationResults.stream().anyMatch(BenchRunner.IterationResult::saturated)) {
+              ctx.exitCode(2);
+              System.out.println(
+                  "GATE: load generator saturated (client CPU >= 75%) — rounds invalid");
+            }
+          } else
+            try (var harness = ServerHarness.start(eng, scn)) {
+              int port = harness.port();
+              for (int r = 0; r < runs; r++) {
+                done++;
+                var ir =
+                    BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
+                resultIds[r] = cell.collect(r, ir, scores, iterationResults);
+
+                System.out.printf(
+                    "  run %d/%d: rps=%s p50=%s [%d/%d]%n",
+                    r + 1,
+                    runs,
+                    BenchFormat.rps(ir.rps()),
+                    BenchFormat.micros(ir.p50us()),
+                    done,
+                    total);
+              }
+            }
 
           // The dispersion belongs on the row every comparison prints: the
           // median iteration. Its id came from the insert, so there is nothing
           // to re-query.
-          int medianIndex = BenchRunner.medianIndex(iterationResults);
+          int medianIndex = BenchRunner.medianIndex(iterationResults, medianLast);
           double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
           if (runs > 1) {
             repository.recordDispersion(resultIds[medianIndex], error);
@@ -168,6 +207,19 @@ public final class SuiteCommand implements Command {
           // Pick median iteration as representative
           allResults.add(
               new SuiteResult(engine, scenario, concurrency, iterationResults.get(medianIndex)));
+          if (BenchRunner.totalFailure(iterationResults)) {
+            throw new IllegalStateException(
+                "Cell " + engine + "/" + scenario + " produced no successful requests");
+          }
+          if (BenchRunner.stillClimbing(iterationResults)) {
+            System.out.println(
+                "WARN: "
+                    + engine
+                    + "/"
+                    + scenario
+                    + " rounds still climbing — "
+                    + "warmup insufficient, median under-reports");
+          }
           System.out.println();
         }
       }
@@ -237,10 +289,7 @@ public final class SuiteCommand implements Command {
   }
 
   private static boolean isWsCapable(String engine) {
-    var e = requireEngine(engine);
-    return e == ServerHarness.Engine.FREEWAY
-        || e == ServerHarness.Engine.UNDERTOW_NATIVE
-        || e == ServerHarness.Engine.JETTY_NATIVE;
+    return ServerHarness.WS_CAPABLE_ENGINES.contains(requireEngine(engine));
   }
 
   /** Resolves an engine name, reporting an unknown one as a usage error. */
@@ -258,6 +307,31 @@ public final class SuiteCommand implements Command {
       return ServerHarness.Scenario.valueOf(scenario.toUpperCase(Locale.ROOT));
     } catch (IllegalArgumentException e) {
       throw new UsageException("--scenarios: unknown scenario '" + scenario + "'");
+    }
+  }
+
+  /**
+   * One cell's bookkeeping invariants. The two shapes (forked client, in-JVM smoke) run the same
+   * rounds and must persist and announce them the same way — this is the one place that does it, so
+   * a change to the row's meaning cannot land in one shape only.
+   */
+  private record Cell(
+      BenchRepository repository, EventBus eventBus, long runId, String name, String modeLabel) {
+
+    /** Records one round and returns the id the row was inserted with. */
+    long collect(
+        int index,
+        BenchRunner.IterationResult ir,
+        double[] scores,
+        List<BenchRunner.IterationResult> rounds) {
+      scores[index] = ir.rps();
+      rounds.add(ir);
+      var result =
+          BenchmarkResult.forHttpIteration(
+              runId, name, modeLabel, ir.rps(), ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
+      long id = repository.insertResult(result);
+      eventBus.publish(new BenchEvent.ResultCollected(result));
+      return id;
     }
   }
 

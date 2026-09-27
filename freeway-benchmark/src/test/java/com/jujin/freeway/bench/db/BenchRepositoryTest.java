@@ -27,7 +27,6 @@ import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.DbModule;
-import com.jujin.freeway.ioc.ModuleNode;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,9 +51,7 @@ class BenchRepositoryTest {
     // The schema is created by the migration runtime hook, so the app has to start
     // (Freeway.create alone never runs hooks).
     app =
-        FreewayApp.create(
-                ModuleNode.app(
-                    "bench-repo-test", BenchDbModule.class, DbModule.class, CliModule.class))
+        FreewayApp.create(BenchDbModule.class, DbModule.class, CliModule.class)
             .autoDiscovery(false)
             .shutdownHook(false)
             .start();

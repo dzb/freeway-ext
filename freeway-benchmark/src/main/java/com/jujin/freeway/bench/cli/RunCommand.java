@@ -18,6 +18,7 @@ package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.event.BenchEvent;
+import com.jujin.freeway.bench.harness.ScenarioSpec;
 import com.jujin.freeway.bench.harness.ServerHarness;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
@@ -68,6 +69,7 @@ public final class RunCommand implements Command {
     int requests = ctx.getInt("requests", 5000);
     int warmup = ctx.getInt("warmup", 2_000);
     int runs = ctx.getInt("runs", 5);
+    int medianLast = ctx.getInt("median-last", 0);
 
     // Resolve the engine/scenario before anything is written: a usage error must
     // not leave a half-created run row behind.
@@ -80,11 +82,26 @@ public final class RunCommand implements Command {
 
     var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
     var modeLabel = mode.label();
+    if (ScenarioSpec.of(scn).echoBody()) {
+      // The load client cannot send a request body in any mode — failing here keeps
+      // a broken cell from booting a server, burning rounds, and persisting zeros.
+      throw new UsageException(
+          "Scenario ECHO_BODY is not measurable: the client cannot send a request body");
+    }
 
+    // The window is part of what was measured, so it belongs in the run's own record. A zero
+    // window is the default and stays out of the line (the suite prints its whole option map).
     System.out.printf(
         "bench run --engine=%s --scenario=%s --concurrency=%d "
-            + "--requests=%d --warmup=%d --runs=%d --mode=%s%n",
-        engine, scenario, concurrency, requests, warmup, runs, modeLabel);
+            + "--requests=%d --warmup=%d --runs=%d --mode=%s%s%n",
+        engine,
+        scenario,
+        concurrency,
+        requests,
+        warmup,
+        runs,
+        modeLabel,
+        medianLast > 0 ? " --median-last=" + medianLast : "");
 
     // Retrieve Database from container (provided by BenchDbModule)
     var container = ctx.container();
@@ -143,7 +160,7 @@ public final class RunCommand implements Command {
     double avgRps = 0;
     for (double s : scores) avgRps += s;
     avgRps /= runs;
-    int medianIndex = BenchRunner.medianIndex(iterations);
+    int medianIndex = BenchRunner.medianIndex(iterations, medianLast);
     double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
     if (runs > 1) {
       // The dispersion belongs on the row every comparison prints: the median
@@ -194,6 +211,16 @@ public final class RunCommand implements Command {
                 BenchFormat.Align.RIGHT),
             rows));
 
+    // Broken-cell and unsteady-cell gates: a zero row is failed infrastructure, and a
+    // climbing tail means warmup was too short — both print loudly, only the former fails.
+    if (BenchRunner.totalFailure(iterations)) {
+      throw new IllegalStateException(
+          "Cell " + engine + "/" + scenario + " produced no successful requests");
+    }
+    if (BenchRunner.stillClimbing(iterations)) {
+      System.out.println("WARN: rounds still climbing — warmup insufficient, median under-reports");
+    }
+
     // Write JSON output if --output is specified
     String outputPath = ctx.get("output", null);
     if (outputPath != null && !outputPath.isBlank()) {
@@ -209,6 +236,13 @@ public final class RunCommand implements Command {
       jsonMap.put("avg_rps", avgRps);
       jsonMap.put("stddev_rps", error);
       jsonMap.put("mode", modeLabel);
+      var runRow = repository.findRun(runId).orElseThrow();
+      jsonMap.put("commit_sha", runRow.commitSha());
+      jsonMap.put("dirty_files", runRow.dirtyFiles());
+      jsonMap.put("jdk_info", runRow.jdkInfo());
+      jsonMap.put("cpu_info", runRow.cpuInfo());
+      jsonMap.put("jvm_flags", runRow.jvmFlags());
+      jsonMap.put("heap_max_mb", runRow.heapMaxMb());
 
       var runsList = new ArrayList<Map<String, Object>>();
       for (int i = 0; i < results.size(); i++) {

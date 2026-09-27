@@ -18,6 +18,7 @@ package com.jujin.freeway.bench.harness;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -34,6 +35,52 @@ import org.junit.jupiter.api.Test;
 
 /** The harness must not measure one engine while labelling it as another. */
 class ServerHarnessTest {
+
+  @Test
+  void freewayNativeServesWithoutPipeline() throws Exception {
+    try (var harness = ServerHarness.start(Engine.FREEWAY_NATIVE, Scenario.PING)) {
+      assertTrue(harness.port() > 0, "the bare freeway engine is listening");
+      var client = HttpClient.newHttpClient();
+      var response =
+          client.send(
+              HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + harness.port() + "/ping"))
+                  .GET()
+                  .build(),
+              HttpResponse.BodyHandlers.ofString());
+      assertEquals(200, response.statusCode());
+      assertEquals("pong", response.body());
+    }
+  }
+
+  @Test
+  void ioThreadsDefaultToProcessorsAndHonorTheOverride() {
+    assertEquals(Runtime.getRuntime().availableProcessors(), ServerHarness.ioThreads());
+    System.setProperty("bench.io-threads", "3");
+    try {
+      assertEquals(3, ServerHarness.ioThreads());
+    } finally {
+      System.clearProperty("bench.io-threads");
+    }
+  }
+
+  @Test
+  void xnioSizingAppliesToTheUndertowEnginesOnly() {
+    assertTrue(Engine.UNDERTOW_NATIVE.xnio());
+    assertTrue(Engine.UNDERTOW_VT.xnio());
+    assertFalse(Engine.UNDERTOW_ADAPTER.xnio(), "the adapter sizes its own pool");
+    assertFalse(Engine.FREEWAY.xnio());
+    assertFalse(Engine.JETTY_NATIVE.xnio());
+  }
+
+  @Test
+  void ioThreadsIgnoresGarbage() {
+    System.setProperty("bench.io-threads", "lots");
+    try {
+      assertEquals(Runtime.getRuntime().availableProcessors(), ServerHarness.ioThreads());
+    } finally {
+      System.clearProperty("bench.io-threads");
+    }
+  }
 
   @Test
   void bareEngineServesAndASecondProviderIsRefused() throws Exception {

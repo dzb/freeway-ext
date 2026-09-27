@@ -29,58 +29,86 @@ import java.util.List;
  * so the server JIT is warm for every measured round. This class owns the child processes and the
  * median summary; {@link BenchProcesses} owns every process/classpath detail.
  */
-final class ForkedRunner {
+public final class ForkedRunner {
 
   private ForkedRunner() {}
 
   /**
-   * Runs one engine in one resident server plus one client, and prints every measured round plus
-   * the median.
+   * The inputs of one forked cell. A record rather than eleven positional parameters: five of them
+   * are {@code int}s and two are CPU ranges, so a transposed pair compiles and silently measures
+   * something else. Defaults stay with the layers that own them — the CLI options, and the {@code
+   * bench.*} properties the child is spawned with — never restated here.
    */
-  static void run(
+  public record Options(
       String engine,
+      String scenario,
       String mode,
       int requests,
       int concurrency,
       int warmup,
       int runs,
-      int pauseMillis)
-      throws Exception {
+      int pauseMillis,
+      int medianLast,
+      String tasksetServer,
+      String tasksetClient) {}
+
+  /**
+   * Runs one engine/scenario in one resident server plus one client, prints every measured round
+   * plus the median, and returns the rounds for persistence. Processes are always split — sharing a
+   * JVM between server and load generator is the smoke shape.
+   */
+  public static List<Result> run(Options o) throws Exception {
+    String engine = o.engine();
+    String scenario = o.scenario();
+    String mode = o.mode();
+    int requests = o.requests();
+    int concurrency = o.concurrency();
+    int warmup = o.warmup();
+    int runs = o.runs();
+    int pauseMillis = o.pauseMillis();
+    String tasksetServer = o.tasksetServer();
+    String tasksetClient = o.tasksetClient();
     System.out.printf(
-        "=== %s mode=%s requests=%d concurrency=%d warmup=%d runs=%d pause=%dms ===%n",
-        engine, mode, requests, concurrency, warmup, runs, pauseMillis);
+        "=== %s/%s mode=%s requests=%d concurrency=%d warmup=%d runs=%d pause=%dms ===%n",
+        engine, scenario, mode, requests, concurrency, warmup, runs, pauseMillis);
 
     Path serverLog = Files.createTempFile("bench-server-", ".log");
+    var serverCommand =
+        new ArrayList<String>(
+            List.of(BenchProcesses.javaBinary(), "-cp", BenchProcesses.classpath()));
+    serverCommand.addAll(
+        List.of(
+            "-Dbench.role=server",
+            "-Dbench.engine=" + engine,
+            "-Dbench.scenario=" + scenario,
+            "-Dbench.mode=" + mode,
+            BenchFork.class.getName()));
     Process server =
-        new ProcessBuilder(
-                BenchProcesses.javaBinary(),
-                "-cp",
-                BenchProcesses.classpath(),
-                "-Dbench.role=server",
-                "-Dbench.engine=" + engine,
-                "-Dbench.mode=" + mode,
-                BenchFork.class.getName())
+        new ProcessBuilder(BenchProcesses.pinned(serverCommand, tasksetServer))
             .redirectErrorStream(true)
             .redirectOutput(serverLog.toFile())
             .start();
     try {
       int port = BenchProcesses.awaitReady(server, serverLog, Duration.ofSeconds(30));
       Path clientLog = Files.createTempFile("bench-client-", ".log");
+      var clientCommand =
+          new ArrayList<String>(
+              List.of(BenchProcesses.javaBinary(), "-cp", BenchProcesses.classpath()));
+      clientCommand.addAll(
+          List.of(
+              "-Dbench.role=client",
+              "-Dbench.engine=" + engine,
+              "-Dbench.scenario=" + scenario,
+              "-Dbench.mode=" + mode,
+              "-Dbench.port=" + port,
+              "-Dbench.requests=" + requests,
+              "-Dbench.concurrency=" + concurrency,
+              "-Dbench.warmup=" + warmup,
+              "-Dbench.runs=" + runs,
+              "-Dbench.pauseMillis=" + pauseMillis,
+              BenchFork.class.getName()));
       Process client =
-          new ProcessBuilder(
-                  BenchProcesses.javaBinary(),
-                  "-cp",
-                  BenchProcesses.classpath(),
-                  "-Dbench.role=client",
-                  "-Dbench.engine=" + engine,
-                  "-Dbench.mode=" + mode,
-                  "-Dbench.port=" + port,
-                  "-Dbench.requests=" + requests,
-                  "-Dbench.concurrency=" + concurrency,
-                  "-Dbench.warmup=" + warmup,
-                  "-Dbench.runs=" + runs,
-                  "-Dbench.pauseMillis=" + pauseMillis,
-                  BenchFork.class.getName())
+          new ProcessBuilder(BenchProcesses.pinned(clientCommand, tasksetClient))
               .redirectErrorStream(true)
               .redirectOutput(clientLog.toFile())
               .start();
@@ -95,8 +123,16 @@ final class ForkedRunner {
           System.out.printf("[run %d/%d] %s%n", i + 1, results.size(), results.get(i));
         }
         if (results.size() > 1) {
-          System.out.printf("[median] %s%n", Result.median(results));
+          // The window is named on the line: the suite persists the median-rps round of the same
+          // window, and an unlabelled "median" next to a different one in the summary is a trap.
+          int last = o.medianLast();
+          String label =
+              last > 0 && last < results.size()
+                  ? "[median last " + last + " of " + results.size() + "]"
+                  : "[median]";
+          System.out.printf("%s %s%n", label, Result.median(results, last));
         }
+        return results;
       } finally {
         client.destroyForcibly();
         BenchProcesses.deleteSafe(clientLog);
@@ -130,6 +166,7 @@ final class ForkedRunner {
         ir.rps(),
         ir.p50us(),
         ir.p95us(),
-        ir.p99us());
+        ir.p99us(),
+        ir.saturated());
   }
 }

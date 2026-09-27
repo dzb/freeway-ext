@@ -46,6 +46,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import org.eclipse.jetty.http.HttpHeader;
 import org.eclipse.jetty.server.Handler;
@@ -82,6 +83,7 @@ public final class ServerHarness implements AutoCloseable {
   /** Supported HTTP server engines. */
   public enum Engine {
     FREEWAY("freeway"),
+    FREEWAY_NATIVE("freeway-native"),
     JDK_NATIVE("jdk-native"),
     ROBAHO_NATIVE("robaho-native"),
     UNDERTOW_NATIVE("undertow-native"),
@@ -101,6 +103,14 @@ public final class ServerHarness implements AutoCloseable {
       return label;
     }
 
+    /**
+     * XNIO-based engines: {@link ServerHarness#ioThreads()} is their sizing knob, so a run quotes
+     * the effective value where it applies (the adapter sizes its own pool).
+     */
+    public boolean xnio() {
+      return this == UNDERTOW_NATIVE || this == UNDERTOW_VT;
+    }
+
     /** Resolves a case-insensitive label to an Engine. */
     public static Engine fromString(String s) {
       for (var e : values()) {
@@ -109,7 +119,7 @@ public final class ServerHarness implements AutoCloseable {
       throw new IllegalArgumentException(
           "Unknown engine: "
               + s
-              + ". Supported: freeway, jdk-native, robaho-native, undertow-native,"
+              + ". Supported: freeway, freeway-native, jdk-native, robaho-native, undertow-native,"
               + " undertow-vt, undertow-adapter, jetty-adapter, jetty-native, jetty-vt");
     }
   }
@@ -155,19 +165,23 @@ public final class ServerHarness implements AutoCloseable {
    * @param scenario the request/response scenario
    * @return a started ServerHarness (must be closed by caller)
    */
+  /** Engines serving the WebSocket echo scenario — one home for the capability. */
+  public static final Set<Engine> WS_CAPABLE_ENGINES =
+      Set.of(
+          Engine.FREEWAY,
+          Engine.UNDERTOW_NATIVE,
+          Engine.UNDERTOW_VT,
+          Engine.JETTY_NATIVE,
+          Engine.JETTY_VT);
+
   public static ServerHarness start(Engine engine, Scenario scenario) throws Exception {
-    if (scenario == Scenario.WS_ECHO) {
-      if (engine != Engine.FREEWAY
-          && engine != Engine.UNDERTOW_NATIVE
-          && engine != Engine.UNDERTOW_VT
-          && engine != Engine.JETTY_NATIVE
-          && engine != Engine.JETTY_VT) {
-        throw new UnsupportedOperationException(
-            "WS_ECHO scenario not supported for " + engine.label());
-      }
+    if (scenario == Scenario.WS_ECHO && !WS_CAPABLE_ENGINES.contains(engine)) {
+      throw new UnsupportedOperationException(
+          "WS_ECHO scenario not supported for " + engine.label());
     }
     return switch (engine) {
       case FREEWAY -> freeway(scenario);
+      case FREEWAY_NATIVE -> freewayNative(scenario);
       case JDK_NATIVE, ROBAHO_NATIVE -> bare(engine, scenario);
       case UNDERTOW_NATIVE -> undertow(scenario);
       case UNDERTOW_VT -> undertowVT(scenario);
@@ -187,6 +201,34 @@ public final class ServerHarness implements AutoCloseable {
         new FreewayHttpEngine(
             FreewayHttpEngine.Wiring.defaults(new JsonCodecDefault(), new CoercerDefault())),
         scenario);
+  }
+
+  /** Freeway engine with a hand-written exchange handler — no routes, filters, or codec. */
+  private static ServerHarness freewayNative(Scenario scenario) throws Exception {
+    ScenarioSpec spec = ScenarioSpec.of(scenario);
+    var engine =
+        new FreewayHttpEngine(
+            FreewayHttpEngine.Wiring.defaults(new JsonCodecDefault(), new CoercerDefault()));
+    byte[] body = spec.responseBody();
+    String contentType = spec.contentType();
+    var handle =
+        engine.start(
+            HttpServerConfig.defaults()
+                .withPort(0)
+                .withBacklog(128)
+                .withShutdownGrace(Duration.ofSeconds(5)),
+            ctx -> {
+              if (!spec.method().equals(ctx.method())) {
+                ctx.send(405, "");
+                return;
+              }
+              if (contentType != null) {
+                ctx.setHeader("Content-Type", contentType);
+              }
+              ctx.setStatus(200).output(body);
+            });
+    int port = handle.port();
+    return new ServerHarness(handle::close, port);
   }
 
   /** Freeway + Jetty adapter — measures the adapter path vs built-in engine. */
@@ -369,8 +411,27 @@ public final class ServerHarness implements AutoCloseable {
   // Engine: Undertow native
   // ---------------------------------------------------------------
 
+  /**
+   * XNIO I/O threads, explicit and recorded: {@code -Dbench.io-threads=N} wins, otherwise every
+   * available processor. Comparisons must use one value for every engine — the serve command quotes
+   * the effective one on its READY line, for the engines where it applies ({@link Engine#xnio()}).
+   */
+  public static int ioThreads() {
+    String declared = System.getProperty("bench.io-threads");
+    if (declared != null) {
+      try {
+        int threads = Integer.parseInt(declared.trim());
+        if (threads > 0) {
+          return threads;
+        }
+      } catch (NumberFormatException ignored) {
+      }
+    }
+    return Runtime.getRuntime().availableProcessors();
+  }
+
   private static ServerHarness undertow(Scenario scenario) throws Exception {
-    int ioThreads = Runtime.getRuntime().availableProcessors();
+    int ioThreads = ioThreads();
     var server =
         Undertow.builder()
             .setIoThreads(ioThreads)
@@ -388,7 +449,7 @@ public final class ServerHarness implements AutoCloseable {
     var xnio = org.xnio.Xnio.getInstance();
     var workerBuilder = xnio.createWorkerBuilder();
     workerBuilder.setExternalExecutorService(Executors.newVirtualThreadPerTaskExecutor());
-    workerBuilder.setWorkerIoThreads(Runtime.getRuntime().availableProcessors());
+    workerBuilder.setWorkerIoThreads(ioThreads());
     var worker = workerBuilder.build();
     var server =
         Undertow.builder()

@@ -42,16 +42,19 @@ public final class BenchFork {
 
   public static void main(String[] args) throws Exception {
     String role = BenchProcesses.prop("bench.role", "suite");
+    String mode = BenchProcesses.prop("bench.mode", "keepalive");
+    // Explicit scenario wins; absent, the mode decides (keepalive/short ride ping, ws rides echo).
+    String scenarioProp = BenchProcesses.prop("bench.scenario", "");
     if ("server".equalsIgnoreCase(role)) {
       runServer(
-          BenchProcesses.prop("bench.engine", "freeway"),
-          BenchProcesses.prop("bench.mode", "keepalive"));
+          BenchProcesses.prop("bench.engine", "freeway"), mode, scenarioOf(scenarioProp, mode));
       return;
     }
     if ("client".equalsIgnoreCase(role)) {
       runClient(
           BenchProcesses.prop("bench.engine", "freeway"),
-          BenchProcesses.prop("bench.mode", "keepalive"),
+          mode,
+          scenarioOf(scenarioProp, mode),
           BenchProcesses.intProp("bench.port", 0),
           BenchProcesses.intProp("bench.requests", 2000),
           BenchProcesses.intProp("bench.concurrency", 2),
@@ -62,23 +65,39 @@ public final class BenchFork {
     }
 
     ForkedRunner.run(
-        BenchProcesses.prop("bench.engine", "freeway"),
-        BenchProcesses.prop("bench.mode", "keepalive"),
-        BenchProcesses.intProp("bench.requests", 20_000),
-        BenchProcesses.intProp(
-            "bench.concurrency", Math.max(1, Runtime.getRuntime().availableProcessors())),
-        BenchProcesses.intProp("bench.warmup", 2_000),
-        BenchProcesses.intProp("bench.runs", 3),
-        BenchProcesses.intProp("bench.pauseMillis", 3000));
+        new ForkedRunner.Options(
+            BenchProcesses.prop("bench.engine", "freeway"),
+            scenarioOf(scenarioProp, mode).name().toLowerCase(java.util.Locale.ROOT),
+            mode,
+            BenchProcesses.intProp("bench.requests", 20_000),
+            BenchProcesses.intProp(
+                "bench.concurrency", Math.max(1, Runtime.getRuntime().availableProcessors())),
+            BenchProcesses.intProp("bench.warmup", 2_000),
+            BenchProcesses.intProp("bench.runs", 3),
+            BenchProcesses.intProp("bench.pauseMillis", 3000),
+            BenchProcesses.intProp("bench.medianLast", 0),
+            BenchProcesses.prop("bench.taskset.server", ""),
+            BenchProcesses.prop("bench.taskset.client", "")));
+  }
+
+  private static ServerHarness.Scenario scenarioOf(String scenarioProp, String mode) {
+    if (scenarioProp != null && !scenarioProp.isBlank()) {
+      return ServerHarness.Scenario.valueOf(scenarioProp.trim().toUpperCase(java.util.Locale.ROOT));
+    }
+    return BenchMode.of(mode).scenario();
   }
 
   // --- server / client subprocess entry points ---
 
-  private static void runServer(String engine, String mode) throws Exception {
+  private static void runServer(String engine, String mode, ServerHarness.Scenario scn)
+      throws Exception {
     var eng = ServerHarness.Engine.fromString(engine);
-    var scn = BenchMode.of(mode).scenario();
     try (var h = ServerHarness.start(eng, scn)) {
-      System.out.println("READY port=" + h.port() + " engine=" + engine + " scenario=" + scn);
+      // The effective XNIO sizing is part of the run's identity; quote it where it applies so a
+      // comparison can be checked against a single value instead of guessing the default.
+      String sizing = eng.xnio() ? " io-threads=" + ServerHarness.ioThreads() : "";
+      System.out.println(
+          "READY port=" + h.port() + " engine=" + engine + " scenario=" + scn + sizing);
       System.out.flush();
       Thread.sleep(Long.MAX_VALUE);
     }
@@ -87,6 +106,7 @@ public final class BenchFork {
   private static void runClient(
       String engine,
       String mode,
+      ServerHarness.Scenario scenario,
       int port,
       int requests,
       int concurrency,
@@ -97,16 +117,13 @@ public final class BenchFork {
     var benchMode = BenchMode.of(mode);
     if (warmup > 0) {
       // Warm up once (this round's result is discarded), then let the server settle.
-      BenchRunner.run(
-          port, concurrency, requests, warmup, benchMode.scenario(), benchMode.clientMode());
+      BenchRunner.run(port, concurrency, requests, warmup, scenario, benchMode.clientMode());
       if (pauseMillis > 0) {
         Thread.sleep(pauseMillis);
       }
     }
     for (int i = 0; i < runs; i++) {
-      var ir =
-          BenchRunner.run(
-              port, concurrency, requests, 0, benchMode.scenario(), benchMode.clientMode());
+      var ir = BenchRunner.run(port, concurrency, requests, 0, scenario, benchMode.clientMode());
       System.out.println("RESULT " + ForkedRunner.toResult(engine, mode, requests, ir));
       if (i + 1 < runs && pauseMillis > 0) {
         Thread.sleep(pauseMillis);

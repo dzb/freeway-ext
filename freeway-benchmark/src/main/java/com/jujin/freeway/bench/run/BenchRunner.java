@@ -43,22 +43,96 @@ public final class BenchRunner {
   }
 
   /** Result of a single benchmark iteration. */
-  public record IterationResult(double rps, long p50us, long p95us, long p99us, int errors) {}
+  public record IterationResult(
+      double rps, long p50us, long p95us, long p99us, int errors, boolean saturated) {}
+
+  /**
+   * Client process CPU above which a round is mistrusted: the generator, not the server, was the
+   * bottleneck. Only meaningful when the generator runs alone (split shape) — sharing a JVM with
+   * the server (smoke shape) reports both sides at once.
+   */
+  static final double SATURATED_CPU = 0.75;
+
+  /**
+   * A cell whose rounds produced nothing measurable is broken infrastructure, not a slow server —
+   * fail loudly instead of persisting a zero row that later reads as data.
+   */
+  public static boolean totalFailure(List<IterationResult> rs) {
+    return !rs.isEmpty() && rs.stream().allMatch(ir -> ir.rps() == 0);
+  }
+
+  /**
+   * True when the tail still climbs: max/min spread over the last (up to) five rounds exceeds a
+   * quarter. A climbing cell has not reached steady state — its median under-reports, so warmup
+   * goes up, not the round count.
+   */
+  public static boolean stillClimbing(List<IterationResult> rs) {
+    int n = Math.min(rs.size(), 5);
+    if (n < 2) {
+      return false;
+    }
+    var tail = rs.subList(rs.size() - n, rs.size());
+    // A zero round is broken infrastructure (already reported by totalFailure and by that row's
+    // error count), not a warmup ramp: treating it as the minimum would warn on every partial
+    // failure, which is the opposite of a useful signal.
+    double min = Double.MAX_VALUE;
+    double max = 0;
+    int measured = 0;
+    for (var ir : tail) {
+      if (ir.rps() <= 0) {
+        continue;
+      }
+      measured++;
+      min = Math.min(min, ir.rps());
+      max = Math.max(max, ir.rps());
+    }
+    return measured >= 2 && max > min * 1.25;
+  }
+
+  /**
+   * Client process CPU load 0..1 since the previous sample — primed before warmup and read after
+   * the measurement, so one round's reading covers warmup plus measurement (the JIT ramp is CPU the
+   * generator also spent). -1 when the platform withholds it.
+   */
+  static double processCpu() {
+    var bean = java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+    if (bean instanceof com.sun.management.OperatingSystemMXBean sun) {
+      return sun.getProcessCpuLoad();
+    }
+    return -1;
+  }
 
   /**
    * The index of the run's representative iteration: the median by rps, the same row the summary
    * tables print and the one the run-level dispersion is recorded on. Both commands pick it here so
    * "the median" cannot mean two things.
+   *
+   * <p>Its companion is {@link Result#median(List, int)}, the per-cell line a forked run prints: it
+   * medians each field and so reports robust tails, but over the same window and with the same
+   * {@code size/2} convention, so the rps the two report is the same number.
    */
   public static int medianIndex(List<IterationResult> results) {
+    return medianIndex(results, 0);
+  }
+
+  /**
+   * The same median restricted to the last {@code window} rounds, index still into {@code results}.
+   *
+   * <p>A window is how the standing protocol reads a cell: with warmup short relative to the JIT
+   * ramp the first rounds measure warmup, not the engine ({@link #stillClimbing} warns about
+   * exactly that), so the tail is the signal. {@code window <= 0} or {@code window >= size} means
+   * every round — the pre-flag behavior.
+   */
+  public static int medianIndex(List<IterationResult> results, int window) {
     if (results.isEmpty()) {
       throw new IllegalArgumentException("no iterations to take a median from");
     }
-    return java.util.stream.IntStream.range(0, results.size())
+    int from = window > 0 ? Math.max(0, results.size() - window) : 0;
+    return java.util.stream.IntStream.range(from, results.size())
         .boxed()
         .sorted(Comparator.comparingDouble((Integer i) -> results.get(i).rps()))
         .toList()
-        .get(results.size() / 2);
+        .get((results.size() - from) / 2);
   }
 
   /**
@@ -80,6 +154,8 @@ public final class BenchRunner {
       ServerHarness.Scenario scenario,
       Mode mode)
       throws Exception {
+    // Prime the process-CPU counter; the closing sample covers warmup plus measurement.
+    processCpu();
     if (mode == Mode.WS) {
       if (scenario != ServerHarness.Scenario.WS_ECHO) {
         throw new IllegalArgumentException(
@@ -173,7 +249,7 @@ public final class BenchRunner {
     long p50 = percentile(sorted, 0.50);
     long p95 = percentile(sorted, 0.95);
     long p99 = percentile(sorted, 0.99);
-    return new IterationResult(rps, p50, p95, p99, errs.get());
+    return new IterationResult(rps, p50, p95, p99, errs.get(), processCpu() >= SATURATED_CPU);
   }
 
   /** Convenience: keep-alive mode (existing behavior). */
@@ -189,6 +265,7 @@ public final class BenchRunner {
    */
   private static IterationResult runWs(int port, int concurrency, int requests, int warmup)
       throws Exception {
+    processCpu();
     // Warmup phase
     if (warmup > 0) {
       warmupWs(port, concurrency, warmup);
@@ -238,7 +315,7 @@ public final class BenchRunner {
     long p50 = percentile(sorted, 0.50);
     long p95 = percentile(sorted, 0.95);
     long p99 = percentile(sorted, 0.99);
-    return new IterationResult(rps, p50, p95, p99, errs.get());
+    return new IterationResult(rps, p50, p95, p99, errs.get(), processCpu() >= SATURATED_CPU);
   }
 
   /** Warmup for HTTP: send requests, discard results. */

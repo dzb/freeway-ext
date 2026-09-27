@@ -4,16 +4,27 @@
 
 ### Added
 
-- **Kafka redelivery window (`freeway.kafka.dedup-capacity`, default `0` = off)** — opt-in
-  suppression of same-record redelivery (rebalance/restart replays carry the same CE id):
-  a bounded insertion-ordered seen-set inside `KafkaEvents`, keyed on the record's CE id,
-  consulted after match + successful decode and before dispatch, so poison still throws
-  (DLQ path untouched) and unmatched records never occupy the window. Hits return normally
-  so offsets advance; `KafkaStats` gains a trailing `duplicatesDropped` counter; a crash
-  between claim and commit redelivers into a claimed id (dropped — the documented
-  at-most-once hole inside this at-least-once plane). Single-transport only: no shared
-  identity is minted, nothing touches the bus — the carve-out to rule ② recorded in the
-  core CHANGELOG, not a bridge coming back.
+- **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
+  jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core
+  1.5.6 style) and contribute it from `bind(Binder)`
+  (`binder.contribute(KnownKeys.class).add(KnownKeys.of(ConfigKeys.class, prefix))`), like the core
+  modules do. The gap this closes runs both ways: a correctly configured ext key was outside every
+  vocabulary, and a typo near one could not be suggested. `freeway.kafka.*` becomes a declared
+  namespace (twelve keys harvested from `KafkaConfig`; `freeway.kafka.lifecycle` stays outside —
+  hook ids are identity strings, not keys). undertow and jetty share `freeway.http` with core
+  (both own `freeway.http.websocket.max-frame-size`), hikari shares `freeway.db` — a vocabulary may
+  share a prefix, the table must agree with it. With the core's declared-namespace rule, an ext key
+  configured while its module is absent is now named (“declared but no module reads this key”)
+  instead of silently ignored, and a pinning test per module keeps the vocabulary covering every
+  key the module reads (new keys that skip the table turn that test red).
+
+### Changed
+
+- **benchmark migrated to the module-list entry points**: core 1.5.6 moved the composition tree
+  (`ModuleNode`) behind `ioc.internal`, so `FreewayApp.create(ModuleNode.app("freeway-benchmark", …))`
+  in `BenchApp` and its four test helpers became
+  `FreewayApp.create(BenchDbModule.class, DbModule.class, CliModule.class)`. The application root's
+  name is no longer an entry-point input, so the startup log's root line reads `application`.
 
 ## 1.5.5
 
@@ -115,6 +126,16 @@
 
 
 ### Added
+
+- **Kafka redelivery window (`freeway.kafka.dedup-capacity`, default `0` = off)** — opt-in
+  suppression of same-record redelivery (rebalance/restart replays carry the same CE id):
+  a bounded insertion-ordered seen-set inside `KafkaEvents`, keyed on the record's CE id,
+  consulted after match + successful decode and before dispatch, so poison still throws
+  (DLQ path untouched) and unmatched records never occupy the window. Hits return normally
+  so offsets advance; `KafkaStats` gains a trailing `duplicatesDropped` counter; a crash
+  between claim and commit redelivers into a claimed id (dropped — the documented
+  at-most-once hole inside this at-least-once plane). Single-transport only: no shared
+  identity is minted, nothing touches the bus (carve-out to rule ②, see the core CHANGELOG).
 
 - **contract pins for the core honor contract** — four contract-typed edges no type enforces, pinned
   so every adapter (and any new engine inheriting the testkit) carries them:

@@ -17,11 +17,28 @@
 package com.jujin.freeway.bench.run;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** The child-process handshake: what counts as "the server is ready". */
 class BenchProcessesTest {
+
+  @Test
+  void clientCpuReadingIsAValidLoad() {
+    double load = BenchRunner.processCpu();
+    assertTrue(load >= -1 && load <= 1, "withheld (-1) or a 0..1 load, never anything else");
+  }
+
+  @Test
+  void pinningIsIdentityWithoutARange() {
+    var command = List.of("java", "-cp", "x");
+    assertEquals(command, BenchProcesses.pinned(command, ""));
+    assertEquals(command, BenchProcesses.pinned(command, null));
+    assertEquals(
+        List.of("taskset", "-c", "0-7", "java", "-cp", "x"), BenchProcesses.pinned(command, "0-7"));
+  }
 
   @Test
   void readsTheAnnouncedPort() {

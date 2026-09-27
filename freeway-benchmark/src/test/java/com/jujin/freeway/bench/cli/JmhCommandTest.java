@@ -26,7 +26,6 @@ import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.DbModule;
-import com.jujin.freeway.ioc.ModuleNode;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -116,9 +115,7 @@ class JmhCommandTest {
     System.setProperty("freeway.db.password", "");
     System.setProperty("freeway.db.pool.max-size", "1");
     System.setProperty("freeway.db.pool.min-idle", "0");
-    return FreewayApp.create(
-            ModuleNode.app(
-                "freeway-benchmark", BenchDbModule.class, DbModule.class, CliModule.class))
+    return FreewayApp.create(BenchDbModule.class, DbModule.class, CliModule.class)
         .autoDiscovery(false)
         .shutdownHook(false)
         .start();

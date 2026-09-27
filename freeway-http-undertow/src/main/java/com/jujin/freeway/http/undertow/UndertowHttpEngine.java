@@ -19,8 +19,8 @@ package com.jujin.freeway.http.undertow;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
-import com.jujin.freeway.http.HttpConfigKeys;
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpModule.ConfigKeys;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
@@ -180,12 +180,12 @@ public final class UndertowHttpEngine implements HttpEngine {
       if (tls.clientAuth()) {
         builder.setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED);
       }
-      String protocols = prop(HttpConfigKeys.SSL_PROTOCOLS);
+      String protocols = prop(ConfigKeys.SSL_PROTOCOLS);
       if (protocols != null && !protocols.isBlank()) {
         builder.setSocketOption(
             Options.SSL_ENABLED_PROTOCOLS, Sequence.of(splitCommaSeparated(protocols)));
       }
-      String ciphers = prop(HttpConfigKeys.SSL_CIPHERS);
+      String ciphers = prop(ConfigKeys.SSL_CIPHERS);
       if (ciphers != null && !ciphers.isBlank()) {
         builder.setSocketOption(
             Options.SSL_ENABLED_CIPHER_SUITES, Sequence.of(splitCommaSeparated(ciphers)));
@@ -206,13 +206,13 @@ public final class UndertowHttpEngine implements HttpEngine {
     if (config.maxConnections() > 0) {
       LOG.warn(
           "{}={} is not applied: Undertow has no max-connections counterpart",
-          HttpConfigKeys.SERVER_MAX_CONNECTIONS,
+          ConfigKeys.SERVER_MAX_CONNECTIONS,
           config.maxConnections());
     }
     if (!HttpServerConfig.DEFAULT_WRITE_TIMEOUT.equals(config.writeTimeout())) {
       LOG.warn(
           "{}={} is not applied: Undertow has no write-timeout counterpart",
-          HttpConfigKeys.SERVER_WRITE_TIMEOUT,
+          ConfigKeys.SERVER_WRITE_TIMEOUT,
           config.writeTimeout());
     }
     Undertow server = builder.build();
@@ -221,7 +221,7 @@ public final class UndertowHttpEngine implements HttpEngine {
         "Freeway undertow web engine started on {}:{} (http2={})",
         config.host(),
         listenerPort(server),
-        sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(HttpConfigKeys.SSL_HTTP2, "true")));
+        sslEnabled && !"false".equalsIgnoreCase(symbols.resolve(ConfigKeys.SSL_HTTP2, "true")));
     return new UndertowHandle(server, gracefulShutdown, config.shutdownGrace(), config.host());
   }
 
@@ -246,7 +246,7 @@ public final class UndertowHttpEngine implements HttpEngine {
   }
 
   private String keyStoreType(String keyStorePath) {
-    String explicit = prop(HttpConfigKeys.SSL_KEY_STORE_TYPE);
+    String explicit = prop(ConfigKeys.SSL_KEY_STORE_TYPE);
     if (explicit != null && !explicit.isBlank()) {
       return explicit;
     }

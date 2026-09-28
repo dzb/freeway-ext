@@ -19,8 +19,6 @@ package com.jujin.freeway.bench.cli;
 import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -49,9 +47,6 @@ public final class HistoryCommand implements Command {
 
   @Override
   public void run(Context ctx) throws Exception {
-    var container = ctx.container();
-    var db = container.get(Database.class);
-
     String benchFilter = ctx.get("bench", null);
     String engineFilter = ctx.get("engine", null);
     int days = ctx.getInt("days", 30);
@@ -59,7 +54,7 @@ public final class HistoryCommand implements Command {
       throw new IllegalArgumentException("--days must be a positive integer");
     }
 
-    var repository = new BenchRepository(db, container.get(Coercer.class));
+    var repository = ctx.container().get(BenchRepository.class);
     List<BenchmarkRun> runs = repository.runsSince(days, engineFilter);
 
     if (runs.isEmpty()) {

@@ -19,6 +19,7 @@ package com.jujin.freeway.bench.run;
 import com.jujin.freeway.bench.client.Http11Client;
 import com.jujin.freeway.bench.client.WsClient;
 import com.jujin.freeway.bench.harness.ServerHarness;
+import com.jujin.freeway.bench.model.Result;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
@@ -44,7 +45,25 @@ public final class BenchRunner {
 
   /** Result of a single benchmark iteration. */
   public record IterationResult(
-      double rps, long p50us, long p95us, long p99us, int errors, boolean saturated) {}
+      double rps, long p50us, long p95us, long p99us, int errors, boolean saturated) {
+
+    /** The wire/persisted projection of this round — the shape the forked protocol carries. */
+    public Result toResult(String engine, String mode, int requests) {
+      return new Result(
+          engine, mode, requests, requests - errors, errors, rps, p50us, p95us, p99us, saturated);
+    }
+
+    /** The measurement view of a round that crossed the process boundary. */
+    public static IterationResult from(Result round) {
+      return new IterationResult(
+          round.rps(),
+          round.p50us(),
+          round.p95us(),
+          round.p99us(),
+          round.errors(),
+          round.saturated());
+    }
+  }
 
   /**
    * Client process CPU above which a round is mistrusted: the generator, not the server, was the
@@ -110,13 +129,6 @@ public final class BenchRunner {
    * <p>Its companion is {@link Result#median(List, int)}, the per-cell line a forked run prints: it
    * medians each field and so reports robust tails, but over the same window and with the same
    * {@code size/2} convention, so the rps the two report is the same number.
-   */
-  public static int medianIndex(List<IterationResult> results) {
-    return medianIndex(results, 0);
-  }
-
-  /**
-   * The same median restricted to the last {@code window} rounds, index still into {@code results}.
    *
    * <p>A window is how the standing protocol reads a cell: with warmup short relative to the JIT
    * ramp the first rounds measure warmup, not the engine ({@link #stillClimbing} warns about
@@ -242,21 +254,7 @@ public final class BenchRunner {
       executor.shutdownNow();
     }
 
-    int ok = okCount.get();
-    var sorted = Arrays.copyOf(okLatencies, ok);
-    Arrays.sort(sorted);
-    double rps = ok * 1e9 / (System.nanoTime() - t0);
-    long p50 = percentile(sorted, 0.50);
-    long p95 = percentile(sorted, 0.95);
-    long p99 = percentile(sorted, 0.99);
-    return new IterationResult(rps, p50, p95, p99, errs.get(), processCpu() >= SATURATED_CPU);
-  }
-
-  /** Convenience: keep-alive mode (existing behavior). */
-  public static IterationResult run(
-      int port, int concurrency, int requests, int warmup, ServerHarness.Scenario scenario)
-      throws Exception {
-    return run(port, concurrency, requests, warmup, scenario, Mode.KEEPALIVE);
+    return summarize(okLatencies, okCount, errs, t0);
   }
 
   /**
@@ -308,14 +306,7 @@ public final class BenchRunner {
       executor.shutdownNow();
     }
 
-    int ok = okCount.get();
-    var sorted = Arrays.copyOf(okLatencies, ok);
-    Arrays.sort(sorted);
-    double rps = ok * 1e9 / (System.nanoTime() - t0);
-    long p50 = percentile(sorted, 0.50);
-    long p95 = percentile(sorted, 0.95);
-    long p99 = percentile(sorted, 0.99);
-    return new IterationResult(rps, p50, p95, p99, errs.get(), processCpu() >= SATURATED_CPU);
+    return summarize(okLatencies, okCount, errs, t0);
   }
 
   /** Warmup for HTTP: send requests, discard results. */
@@ -380,6 +371,26 @@ public final class BenchRunner {
     } finally {
       executor.shutdownNow();
     }
+  }
+
+  /**
+   * The measurement tail shared by the HTTP and WebSocket loops: success-only latency samples into
+   * percentiles, wall-clock rps, and the generator-CPU saturation flag. Warmup never reaches it —
+   * the measured arrays start empty.
+   */
+  static IterationResult summarize(
+      long[] okLatencies, AtomicInteger okCount, AtomicInteger errs, long t0) {
+    int ok = okCount.get();
+    var sorted = Arrays.copyOf(okLatencies, ok);
+    Arrays.sort(sorted);
+    double rps = ok * 1e9 / (System.nanoTime() - t0);
+    return new IterationResult(
+        rps,
+        percentile(sorted, 0.50),
+        percentile(sorted, 0.95),
+        percentile(sorted, 0.99),
+        errs.get(),
+        processCpu() >= SATURATED_CPU);
   }
 
   /** Computes the median of a sorted array at the given fraction. */

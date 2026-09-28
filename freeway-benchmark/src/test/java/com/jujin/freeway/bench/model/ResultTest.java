@@ -38,7 +38,6 @@ class ResultTest {
     var rounds = List.of(withRps(1000), withRps(2000), withRps(3000), withRps(4000), withRps(5000));
 
     // Full window: the middle rps of all five; 0 and oversized windows are the same.
-    assertEquals(3000.0, Result.median(rounds).rps());
     assertEquals(3000.0, Result.median(rounds, 0).rps());
     assertEquals(3000.0, Result.median(rounds, 9).rps());
     // Last two (4000/5000): the upper one, the same size/2 convention the suite's
@@ -63,7 +62,7 @@ class ResultTest {
 
   @Test
   void medianFlagsSaturationWhenAnyRoundChoked() {
-    var median = Result.median(List.of(result(false), result(true)));
+    var median = Result.median(List.of(result(false), result(true)), 0);
     assertTrue(median.saturated());
     assertEquals(1000.0, median.rps());
   }

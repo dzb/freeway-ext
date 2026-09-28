@@ -57,11 +57,24 @@ class BenchCliTest {
             new BenchRunner.IterationResult(900, 1, 2, 3, 0, false),
             new BenchRunner.IterationResult(500, 1, 2, 3, 0, false));
 
-    assertEquals(2, BenchRunner.medianIndex(iterations), "the 500 rps iteration is the median");
+    assertEquals(2, BenchRunner.medianIndex(iterations, 0), "the 500 rps iteration is the median");
     assertEquals(
         1,
-        BenchRunner.medianIndex(List.of(iterations.get(1), iterations.get(2), iterations.get(0))),
+        BenchRunner.medianIndex(
+            List.of(iterations.get(1), iterations.get(2), iterations.get(0)), 0),
         "the answer follows rps, not the order the iterations arrived in");
+  }
+
+  @Test
+  void contextReportsOptionsNoCommandRead() {
+    var ctx = new Command.Context(null, "run", Map.of("requests", "10", "requsts", "20"));
+
+    assertEquals(10, ctx.getInt("requests", 0));
+    assertTrue(ctx.has("requests"));
+    assertEquals(
+        Set.of("requsts"),
+        ctx.unconsumed(),
+        "a mistyped flag stays visible to the dispatcher instead of silently keeping a default");
   }
 
   @Test
@@ -211,22 +224,13 @@ class BenchCliTest {
   @Test
   void echoBodyFailsFastWithoutBootingAServer() {
     try (AppRuntime app = app()) {
-      var before =
-          new BenchRepository(
-                  CliModule.container().get(Database.class),
-                  CliModule.container().get(Coercer.class))
-              .allRuns()
-              .size();
+      var repository = CliModule.container().get(BenchRepository.class);
+      var before = repository.allRuns().size();
       var ctx =
           new Command.Context(
               CliModule.container(), "run", Map.of("engine", "freeway", "scenario", "echo_body"));
       assertThrows(UsageException.class, () -> new RunCommand().run(ctx));
-      var after =
-          new BenchRepository(
-                  CliModule.container().get(Database.class),
-                  CliModule.container().get(Coercer.class))
-              .allRuns()
-              .size();
+      var after = repository.allRuns().size();
       assertEquals(before, after, "a rejected cell must not leave a run row behind");
     }
   }

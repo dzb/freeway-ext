@@ -155,18 +155,4 @@ public final class ForkedRunner {
     }
     return results;
   }
-
-  static Result toResult(String engine, String mode, int requests, BenchRunner.IterationResult ir) {
-    return new Result(
-        engine,
-        mode,
-        requests,
-        requests - ir.errors(),
-        ir.errors(),
-        ir.rps(),
-        ir.p50us(),
-        ir.p95us(),
-        ir.p99us(),
-        ir.saturated());
-  }
 }

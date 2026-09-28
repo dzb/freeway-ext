@@ -16,6 +16,8 @@
 
 package com.jujin.freeway.bench.db;
 
+import com.jujin.freeway.commons.coercion.Coercer;
+import com.jujin.freeway.db.Database;
 import com.jujin.freeway.db.schema.SchemaEntity;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
@@ -26,7 +28,7 @@ import com.jujin.freeway.ioc.ModuleEx;
  * <p>The JDBC URL itself ({@code jdbc:sqlite:bench.db}, created in the working directory) is set by
  * {@code BenchApp} before the container starts, and {@code DbModule} is placed next to this module
  * in the application tree. Registers the benchmark schema entities for auto-table-creation at
- * startup.
+ * startup, and binds the persistence facade every command reads through.
  */
 public final class BenchDbModule implements ModuleEx {
 
@@ -34,5 +36,12 @@ public final class BenchDbModule implements ModuleEx {
   public void bind(Binder binder) {
     // Register schema entities for auto-creation
     binder.contribute(SchemaEntity.class).add(BenchSchema.all());
+    // One assembly point for the repository: every command resolves this instead of re-deriving it
+    // from Database + Coercer, so the facade cannot be built differently in one command.
+    binder
+        .bind(BenchRepository.class)
+        .to(
+            container ->
+                new BenchRepository(container.get(Database.class), container.get(Coercer.class)));
   }
 }

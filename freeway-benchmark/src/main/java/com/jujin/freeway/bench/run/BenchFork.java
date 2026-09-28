@@ -124,7 +124,7 @@ public final class BenchFork {
     }
     for (int i = 0; i < runs; i++) {
       var ir = BenchRunner.run(port, concurrency, requests, 0, scenario, benchMode.clientMode());
-      System.out.println("RESULT " + ForkedRunner.toResult(engine, mode, requests, ir));
+      System.out.println("RESULT " + ir.toResult(engine, mode, requests));
       if (i + 1 < runs && pauseMillis > 0) {
         Thread.sleep(pauseMillis);
       }

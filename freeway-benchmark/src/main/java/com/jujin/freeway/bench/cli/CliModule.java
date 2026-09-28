@@ -117,6 +117,13 @@ public final class CliModule implements ModuleEx {
     for (var cmd : commands) {
       if (cmd.name().equalsIgnoreCase(commandName)) {
         cmd.run(ctx);
+        // Report options nothing read: a typo that silently keeps a default would measure a
+        // different cell than the caller asked for. Reporting only — a script may carry extra
+        // flags.
+        var unknown = ctx.unconsumed().stream().sorted().map(key -> "--" + key).toList();
+        if (!unknown.isEmpty()) {
+          System.err.println("WARN: ignoring unknown option(s): " + String.join(", ", unknown));
+        }
         return ctx.exitCode();
       }
     }

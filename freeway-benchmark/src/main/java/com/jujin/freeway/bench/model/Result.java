@@ -55,11 +55,6 @@ public record Result(
         saturated);
   }
 
-  /** Median result across iterations (median of each field). */
-  public static Result median(List<Result> rs) {
-    return median(rs, 0);
-  }
-
   /**
    * Field-wise median over the last {@code window} iterations — {@code window <= 0} or as large as
    * the list means all of them. The window is the protocol's reading of a cell (early rounds

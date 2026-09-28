@@ -25,6 +25,23 @@
   in `BenchApp` and its four test helpers became
   `FreewayApp.create(BenchDbModule.class, DbModule.class, CliModule.class)`. The application root's
   name is no longer an entry-point input, so the startup log's root line reads `application`.
+- **benchmark CLI: one cell bookkeeping, one wiring point, no silent unknown flags** — `run` and
+  `suite` each carried their own copy of "write the run row → per-round insert + event → pick the
+  median round → record dispersion → apply the gates (throw on all-zero, warn on a climbing tail)";
+  that now lives in `cli/BenchCell`, shared by both commands and by `suite`'s two shapes (in-JVM and
+  forked), which removes the duplicated policy. `BenchRepository` is bound by `BenchDbModule`, so the
+  six commands resolve one facade instead of re-deriving it from `Database` + `Coercer`; the two
+  directions between `IterationResult` and the wire row `Result` are one method each
+  (`toResult`/`from`), replacing `ForkedRunner.toResult` plus `SuiteCommand`'s hand-written copy;
+  and `Command.Context` records which options a command read, so the dispatcher warns (never fails)
+  about `--flag`s nothing consumed — a typo can no longer silently keep a default and measure a
+  different cell. Removed with it: the zero-caller overloads `BenchRunner.run(5-arg)`,
+  `BenchRunner.medianIndex(List)` and `Result.median(List)` (the two `List`-only forms were
+  test-only spellings of the windowed ones), `RunCommand`'s never-used `modeStr`, and the duplicated
+  measurement tail in `run`/`runWs` (now `summarize`). The per-mode load loops stay separate on
+  purpose: that is the measurement path, where the risk of merging outweighs the gain. Command
+  javadocs now list every flag they read, including that `--pause-millis`/`--taskset-*` apply to the
+  forked shape only.
 
 ## 1.5.5
 

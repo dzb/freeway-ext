@@ -19,8 +19,6 @@ package com.jujin.freeway.bench.cli;
 import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.db.Database;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -37,6 +35,17 @@ import org.openjdk.jmh.runner.options.TimeValue;
  * <pre>
  * bench jmh --include=com.jujin.freeway.bench.jmh.RouteIndexBenchmark
  * bench jmh --include=.*Codec.* --forks=0 --warmup=1 --iterations=1 --time=1s
+ * </pre>
+ *
+ * <p>Arguments:
+ *
+ * <pre>
+ * --include=.*Benchmark   benchmark selector (class or method pattern)
+ * --forks=2               JMH forks per benchmark
+ * --warmup=5              warmup iterations
+ * --iterations=5          measurement iterations
+ * --time=1s               time per iteration
+ * --bench-mode=thrpt      recorded mode label (throughput; JMH itself always runs thrpt here)
  * </pre>
  *
  * <p>The rows carry {@code Score ± Score Error} and JMH's own unit. The run row records the JMH
@@ -62,9 +71,7 @@ public final class JmhCommand implements Command {
     TimeValue time = TimeValue.fromString(ctx.get("time", "1s"));
     String mode = ctx.get("bench-mode", "thrpt").toLowerCase(Locale.ROOT);
 
-    var container = ctx.container();
-    var repository =
-        new BenchRepository(container.get(Database.class), container.get(Coercer.class));
+    var repository = ctx.container().get(BenchRepository.class);
 
     System.out.printf(
         "bench jmh --include=%s --forks=%d --warmup=%d --iterations=%d --time=%s --bench-mode=%s%n",

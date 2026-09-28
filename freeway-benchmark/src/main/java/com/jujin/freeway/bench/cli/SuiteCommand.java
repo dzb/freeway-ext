@@ -17,16 +17,11 @@
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.db.BenchRepository;
-import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.harness.ScenarioSpec;
 import com.jujin.freeway.bench.harness.ServerHarness;
-import com.jujin.freeway.bench.model.BenchmarkResult;
-import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
 import com.jujin.freeway.bench.run.ForkedRunner;
-import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.db.Database;
 import com.jujin.freeway.ioc.event.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -49,6 +44,11 @@ import java.util.Locale;
  * --warmup=200
  * --runs=3
  * --mode=keepalive      connection mode: keepalive, short, or ws
+ * --median-last=0       representative round = median of the last N rounds (0 = all)
+ * --pause-millis=0      pause between rounds (fork shape only; the in-JVM shape ignores it)
+ * --fork                run each cell as resident server + client in separate JVMs
+ * --taskset-server=     CPU range for the server process  (fork shape only)
+ * --taskset-client=     CPU range for the client process  (fork shape only)
  * --output=report.md    optional: write Markdown report to file
  * </pre>
  *
@@ -65,9 +65,7 @@ public final class SuiteCommand implements Command {
   @Override
   public void run(Context ctx) throws Exception {
     var container = ctx.container();
-    var db = container.get(Database.class);
-    var coercer = container.get(Coercer.class);
-    var repository = new BenchRepository(db, coercer);
+    var repository = container.get(BenchRepository.class);
     var eventBus = container.get(EventBus.class);
 
     // Parse configuration
@@ -84,7 +82,7 @@ public final class SuiteCommand implements Command {
     String tasksetClient = ctx.get("taskset-client", "");
     // Split shape through the established fork path (resident server plus client in
     // separate JVMs). Absent, the server starts in this JVM — the smoke shape.
-    boolean fork = ctx.args().containsKey("fork");
+    boolean fork = ctx.has("fork");
     var mode = ctx.parse("mode", BenchMode::of, BenchMode.DEFAULT);
     var modeLabel = mode.label();
     if (mode.webSocket()) {
@@ -130,18 +128,22 @@ public final class SuiteCommand implements Command {
               "Scenario ECHO_BODY is not measurable: the client cannot send a request body");
         }
         for (int concurrency : concurrencies) {
-          // Create run record
-          var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
-          long runId = repository.insertRun(run);
-          eventBus.publish(new BenchEvent.RunStarted(run));
-
           System.out.printf("### %s / %s concurrency=%d%n", engine, scenario, concurrency);
           System.out.println();
 
-          var scores = new double[runs];
-          var resultIds = new long[runs];
-          List<BenchRunner.IterationResult> iterationResults = new ArrayList<>();
-          var cell = new Cell(repository, eventBus, runId, engine + "/" + scenario, modeLabel);
+          // One cell per (engine, scenario, concurrency): the shared bookkeeping both shapes use —
+          // run row, per-round rows, median pick and dispersion.
+          var cell =
+              BenchCell.open(
+                  repository,
+                  eventBus,
+                  engine,
+                  scenario,
+                  concurrency,
+                  requests,
+                  warmup,
+                  runs,
+                  modeLabel);
 
           if (fork) {
             var forked =
@@ -164,13 +166,9 @@ public final class SuiteCommand implements Command {
             }
             for (int r = 0; r < runs; r++) {
               done++;
-              var fr = forked.get(r);
-              var ir =
-                  new BenchRunner.IterationResult(
-                      fr.rps(), fr.p50us(), fr.p95us(), fr.p99us(), fr.errors(), fr.saturated());
-              resultIds[r] = cell.collect(r, ir, scores, iterationResults);
+              cell.collect(r, BenchRunner.IterationResult.from(forked.get(r)));
             }
-            if (iterationResults.stream().anyMatch(BenchRunner.IterationResult::saturated)) {
+            if (cell.rounds().stream().anyMatch(BenchRunner.IterationResult::saturated)) {
               ctx.exitCode(2);
               System.out.println(
                   "GATE: load generator saturated (client CPU >= 75%) — rounds invalid");
@@ -182,7 +180,7 @@ public final class SuiteCommand implements Command {
                 done++;
                 var ir =
                     BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
-                resultIds[r] = cell.collect(r, ir, scores, iterationResults);
+                cell.collect(r, ir);
 
                 System.out.printf(
                     "  run %d/%d: rps=%s p50=%s [%d/%d]%n",
@@ -195,23 +193,15 @@ public final class SuiteCommand implements Command {
               }
             }
 
-          // The dispersion belongs on the row every comparison prints: the
-          // median iteration. Its id came from the insert, so there is nothing
-          // to re-query.
-          int medianIndex = BenchRunner.medianIndex(iterationResults, medianLast);
-          double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-          if (runs > 1) {
-            repository.recordDispersion(resultIds[medianIndex], error);
-          }
+          // The dispersion lands on the median round's row (inside finish), so every comparison
+          // reads one row rather than pairing two.
+          int medianIndex = cell.finish(medianLast);
 
           // Pick median iteration as representative
           allResults.add(
-              new SuiteResult(engine, scenario, concurrency, iterationResults.get(medianIndex)));
-          if (BenchRunner.totalFailure(iterationResults)) {
-            throw new IllegalStateException(
-                "Cell " + engine + "/" + scenario + " produced no successful requests");
-          }
-          if (BenchRunner.stillClimbing(iterationResults)) {
+              new SuiteResult(engine, scenario, concurrency, cell.rounds().get(medianIndex)));
+          cell.requireMeasured();
+          if (cell.climbing()) {
             System.out.println(
                 "WARN: "
                     + engine
@@ -311,30 +301,10 @@ public final class SuiteCommand implements Command {
   }
 
   /**
-   * One cell's bookkeeping invariants. The two shapes (forked client, in-JVM smoke) run the same
-   * rounds and must persist and announce them the same way — this is the one place that does it, so
-   * a change to the row's meaning cannot land in one shape only.
+   * One cell's bookkeeping lives in {@link BenchCell} — the two shapes (forked client, in-JVM
+   * smoke) run the same rounds and must persist and announce them the same way, and that is the one
+   * place that does it.
    */
-  private record Cell(
-      BenchRepository repository, EventBus eventBus, long runId, String name, String modeLabel) {
-
-    /** Records one round and returns the id the row was inserted with. */
-    long collect(
-        int index,
-        BenchRunner.IterationResult ir,
-        double[] scores,
-        List<BenchRunner.IterationResult> rounds) {
-      scores[index] = ir.rps();
-      rounds.add(ir);
-      var result =
-          BenchmarkResult.forHttpIteration(
-              runId, name, modeLabel, ir.rps(), ir.p50us(), ir.p95us(), ir.p99us(), ir.errors());
-      long id = repository.insertResult(result);
-      eventBus.publish(new BenchEvent.ResultCollected(result));
-      return id;
-    }
-  }
-
   private static List<String> parseList(String value) {
     var list = new ArrayList<String>();
     for (var s : value.split(",")) {

@@ -17,8 +17,6 @@
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.bench.db.BenchRepository;
-import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -48,11 +46,8 @@ public final class ListCommand implements Command {
     int limit = ctx.getInt("limit", 10);
     String engineFilter = ctx.get("engine", null);
 
-    var container = ctx.container();
-    var db = container.get(Database.class);
-
-    var runs =
-        new BenchRepository(db, container.get(Coercer.class)).recentRuns(engineFilter, limit);
+    var repository = ctx.container().get(BenchRepository.class);
+    var runs = repository.recentRuns(engineFilter, limit);
 
     if (runs.isEmpty()) {
       System.out.println("No benchmark runs found.");

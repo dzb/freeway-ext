@@ -17,7 +17,9 @@
 package com.jujin.freeway.bench.cli;
 
 import com.jujin.freeway.ioc.Container;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 /**
@@ -43,6 +45,12 @@ public interface Command {
     private final Container container;
     private final String command;
     private final Map<String, String> args;
+
+    /**
+     * The option keys this command asked for — what the dispatcher's unknown-option check exempts.
+     */
+    private final Set<String> consumed = new LinkedHashSet<>();
+
     private int exitCode;
 
     public Context(Container container, String command, Map<String, String> args) {
@@ -59,17 +67,24 @@ public interface Command {
       return command;
     }
 
+    /**
+     * The raw argument map, for display only. Reading an option through {@link #get}, {@link
+     * #getInt}, {@link #parse} or {@link #has} is what marks it consumed; this view deliberately
+     * does not, so {@link #unconsumed()} can still name a mistyped flag a command printed past.
+     */
     public Map<String, String> args() {
       return args;
     }
 
     /** Returns the value for a key, or the default if absent. */
     public String get(String key, String defaultValue) {
+      consumed.add(key);
       return args.getOrDefault(key, defaultValue);
     }
 
     /** Returns an int value for a key, or the default if absent. */
     public int getInt(String key, int defaultValue) {
+      consumed.add(key);
       String v = args.get(key);
       if (v == null) return defaultValue;
       try {
@@ -79,12 +94,19 @@ public interface Command {
       }
     }
 
+    /** Whether the option was given. Marks it consumed, like the typed readers. */
+    public boolean has(String key) {
+      consumed.add(key);
+      return args.containsKey(key);
+    }
+
     /**
      * Parses a flag through {@code parser}, or returns {@code defaultValue} when the flag is
      * absent. A parser failure is reported as a usage error naming the flag, never as a stack
      * trace.
      */
     public <T> T parse(String key, Function<String, T> parser, T defaultValue) {
+      consumed.add(key);
       String v = args.get(key);
       if (v == null) return defaultValue;
       try {
@@ -98,6 +120,16 @@ public interface Command {
                 + "'"
                 + (e.getMessage() == null ? "" : " — " + e.getMessage()));
       }
+    }
+
+    /**
+     * The options no command read. The dispatcher reports them: a mistyped flag silently falling
+     * back to its default measures something other than what the caller asked for.
+     */
+    public Set<String> unconsumed() {
+      var rest = new LinkedHashSet<>(args.keySet());
+      rest.removeAll(consumed);
+      return Set.copyOf(rest);
     }
 
     /** Records a non-zero exit code for the process (usage error, failed gate). */

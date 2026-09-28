@@ -20,13 +20,9 @@ import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.event.BenchEvent;
 import com.jujin.freeway.bench.harness.ScenarioSpec;
 import com.jujin.freeway.bench.harness.ServerHarness;
-import com.jujin.freeway.bench.model.BenchmarkResult;
-import com.jujin.freeway.bench.model.BenchmarkRun;
 import com.jujin.freeway.bench.run.BenchMode;
 import com.jujin.freeway.bench.run.BenchRunner;
-import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.db.Database;
 import com.jujin.freeway.ioc.event.EventBus;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -50,6 +46,7 @@ import java.util.Map;
  * --warmup=500          warmup requests before measurement
  * --runs=3              number of measurement runs
  * --mode=keepalive      connection mode: keepalive, short, or ws
+ * --median-last=0       representative round = median of the last N rounds (0 = all)
  * --output=results.json optional: write JSON results to file
  * </pre>
  */
@@ -64,7 +61,6 @@ public final class RunCommand implements Command {
   public void run(Context ctx) throws Exception {
     var engine = ctx.get("engine", "freeway");
     var scenario = ctx.get("scenario", "ping");
-    var modeStr = ctx.get("mode", "keepalive");
     int concurrency = ctx.getInt("concurrency", 32);
     int requests = ctx.getInt("requests", 5000);
     int warmup = ctx.getInt("warmup", 2_000);
@@ -103,23 +99,14 @@ public final class RunCommand implements Command {
         modeLabel,
         medianLast > 0 ? " --median-last=" + medianLast : "");
 
-    // Retrieve Database from container (provided by BenchDbModule)
     var container = ctx.container();
-    var db = container.get(Database.class);
-    var coercer = container.get(Coercer.class);
-    var repository = new BenchRepository(db, coercer);
+    var repository = container.get(BenchRepository.class);
     var eventBus = container.get(EventBus.class);
 
-    // Create run record
-    var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
-    long runId = repository.insertRun(run);
-    eventBus.publish(new BenchEvent.RunStarted(run));
-
-    // Run the benchmark
-    var results = new ArrayList<BenchmarkResult>();
-    var iterations = new ArrayList<BenchRunner.IterationResult>();
-    var resultIds = new long[runs];
-    var scores = new double[runs];
+    // One cell: its rows, its rounds, and its representative-round arithmetic all live here.
+    var cell =
+        BenchCell.open(
+            repository, eventBus, engine, scenario, concurrency, requests, warmup, runs, modeLabel);
 
     try (var harness = ServerHarness.start(eng, scn)) {
       int port = harness.port();
@@ -127,7 +114,7 @@ public final class RunCommand implements Command {
       for (int r = 0; r < runs; r++) {
         System.out.printf("  run %d/%d ...%n", r + 1, runs);
         var ir = BenchRunner.run(port, concurrency, requests, warmup, scn, mode.clientMode());
-        scores[r] = ir.rps();
+        cell.collect(r, ir);
 
         System.out.printf(
             "    rps=%s p50=%s p95=%s p99=%s errors=%d%n",
@@ -136,62 +123,38 @@ public final class RunCommand implements Command {
             BenchFormat.micros(ir.p95us()),
             BenchFormat.micros(ir.p99us()),
             ir.errors());
-
-        var result =
-            BenchmarkResult.forHttpIteration(
-                runId,
-                engine + "/" + scenario,
-                modeLabel,
-                ir.rps(),
-                ir.p50us(),
-                ir.p95us(),
-                ir.p99us(),
-                ir.errors());
-        results.add(result);
-        iterations.add(ir);
-        // The generated key is the id of this row: capturing it here is what
-        // removes the re-query that used to hunt the median row afterwards.
-        resultIds[r] = repository.insertResult(result);
-        eventBus.publish(new BenchEvent.ResultCollected(result));
       }
     }
 
-    // Compute score_error as stddev across all runs
-    double avgRps = 0;
-    for (double s : scores) avgRps += s;
-    avgRps /= runs;
-    int medianIndex = BenchRunner.medianIndex(iterations, medianLast);
-    double error = runs > 1 ? BenchRunner.stddev(scores) : 0;
-    if (runs > 1) {
-      // The dispersion belongs on the row every comparison prints: the median
-      // iteration. Its id came from the insert above.
-      repository.recordDispersion(resultIds[medianIndex], error);
-    }
+    int medianIndex = cell.finish(medianLast);
+    double avgRps = cell.averageRps();
+    double error = cell.dispersion();
 
-    eventBus.publish(new BenchEvent.RunCompleted(runId));
+    eventBus.publish(new BenchEvent.RunCompleted(cell.runId()));
     System.out.printf(
         "Done. Run #%d saved. avg=%s ± %s req/s%n",
-        runId, BenchFormat.rps(avgRps), BenchFormat.rps(error));
+        cell.runId(), BenchFormat.rps(avgRps), BenchFormat.rps(error));
 
     // Print summary table
+    var rounds = cell.rounds();
     var rows = new ArrayList<BenchFormat.Row>();
-    for (int i = 0; i < results.size(); i++) {
-      var r = results.get(i);
+    for (int i = 0; i < rounds.size(); i++) {
+      var r = rounds.get(i);
       rows.add(
           BenchFormat.Row.of(
               String.valueOf(i + 1),
-              BenchFormat.rps(r.score()),
+              BenchFormat.rps(r.rps()),
               BenchFormat.micros(r.p50us()),
               BenchFormat.micros(r.p95us()),
               BenchFormat.micros(r.p99us()),
               String.valueOf(r.errors())));
     }
-    if (results.size() > 1) {
-      var median = results.get(medianIndex);
+    if (rounds.size() > 1) {
+      var median = rounds.get(medianIndex);
       rows.add(
           BenchFormat.Row.of(
                   "Median",
-                  BenchFormat.rps(median.score()),
+                  BenchFormat.rps(median.rps()),
                   BenchFormat.micros(median.p50us()),
                   BenchFormat.micros(median.p95us()),
                   BenchFormat.micros(median.p99us()),
@@ -213,11 +176,8 @@ public final class RunCommand implements Command {
 
     // Broken-cell and unsteady-cell gates: a zero row is failed infrastructure, and a
     // climbing tail means warmup was too short — both print loudly, only the former fails.
-    if (BenchRunner.totalFailure(iterations)) {
-      throw new IllegalStateException(
-          "Cell " + engine + "/" + scenario + " produced no successful requests");
-    }
-    if (BenchRunner.stillClimbing(iterations)) {
+    cell.requireMeasured();
+    if (cell.climbing()) {
       System.out.println("WARN: rounds still climbing — warmup insufficient, median under-reports");
     }
 
@@ -226,7 +186,7 @@ public final class RunCommand implements Command {
     if (outputPath != null && !outputPath.isBlank()) {
       BenchFormat.requireOutputExtension(outputPath, ".json", "JSON");
       var jsonMap = new LinkedHashMap<String, Object>();
-      jsonMap.put("run_id", runId);
+      jsonMap.put("run_id", cell.runId());
       jsonMap.put("engine", engine);
       jsonMap.put("scenario", scenario);
       jsonMap.put("concurrency", concurrency);
@@ -236,7 +196,7 @@ public final class RunCommand implements Command {
       jsonMap.put("avg_rps", avgRps);
       jsonMap.put("stddev_rps", error);
       jsonMap.put("mode", modeLabel);
-      var runRow = repository.findRun(runId).orElseThrow();
+      var runRow = repository.findRun(cell.runId()).orElseThrow();
       jsonMap.put("commit_sha", runRow.commitSha());
       jsonMap.put("dirty_files", runRow.dirtyFiles());
       jsonMap.put("jdk_info", runRow.jdkInfo());
@@ -245,11 +205,11 @@ public final class RunCommand implements Command {
       jsonMap.put("heap_max_mb", runRow.heapMaxMb());
 
       var runsList = new ArrayList<Map<String, Object>>();
-      for (int i = 0; i < results.size(); i++) {
-        var r = results.get(i);
+      for (int i = 0; i < rounds.size(); i++) {
+        var r = rounds.get(i);
         var m = new LinkedHashMap<String, Object>();
         m.put("run", i + 1);
-        m.put("rps", r.score());
+        m.put("rps", r.rps());
         m.put("p50_us", r.p50us());
         m.put("p95_us", r.p95us());
         m.put("p99_us", r.p99us());

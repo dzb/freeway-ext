@@ -19,8 +19,6 @@ package com.jujin.freeway.bench.cli;
 import com.jujin.freeway.bench.db.BenchRepository;
 import com.jujin.freeway.bench.model.BenchmarkResult;
 import com.jujin.freeway.bench.model.BenchmarkRun;
-import com.jujin.freeway.commons.coercion.Coercer;
-import com.jujin.freeway.db.Database;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -59,9 +57,7 @@ public final class CompareCommand implements Command {
 
   @Override
   public void run(Context ctx) throws Exception {
-    var container = ctx.container();
-    var db = container.get(Database.class);
-    var repository = new BenchRepository(db, container.get(Coercer.class));
+    var repository = ctx.container().get(BenchRepository.class);
 
     // Determine run IDs
     var allRuns = repository.allRuns();
@@ -79,7 +75,7 @@ public final class CompareCommand implements Command {
     // Auto-detect baseline: if --from not specified, find best previous run
     // with the same engine+scenario+concurrency as the candidate
     int fromId;
-    if (ctx.args().containsKey("from")) {
+    if (ctx.has("from")) {
       fromId = ctx.getInt("from", 0);
     } else {
       fromId =

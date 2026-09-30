@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### Removed
+
+- **the `freeway-http` `tests` classifier dependency** (`pom.xml` dependencyManagement,
+  `freeway-http-undertow`, `freeway-http-jetty`). It was declared from the initial import
+  (2026-06-17), when the shared engine contract tests lived in the core's test tree — the only
+  place they could be. `746e5b9` (2026-09-13) converged those contracts into this repo's own
+  `freeway-http-adapter-testkit` module, where they are ordinary `src/main` classes, and the
+  declaration was left behind. Verified unused rather than assumed: all 61 top-level classes in
+  `freeway-http-x.y.z-tests.jar` were cross-checked against every Java source here — **zero**
+  references, no wildcard import (the one `com.jujin.freeway.http.*` is in `freeway-benchmark`,
+  which never declared it), no `Class.forName`, no class-name strings. Sharing between the two
+  engines is the testkit's job, as `AGENTS.md` already states ("share the testkit contracts";
+  "passes the testkit contracts instead of copying another adapter's tests"). undertow 39 + jetty
+  35 + the rest of the reactor, all green after removal.
+
 ### Added
 
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,

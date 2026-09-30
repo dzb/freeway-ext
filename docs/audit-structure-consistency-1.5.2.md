@@ -236,6 +236,10 @@ core `HttpContextImpl.java:401-425`、`JettyHttpContext`、`UndertowHttpContext`
 core 已经发布 test-jar（`freeway-http-1.5.2-SNAPSHOT-tests.jar`，内含 `StubHttpContext` 等辅助），
 把"引擎无关的契约"写成 core test-jar 里的抽象基类、两个适配器各自继承，是现成可行的路径。
 
+> **历史快照（1.5.2）**：该产物自 1.5.6 起不再产出（core `b3706a3c` 移除 `freeway-http`
+> 的 `tests` classifier，ext `621d8d7` 同步删除依赖）。今天共享引擎契约走
+> `freeway-http-adapter-testkit`（普通 `src/main` 产物）。本段保留为当时的判断记录，不是现行路径。
+
 ## 4. 各模块详审
 
 > 核验标记：✅ = 我独立复核过（读源码/字节码/跑构建）；⚠ = 源自模块深审、我未独立复核。

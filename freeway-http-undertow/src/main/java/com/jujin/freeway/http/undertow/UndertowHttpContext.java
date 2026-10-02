@@ -66,8 +66,8 @@ final class UndertowHttpContext extends AbstractHttpContext {
       HttpServerConfig.CompressionConfig.DEFAULT;
 
   /** Pooled constructor — call {@link #reset} before use. */
-  UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer) {
-    super(jsonCodec, coercer);
+  UndertowHttpContext(JsonCodec jsonCodec, Coercer coercer, long maxBodySize) {
+    super(jsonCodec, coercer, maxBodySize);
   }
 
   /** Reinitializes all per-request state for object reuse. */
@@ -78,6 +78,7 @@ final class UndertowHttpContext extends AbstractHttpContext {
     // per thread, so request N+1 would otherwise inherit request N's
     // authentication context, attributes and start time.
     resetExchangeMeta();
+    resetMaxBodySize();
     setCorrelationId(correlationId);
     this.queryParams = null; // lazy — PING never accesses
     this.method = exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";

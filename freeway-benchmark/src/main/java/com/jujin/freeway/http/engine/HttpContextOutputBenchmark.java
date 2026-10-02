@@ -21,6 +21,7 @@ import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.http.HttpContext;
+import com.jujin.freeway.http.HttpServerConfig;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -80,10 +81,10 @@ public class HttpContextOutputBenchmark {
   @Setup
   public void setup() {
     sink = OutputStream.nullOutputStream();
-    ctx = new HttpContextImpl(JSON, COERCER);
+    ctx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
 
     // Context pre-configured for body-read scenario (POST with body)
-    bodyReadCtx = new HttpContextImpl(JSON, COERCER);
+    bodyReadCtx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
     bodyReadCtx.reset(
         "POST",
         "/api/data",
@@ -97,7 +98,7 @@ public class HttpContextOutputBenchmark {
         true);
 
     // Context pre-configured for sendJson convenience shortcut
-    sendJsonCtx = new HttpContextImpl(JSON, COERCER);
+    sendJsonCtx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
     sendJsonCtx.reset(
         "GET",
         "/api/resource",

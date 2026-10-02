@@ -62,8 +62,8 @@ final class JettyHttpContext extends AbstractHttpContext {
       HttpServerConfig.CompressionConfig.DEFAULT;
 
   /** Pooled constructor — call {@link #reset} before use. */
-  JettyHttpContext(JsonCodec jsonCodec, Coercer coercer) {
-    super(jsonCodec, coercer);
+  JettyHttpContext(JsonCodec jsonCodec, Coercer coercer, long maxBodySize) {
+    super(jsonCodec, coercer, maxBodySize);
   }
 
   /** Reinitializes all per-request state for object reuse. */
@@ -76,6 +76,7 @@ final class JettyHttpContext extends AbstractHttpContext {
     // per thread, so request N+1 would otherwise inherit request N's
     // authentication context, attributes and start time.
     resetExchangeMeta();
+    resetMaxBodySize();
     setCorrelationId(correlationId);
     this.queryParams = parseQueryParams(request);
     this.cachedBody = null;

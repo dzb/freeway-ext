@@ -18,6 +18,7 @@ package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.RouteHandler;
@@ -84,7 +85,7 @@ public class FilterChainBenchmark {
     chain = ctx -> cors.doFilter(ctx, h);
 
     // Normal GET /ping — passes through all filters
-    normalCtx = new HttpContextImpl(json, coercer);
+    normalCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
     normalCtx.reset(
         "GET",
         "/ping",
@@ -98,7 +99,7 @@ public class FilterChainBenchmark {
         true);
 
     // Health check request — intercepted by HealthFilter
-    healthCtx = new HttpContextImpl(json, coercer);
+    healthCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
     healthCtx.reset(
         "GET",
         "/healthz",
@@ -112,7 +113,7 @@ public class FilterChainBenchmark {
         true);
 
     // CORS preflight — intercepted by CorsFilter
-    corsCtx = new HttpContextImpl(json, coercer);
+    corsCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
     corsCtx.reset(
         "OPTIONS",
         "/api/data",

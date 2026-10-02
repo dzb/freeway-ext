@@ -69,7 +69,12 @@ public final class JettyHttpEngine implements HttpEngine {
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
   private final SymbolSource symbols;
-  private final ThreadLocal<JettyHttpContext> contextPool;
+
+  /**
+   * Built in {@link #start}: a context needs the configured body limit, which only exists once the
+   * server does.
+   */
+  private ThreadLocal<JettyHttpContext> contextPool;
 
   public JettyHttpEngine(JsonCodec jsonCodec, Coercer coercer) {
     this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
@@ -84,8 +89,6 @@ public final class JettyHttpEngine implements HttpEngine {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
     this.symbols = Objects.requireNonNull(symbols, "symbols");
-    this.contextPool =
-        ThreadLocal.withInitial(() -> new JettyHttpContext(this.jsonCodec, this.coercer));
   }
 
   /**
@@ -104,6 +107,10 @@ public final class JettyHttpEngine implements HttpEngine {
       throws IOException {
     Objects.requireNonNull(config, "config");
     Objects.requireNonNull(handler, "handler");
+
+    this.contextPool =
+        ThreadLocal.withInitial(
+            () -> new JettyHttpContext(jsonCodec, coercer, config.maxBodySize()));
 
     Server server = new Server();
     ServerConnector connector = buildConnector(server, config);
@@ -169,7 +176,6 @@ public final class JettyHttpEngine implements HttpEngine {
             }
             JettyHttpContext ctx = contextPool.get();
             ctx.reset(request, response, correlationId, callback);
-            ctx.setMaxBodySize(config.maxBodySize());
             ctx.setCompression(config.compression());
             try {
               handler.handle(ctx);

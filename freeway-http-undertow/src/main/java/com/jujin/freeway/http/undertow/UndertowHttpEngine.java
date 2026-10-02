@@ -69,7 +69,13 @@ public final class UndertowHttpEngine implements HttpEngine {
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
   private final SymbolSource symbols;
-  private final ThreadLocal<UndertowHttpContext> contextPool;
+
+  /**
+   * Built in {@link #start}: a context needs the configured body limit, which only exists once the
+   * server does.
+   */
+  private ThreadLocal<UndertowHttpContext> contextPool;
+
   private volatile long wsMaxMessageSize = -1;
 
   public UndertowHttpEngine(JsonCodec jsonCodec, Coercer coercer) {
@@ -85,8 +91,6 @@ public final class UndertowHttpEngine implements HttpEngine {
     this.jsonCodec = Objects.requireNonNull(jsonCodec, "jsonCodec");
     this.coercer = Objects.requireNonNull(coercer, "coercer");
     this.symbols = Objects.requireNonNull(symbols, "symbols");
-    this.contextPool =
-        ThreadLocal.withInitial(() -> new UndertowHttpContext(this.jsonCodec, this.coercer));
   }
 
   /**
@@ -120,6 +124,9 @@ public final class UndertowHttpEngine implements HttpEngine {
     // unlimited, which lets a remote client buffer unbounded messages (OOM).
     this.wsMaxMessageSize =
         parseMaxFrameSize(symbols.resolve("freeway.http.websocket.max-frame-size", "65536"));
+    this.contextPool =
+        ThreadLocal.withInitial(
+            () -> new UndertowHttpContext(jsonCodec, coercer, config.maxBodySize()));
     HttpHandler root =
         exchange -> {
           if (dispatchIo && exchange.isInIoThread()) {
@@ -320,7 +327,6 @@ public final class UndertowHttpEngine implements HttpEngine {
 
     UndertowHttpContext ctx = contextPool.get();
     ctx.reset(exchange, correlationId);
-    ctx.setMaxBodySize(config.maxBodySize());
     ctx.setCompression(config.compression());
     try {
       handler.handle(ctx);

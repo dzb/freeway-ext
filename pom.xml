@@ -154,6 +154,7 @@
         <module>freeway-http-jetty</module>
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>
+        <module>freeway-cloud-consul</module>
         <module>freeway-db-hikari</module>
         <module>freeway-benchmark</module>
     </modules>

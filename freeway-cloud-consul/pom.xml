@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.jujin8.freeway</groupId>
+        <artifactId>freeway-ext</artifactId>
+        <version>1.5.5</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>freeway-cloud-consul</artifactId>
+    <name>Freeway :: Cloud :: Consul</name>
+    <description>Consul service-discovery adapter for freeway</description>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-ioc</artifactId>
+        </dependency>
+        <dependency>
+            <!-- The discovery seam this adapter implements. -->
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-cloud</artifactId>
+        </dependency>
+        <dependency>
+            <!-- JsonUtils: the Consul wire format is Consul's, not the app's. -->
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-commons</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

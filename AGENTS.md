@@ -46,11 +46,14 @@ mvn spotless:check                           # format gate — not part of `mvn 
 | `freeway-http-jetty` | Jetty 12 engine adapter (`HttpEngine`) | core ioc + http + commons; jetty-server, jetty-websocket-jetty-server, jetty-http2-server, jetty-alpn-*-server |
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
+| `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |
 
 The adapter modules are leaf nodes: no cross-dependencies between them, and each depends
-only on core modules plus its own third-party library. `freeway-benchmark` is the one
+only on core modules plus its own third-party library — `freeway-cloud-consul` being the
+one with no third-party library at all (Consul's agent is reached over its HTTP API with
+the JDK `HttpClient`). `freeway-benchmark` is the one
 exception — comparing engines requires both of them — and it is excluded from deployment
 (`skipPublishing`, plus `maven.deploy.skip` for the plain deploy lifecycle).
 

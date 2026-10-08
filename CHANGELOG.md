@@ -19,6 +19,21 @@
 
 ### Added
 
+- **`freeway-cloud-consul` — Consul service-discovery adapter.** Binds `ServiceRegistry` and
+  `ServiceDiscovery` **primary**, replacing core's `@Local` in-process defaults, so a
+  non-Kubernetes deployment gets real cross-process discovery. It implements the four seam
+  operations only: core's `RegistryLifecycleHook` still registers/renews/re-registers/unregisters,
+  its `RegistryHealthContributor` deactivates itself once the active binding is no longer
+  `@Local`, and `drainWindow()` (default `PT5S`) feeds
+  `freeway.cloud.registry.shutdown-drain=auto` — none of that is re-implemented here.
+  `Endpoint.scheme`/`basePath` travel in Consul `Meta` under a reserved `freeway.` prefix
+  (the outbound URL is rendered from all four fields, so dropping them would silently mis-call
+  an https or path-prefixed service); application metadata is copied verbatim. **No third-party
+  client** — the agent's HTTP API is reached with the JDK `HttpClient`. Config keys are
+  `freeway.cloud.consul.{agent-host,agent-port,scheme,token,ttl,drain-window}`, declared in the
+  module's `ConfigKeys` and contributed to the unknown-key vocabulary. 9 tests (stubbed agent +
+  container replacement). Design: `docs/consul-adapter-design.md`.
+
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
   jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core
   1.5.6 style) and contribute it from `bind(Binder)`

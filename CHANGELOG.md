@@ -31,8 +31,10 @@
   an https or path-prefixed service); application metadata is copied verbatim. **No third-party
   client** — the agent's HTTP API is reached with the JDK `HttpClient`. Config keys are
   `freeway.cloud.consul.{agent-host,agent-port,scheme,token,ttl,drain-window}`, declared in the
-  module's `ConfigKeys` and contributed to the unknown-key vocabulary. 9 tests (stubbed agent +
-  container replacement). Design: `docs/consul-adapter-design.md`.
+  module's `ConfigKeys` and contributed to the unknown-key vocabulary. 9 tests against a stubbed
+  agent plus container replacement, and a gated `ConsulIntegrationTest` (`FREEWAY_TEST_CONSUL`,
+  default `127.0.0.1:8500`): adapter round-trip and a real `FreewayApp` whose lifecycle hook
+  registers/deregisters through Consul. Design: `docs/consul-adapter-design.md`.
 
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
   jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.6
 
 ### Removed
 

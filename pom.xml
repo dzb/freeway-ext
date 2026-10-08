@@ -42,7 +42,7 @@
         <!-- Overrides of freeway-parent properties: latest JUnit (6.x) and the
              latest stable SLF4J 2.x (2.1.0 is still an alpha release). -->
         <junit.version>6.1.3</junit.version>
-        <slf4j.version>2.0.19</slf4j.version>
+        <slf4j.version>2.0.20</slf4j.version>
     </properties>
 
     <dependencyManagement>

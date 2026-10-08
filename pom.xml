@@ -28,7 +28,7 @@
     </scm>
 
     <properties>
-        <freeway.version>1.5.6-SNAPSHOT</freeway.version>
+        <freeway.version>1.5.6</freeway.version>
 
         <!-- Third-party dependency versions, centralized here so all modules
              stay in sync. Latest stable versions as of 2026-09. -->

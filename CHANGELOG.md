@@ -26,9 +26,13 @@
   its `RegistryHealthContributor` deactivates itself once the active binding is no longer
   `@Local`, and `drainWindow()` (default `PT5S`) feeds
   `freeway.cloud.registry.shutdown-drain=auto` — none of that is re-implemented here.
-  `Endpoint.scheme`/`basePath` travel in Consul `Meta` under a reserved `freeway.` prefix
-  (the outbound URL is rendered from all four fields, so dropping them would silently mis-call
-  an https or path-prefixed service); application metadata is copied verbatim. **No third-party
+  `Endpoint.scheme`/`basePath` travel in Consul `Meta` under reserved `freeway-*` keys
+  (hyphens, not dots — Consul rejects a `Meta` key containing `.`; the outbound URL is rendered
+  from all four fields, so dropping them would silently mis-call an https or path-prefixed
+  service); application metadata is copied verbatim. The register payload writes an explicit
+  `CheckID` (Consul would otherwise derive `service:{id}` and `renew` would 404) and arms the
+  TTL check `Status: passing` (a TTL check starts critical, so without it the instance is
+  undiscoverable until the first heartbeat). **No third-party
   client** — the agent's HTTP API is reached with the JDK `HttpClient`. Config keys are
   `freeway.cloud.consul.{agent-host,agent-port,scheme,token,ttl,drain-window}`, declared in the
   module's `ConfigKeys` and contributed to the unknown-key vocabulary. `renew` distinguishes
@@ -40,7 +44,10 @@
   names the others. 9 tests against a stubbed
   agent plus container replacement, and a gated `ConsulIntegrationTest` (`FREEWAY_TEST_CONSUL`,
   default `127.0.0.1:8500`): adapter round-trip and a real `FreewayApp` whose lifecycle hook
-  registers/deregisters through Consul. Design: `docs/consul-adapter-design.md`.
+  registers/deregisters through Consul. **Run against a live agent** (Consul 2.0.4 dev agent):
+  13/13 green; skipped without the variable, red against a dead address. Four behaviors the
+  stub could not catch were found and fixed this way (see the design doc's §3.1). Design:
+  `docs/consul-adapter-design.md`.
 
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
   jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core

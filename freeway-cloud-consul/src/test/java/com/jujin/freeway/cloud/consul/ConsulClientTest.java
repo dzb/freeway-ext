@@ -110,9 +110,14 @@ class ConsulClientTest {
         assertTrue(sent.contains("\"Port\":8443"), sent);
         // scheme/basePath travel in Meta or an https, path-prefixed service would
         // be mis-called by whoever discovers it.
-        assertTrue(sent.contains("\"freeway.scheme\":\"https\""), sent);
-        assertTrue(sent.contains("\"freeway.base-path\":\"/api\""), sent);
+        assertTrue(sent.contains("\"freeway-scheme\":\"https\""), sent);
+        assertTrue(sent.contains("\"freeway-base-path\":\"/api\""), sent);
         assertTrue(sent.contains("\"zone\":\"a\""), sent);
+        // A TTL check starts critical; the adapter arms it passing so the
+        // instance is discoverable from the moment it registers.
+        assertTrue(sent.contains("\"Status\":\"passing\""), sent);
+        // Explicit CheckID, or Consul derives "service:{id}" and renew misses it.
+        assertTrue(sent.contains("\"CheckID\":\"order:i1\""), sent);
     }
 
     @Test
@@ -139,8 +144,8 @@ class ConsulClientTest {
     void instancesReadsBackSchemeBasePathAndAppMetadata() {
         instancesBody = "[{\"Service\":{\"ID\":\"order:i1\",\"Name\":\"order\","
             + "\"Address\":\"10.0.0.5\",\"Port\":8443,\"Meta\":{"
-            + "\"zone\":\"a\",\"freeway.instance-id\":\"i1\","
-            + "\"freeway.scheme\":\"https\",\"freeway.base-path\":\"/api\"}}}]";
+            + "\"zone\":\"a\",\"freeway-instance-id\":\"i1\","
+            + "\"freeway-scheme\":\"https\",\"freeway-base-path\":\"/api\"}}}]";
 
         List<ServiceInstance> found = new ConsulClient(wiring()).instances("order");
 
@@ -154,7 +159,7 @@ class ConsulClientTest {
         assertEquals(8443, instance.endpoint().port());
         assertEquals("a", instance.metadata().get("zone"));
         // The bookkeeping keys are the adapter's, not the application's metadata.
-        assertFalse(instance.metadata().containsKey("freeway.scheme"));
+        assertFalse(instance.metadata().containsKey("freeway-scheme"));
     }
 
     @Test

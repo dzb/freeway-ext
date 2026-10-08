@@ -39,9 +39,10 @@ import org.slf4j.LoggerFactory;
  * {@code CloudHttpClientDefault} renders the outbound URL from all four
  * ({@code endpoint().uri() + request.path()}). Dropping the two extra fields
  * would silently mis-call an https service or a path-prefixed one, so they
- * travel in {@code Meta} under a reserved {@code freeway.} prefix — which also
+ * travel in {@code Meta} under reserved {@code freeway-*} keys — which also
  * keeps them from colliding with the application's own metadata, copied
- * verbatim.
+ * verbatim. The keys carry hyphens, not dots: Consul rejects a {@code Meta}
+ * key containing {@code .} outright ("Key contains invalid characters").
  */
 final class ConsulClient {
 
@@ -55,9 +56,9 @@ final class ConsulClient {
     /** RFC 3986 {@code pchar} beyond the unreserved set: kept literal in a path segment. */
     private static final String PCHAR_EXTRA = "-._~:@!$&'()*+,;=";
 
-    private static final String META_INSTANCE_ID = "freeway.instance-id";
-    private static final String META_SCHEME = "freeway.scheme";
-    private static final String META_BASE_PATH = "freeway.base-path";
+    private static final String META_INSTANCE_ID = "freeway-instance-id";
+    private static final String META_SCHEME = "freeway-scheme";
+    private static final String META_BASE_PATH = "freeway-base-path";
 
     private final ConsulWiring wiring;
     private final HttpClient http;
@@ -71,7 +72,14 @@ final class ConsulClient {
     public void register(ServiceInstance instance) {
         Objects.requireNonNull(instance, "instance");
         JsonObject check = JsonUtils.object()
+            // Explicit, or Consul derives the check id as "service:{serviceID}"
+            // and renew (which passes the service id) would miss it.
+            .put("CheckID", consulId(instance))
             .put("TTL", wiring.ttl().toSeconds() + "s")
+            // A TTL check starts critical, so without this the instance is
+            // undiscoverable from register until the first heartbeat — up to a
+            // full renew interval of blackout on every (re)start.
+            .put("Status", "passing")
             .put("DeregisterCriticalServiceAfter", DEREGISTER_CRITICAL_AFTER);
         JsonObject body = JsonUtils.object()
             .put("ID", consulId(instance))
@@ -102,7 +110,9 @@ final class ConsulClient {
         // "not held": throwing lets the core's heartbeat mark the node unhealthy
         // and log it, instead of looping a re-register that will fail the same way.
         throw new IllegalStateException(
-            "Consul renew for '" + consulId(serviceId, instanceId) + "' failed: HTTP " + status);
+            "Consul renew for '" + consulId(serviceId, instanceId) + "' failed: HTTP " + status
+                + (response.body() == null || response.body().isBlank()
+                    ? "" : " — " + response.body().strip()));
     }
 
     /** Removes the instance from the agent. */
@@ -117,8 +127,7 @@ final class ConsulClient {
         HttpResponse<String> response = exchange("GET",
             "/v1/health/service/" + segment(serviceId) + "?passing=true", null);
         if (response.statusCode() / 100 != 2) {
-            throw new IllegalStateException(
-                "Consul health query for '" + serviceId + "' failed: HTTP " + response.statusCode());
+            throw new IllegalStateException(failure("GET", "/v1/health/service/" + serviceId, response));
         }
         JsonArray entries = JsonUtils.parseArray(response.body());
         List<ServiceInstance> result = new ArrayList<>(entries.size());
@@ -221,9 +230,20 @@ final class ConsulClient {
     private void send(String method, String path, String body) {
         HttpResponse<String> response = exchange(method, path, body);
         if (response.statusCode() / 100 != 2) {
-            throw new IllegalStateException(
-                "Consul " + method + " " + path + " failed: HTTP " + response.statusCode());
+            throw new IllegalStateException(failure(method, path, response));
         }
+    }
+
+    /**
+     * Consul explains a rejection in the response body ("Invalid Service Meta:
+     * ... Key contains invalid characters"), so it travels with the exception —
+     * a bare status code sends the reader to the docs for a fact the agent
+     * already stated.
+     */
+    private static String failure(String method, String path, HttpResponse<String> response) {
+        String detail = response.body() == null ? "" : response.body().strip();
+        return "Consul " + method + " " + path + " failed: HTTP " + response.statusCode()
+            + (detail.isEmpty() ? "" : " — " + detail);
     }
 
     private HttpResponse<String> exchange(String method, String path, String body) {

@@ -71,8 +71,9 @@
   "Name": "{serviceId}",
   "Address": "{endpoint.host}",
   "Port":    "{endpoint.port}",
-  "Meta":  { "scheme": "...", "base-path": "...", ...instance.metadata },
-  "Check": { "TTL": "15s", "DeregisterCriticalServiceAfter": "1m" }
+  "Meta":  { "freeway-scheme": "...", "freeway-base-path": "...", ...instance.metadata },
+  "Check": { "CheckID": "{serviceId}:{instanceId}", "TTL": "15s",
+             "Status": "passing", "DeregisterCriticalServiceAfter": "1m" }
 }
 ```
 
@@ -86,6 +87,19 @@
   "live and ready" 契约一致。
 - **`metadata`**：`ServiceInstance.metadata` ↔ Consul `Service.Meta`（字符串 map，天然对齐）。
 - **`Endpoint.scheme` / `basePath` 落 `Meta`**（见 §4，这是保真要求，非可选）。
+
+### 3.1 真机验证修正（对活 Consul agent 跑通后补）
+
+以下四点只有对真实 agent 才暴露，stub 测不出：
+
+1. **`Meta` 键不能含 `.`** —— Consul 直接 400：`Key contains invalid characters`。
+   故保留键用连字符：`freeway-instance-id` / `freeway-scheme` / `freeway-base-path`。
+2. **TTL check 初始为 `critical`** —— 不设 `"Status": "passing"` 的话，注册后到首次心跳
+   之间 `?passing=true` 查不到该实例，等于每次(重)启动有一整个 renew 周期的发现盲区。
+3. **check id 必须显式** —— Consul 给服务内联 check 派生的 id 是 `service:{serviceID}`，
+   而 renew 传的是服务 id；不写 `"CheckID"` 则 `check/pass` 一律 404。适配写入显式 `CheckID`。
+4. **错误必须带响应体** —— Consul 把拒绝原因写在 body 里（如上面的 Meta 报错）；只抛状态码
+   会让人去查文档，而 agent 已经说清了。
 
 ## 4. `scheme` / `basePath` 为何必须保留（代码事实）
 
@@ -103,7 +117,7 @@ URI.create(scheme + "://" + host + ":" + port + basePath)
 Consul 原生只有 `Address` + `Port`。**丢掉 `scheme`/`basePath` 不是简化，是静默出错**：
 https 服务会被 http 调用、路径前缀服务会 404。
 
-**做法（保持简约）**：写入 Consul `Meta` 的 `scheme` / `base-path` 两个键；
+**做法（保持简约）**：写入 Consul `Meta` 的 `freeway-scheme` / `freeway-base-path` 两个键；
 **当 `http` 且 basePath 为空时直接省略**；读回时缺省即 `http` / `""`。
 普通服务 payload 因此与"丢掉"方案完全一致干净，少数服务不被弄坏。
 
@@ -161,7 +175,7 @@ freeway-cloud-consul/
 
 | 层 | 方式 |
 |---|---|
-| 单元 | JDK `com.sun.net.httpserver.HttpServer` **stub Consul agent**，断言请求路径/body，以及 `renew` 404→false、`instances` 解析（含 `Meta` 缺省回退 `http`/`""`） |
+| 单元 | JDK `com.sun.net.httpserver.HttpServer` **stub Consul agent**，断言请求路径/body（含 `CheckID`/`Status`）、`renew` 404→false 与非 2xx 抛、`instances` 解析（含 `Meta` 缺省回退 `http`/`""`）与畸形条目跳过 |
 | 契约 | "注册→发现→续约→注销→发现为空"闭环；本地起真 consul 二进制（无则 `assumeTrue` 跳过，与 ext 现有 Kafka 测试的门控一致） |
 | 集成 | `FreewayApp` + `ConsulModule.primary()`，断言 `isActiveBinding(ServiceRegistry, Local.class)==false`、`BackendTypeGuard` 不再告警、`/health/ready` 反映 renew 结果 |
 

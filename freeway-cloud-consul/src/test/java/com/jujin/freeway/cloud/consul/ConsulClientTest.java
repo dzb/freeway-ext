@@ -4,6 +4,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.cloud.discovery.Endpoint;
@@ -177,6 +178,29 @@ class ConsulClientTest {
         new ConsulClient(wiring()).register(
             ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080)));
         assertNull(token.get());
+    }
+
+    @Test
+    void renewThrowsOnAnUnexpectedStatusRatherThanClaimingNotHeld() {
+        ConsulClient client = new ConsulClient(wiring());
+        renewStatus = 500;
+        // 403/5xx is "could not determine", not "not held" — the core marks the
+        // node unhealthy on the throw instead of looping a failing re-register.
+        assertThrows(IllegalStateException.class, () -> client.renew("order", "i1"));
+    }
+
+    @Test
+    void instancesSkipsAnEntryWithNoRoutableAddress() {
+        instancesBody = "[{\"Service\":{\"ID\":\"order:i1\",\"Name\":\"order\","
+            + "\"Address\":\"\",\"Port\":0}},"
+            + "{\"Service\":{\"ID\":\"order:i2\",\"Name\":\"order\","
+            + "\"Address\":\"10.0.0.2\",\"Port\":8080}}]";
+
+        List<ServiceInstance> found = new ConsulClient(wiring()).instances("order");
+
+        // One unroutable entry must not abort discovery for the whole service.
+        assertEquals(1, found.size());
+        assertEquals("i2", found.get(0).instanceId());
     }
 
     @Test

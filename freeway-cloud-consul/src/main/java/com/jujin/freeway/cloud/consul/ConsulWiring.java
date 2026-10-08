@@ -21,7 +21,7 @@ import java.util.Objects;
  *                    stop routing here — answered to
  *                    {@code freeway.cloud.registry.shutdown-drain=auto}
  */
-public record ConsulWiring(
+record ConsulWiring(
     String agentHost,
     int agentPort,
     String scheme,

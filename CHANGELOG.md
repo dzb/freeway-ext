@@ -31,7 +31,13 @@
   an https or path-prefixed service); application metadata is copied verbatim. **No third-party
   client** — the agent's HTTP API is reached with the JDK `HttpClient`. Config keys are
   `freeway.cloud.consul.{agent-host,agent-port,scheme,token,ttl,drain-window}`, declared in the
-  module's `ConfigKeys` and contributed to the unknown-key vocabulary. 9 tests against a stubbed
+  module's `ConfigKeys` and contributed to the unknown-key vocabulary. `renew` distinguishes
+  "the agent no longer holds it" (404 → `false`, core re-registers) from "could not determine"
+  (any other non-2xx → throws, core marks the node unhealthy and logs) rather than treating a
+  403 or 5xx as a lost lease; a health entry Consul holds without a routable `Address`/`Port`
+  is skipped with a warning instead of aborting discovery for the whole service. The four
+  collaborators are package-private — only `ConsulModule` is public, since no public signature
+  names the others. 9 tests against a stubbed
   agent plus container replacement, and a gated `ConsulIntegrationTest` (`FREEWAY_TEST_CONSUL`,
   default `127.0.0.1:8500`): adapter round-trip and a real `FreewayApp` whose lifecycle hook
   registers/deregisters through Consul. Design: `docs/consul-adapter-design.md`.

@@ -11,7 +11,7 @@ import java.util.Objects;
  * {@code ?passing=true} — which is the seam's own contract ("live and ready"),
  * not a knob.
  */
-public final class ConsulServiceDiscovery implements ServiceDiscovery {
+final class ConsulServiceDiscovery implements ServiceDiscovery {
 
     private final ConsulClient client;
 

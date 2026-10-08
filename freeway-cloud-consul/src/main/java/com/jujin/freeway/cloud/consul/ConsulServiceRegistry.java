@@ -11,7 +11,7 @@ import java.util.Objects;
  * lease and shutdown ordering stay in the core's {@code RegistryLifecycleHook}
  * — this type only answers the four operations.
  */
-public final class ConsulServiceRegistry implements ServiceRegistry {
+final class ConsulServiceRegistry implements ServiceRegistry {
 
     private final ConsulClient client;
     private final Duration drainWindow;

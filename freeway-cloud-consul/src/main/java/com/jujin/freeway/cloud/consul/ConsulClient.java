@@ -20,6 +20,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * The Consul agent's HTTP API, wrapped in the four operations the discovery
  * seam needs. JDK {@link HttpClient} only — no third-party Consul client,
@@ -40,7 +43,9 @@ import java.util.Objects;
  * keeps them from colliding with the application's own metadata, copied
  * verbatim.
  */
-public final class ConsulClient {
+final class ConsulClient {
+
+    private static final Logger LOG = LoggerFactory.getLogger(ConsulClient.class);
 
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
     private static final String TOKEN_HEADER = "X-Consul-Token";
@@ -86,7 +91,18 @@ public final class ConsulClient {
     public boolean renew(String serviceId, String instanceId) {
         HttpResponse<String> response = exchange("PUT",
             "/v1/agent/check/pass/" + segment(consulId(serviceId, instanceId)), null);
-        return response.statusCode() / 100 == 2;
+        int status = response.statusCode();
+        if (status / 100 == 2) {
+            return true;
+        }
+        if (status == 404) {
+            return false; // the agent does not know this check — re-register
+        }
+        // Anything else (403 on a bad token, 5xx) is "could not determine", not
+        // "not held": throwing lets the core's heartbeat mark the node unhealthy
+        // and log it, instead of looping a re-register that will fail the same way.
+        throw new IllegalStateException(
+            "Consul renew for '" + consulId(serviceId, instanceId) + "' failed: HTTP " + status);
     }
 
     /** Removes the instance from the agent. */
@@ -107,18 +123,29 @@ public final class ConsulClient {
         JsonArray entries = JsonUtils.parseArray(response.body());
         List<ServiceInstance> result = new ArrayList<>(entries.size());
         for (int i = 0; i < entries.size(); i++) {
-            JsonObject service = entries.getObject(i).getObject("Service");
+            JsonObject entry = entries.getObject(i);
+            JsonObject service = entry == null ? null : entry.getObject("Service");
             if (service == null) {
                 continue;
             }
-            result.add(toInstance(serviceId, service));
+            String address = service.getString("Address");
+            Integer port = service.getInt("Port");
+            if (address == null || address.isBlank() || port == null || port <= 0) {
+                // One instance Consul holds without a routable address must not
+                // abort discovery for the whole service.
+                LOG.warn("Skipping Consul instance with no routable address:port (ID={})",
+                    service.getString("ID"));
+                continue;
+            }
+            result.add(toInstance(serviceId, service, address, port));
         }
         return List.copyOf(result);
     }
 
     // ==================== mapping ====================
 
-    private static ServiceInstance toInstance(String serviceId, JsonObject service) {
+    private static ServiceInstance toInstance(
+            String serviceId, JsonObject service, String address, int port) {
         String consulId = service.getString("ID");
         JsonObject meta = service.getObject("Meta");
         Map<String, String> metadata = new LinkedHashMap<>();
@@ -145,8 +172,7 @@ public final class ConsulClient {
         }
         Endpoint endpoint = Endpoint.of(
             scheme == null || scheme.isBlank() ? "http" : scheme,
-            service.getString("Address"),
-            service.getInt("Port"),
+            address, port,
             basePath == null ? "" : basePath);
         return ServiceInstance.of(serviceId, instanceId, endpoint, metadata);
     }

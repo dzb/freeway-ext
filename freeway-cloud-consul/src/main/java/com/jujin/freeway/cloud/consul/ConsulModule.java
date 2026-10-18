@@ -21,10 +21,17 @@ import java.time.Duration;
  * freeway.cloud.registry.shutdown-drain=auto}. All of that follows from the interface, so it is
  * driven by the core, not copied.
  *
- * <p>Enable by placing the module; the {@code freeway.cloud.registry.type} / {@code
- * freeway.cloud.discovery.type} keys are what {@code BackendTypeGuard} reads to warn when an
- * external type is configured without an adapter — once this module is placed the warning is
- * suppressed because the setting is honored.
+ * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least
+ * {@code CloudDiscoveryModule} and the HTTP module): the
+ * registration/renewal/deregistration lifecycle and the {@code /health/ready} registry check live
+ * in {@code CloudDiscoveryModule}, and a primary registry binding without it is registered
+ * nowhere. It cannot declare that as a submodule because the container holds one declaration per
+ * module class — a user placing both would be a duplicate, not a bundle.
+ *
+ * <p>The {@code freeway.cloud.registry.type} / {@code freeway.cloud.discovery.type} keys are
+ * advisory: this module does not read them (the binding is the choice — placing the module is what
+ * selects Consul). {@code BackendTypeGuard} stops warning once the local binding is replaced,
+ * because from then on an external backend is genuinely in use.
  */
 public final class ConsulModule implements ModuleEx {
 

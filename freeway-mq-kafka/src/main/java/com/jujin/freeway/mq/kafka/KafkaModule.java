@@ -111,7 +111,12 @@ public final class KafkaModule implements ModuleEx {
      */
     public static final String TOPICS = "freeway.kafka.topics";
 
-    /** Extra Kafka client properties as {@code key=value} pairs separated by semicolons. */
+    /**
+     * Extra Kafka client properties as {@code key=value} pairs separated by semicolons.
+     * The client keys the adapter owns (bootstrap servers, group, (de)serializers,
+     * {@code enable.auto.commit}, {@code auto.offset.reset}) are refused at startup rather
+     * than silently overriding the delivery semantics.
+     */
     public static final String PROPERTIES = "freeway.kafka.properties";
 
     // ── Delivery semantics ──────────────────────────────────────

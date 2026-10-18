@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -64,6 +65,24 @@ public record KafkaConfig(
   }
 
   private static final String PROCESS_ORIGIN = UUID.randomUUID().toString();
+
+  /**
+   * Kafka client properties the adapter sets for itself. {@code freeway.kafka.properties} may not
+   * override them: {@code enable.auto.commit=true} would let Kafka advance offsets behind the
+   * subscriber's explicit commit (silently degrading at-least-once to at-most-once), and the
+   * deserializer/group/cluster keys would make the running consumer disagree with the config,
+   * origin and own-suppression the adapter reasons about.
+   */
+  private static final Set<String> RESERVED_CLIENT_PROPERTIES =
+      Set.of(
+          "bootstrap.servers",
+          "group.id",
+          "key.deserializer",
+          "value.deserializer",
+          "key.serializer",
+          "value.serializer",
+          "enable.auto.commit",
+          "auto.offset.reset");
 
   // ── Key declarations: name, type and default stated exactly once ──
   private static final SymbolSpec<String> BOOTSTRAP_SERVERS =
@@ -160,7 +179,7 @@ public record KafkaConfig(
         clientId,
         parseList(topicsRaw),
         poisonPolicy,
-        parseProperties(propertiesRaw),
+        validatedExtraProperties(propertiesRaw),
         dlqTopic,
         maxRetries,
         retryBackoffMs,
@@ -204,6 +223,20 @@ public record KafkaConfig(
    * Parses extra Kafka client properties in {@code key=value} pairs separated by semicolons (e.g.
    * {@code security.protocol=SASL_SSL;sasl.mechanism=PLAIN}).
    */
+  /** Parses {@code freeway.kafka.properties} and refuses the keys the adapter owns. */
+  private static Properties validatedExtraProperties(String raw) {
+    Properties props = parseProperties(raw);
+    for (String key : props.stringPropertyNames()) {
+      if (RESERVED_CLIENT_PROPERTIES.contains(key)) {
+        throw new IllegalArgumentException(
+            "freeway.kafka.properties may not set '"
+                + key
+                + "': the adapter owns it (auto-commit, group/cluster and (de)serializers)");
+      }
+    }
+    return props;
+  }
+
   private static Properties parseProperties(String raw) {
     var props = new Properties();
     if (raw == null || raw.isBlank()) {

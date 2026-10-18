@@ -48,6 +48,10 @@ class KafkaEventsIntegrationTest {
     publisher = new KafkaEvents(publisherConfig, new JsonCodecDefault());
     subscriberPlane = new KafkaEvents(subscriberConfig, new JsonCodecDefault());
     subscriberPlane.start();
+    // The publisher must poll too: own-origin suppression is observed on a
+    // consuming plane, and a publisher that never starts leaves this test
+    // asserting nothing (the mock test pins the same behaviour at unit level).
+    publisher.start();
     // Allow the consumer group to join and the topic to be created.
     Thread.sleep(2000);
   }

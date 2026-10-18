@@ -211,4 +211,29 @@ class KafkaConfigTest {
   void dedupCapacityDefaultsToOff() {
     assertEquals(0, config("orders", "skip").dedupCapacity());
   }
+
+  @Test
+  void extraPropertiesMayNotOverrideTheAdapterOwnedClientKeys() {
+    // Silent override is the dangerous kind: enable.auto.commit=true lets Kafka
+    // advance offsets behind the subscriber's explicit commit, so a "successful"
+    // consume would lose the record that a handler failure was supposed to retry.
+    var ex =
+        assertThrows(
+            IllegalArgumentException.class,
+            () ->
+                KafkaConfig.of(
+                    "localhost:9092",
+                    "g",
+                    "c",
+                    "t",
+                    "skip",
+                    "enable.auto.commit=true",
+                    "",
+                    1,
+                    1000,
+                    1,
+                    true,
+                    0));
+    assertTrue(ex.getMessage().contains("enable.auto.commit"), ex.getMessage());
+  }
 }

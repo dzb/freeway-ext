@@ -1,4 +1,6 @@
 # Changelog
+
+### Fixed
 ### Fixed
 
 - **`freeway.kafka.properties` 不能覆盖适配器自有的客户端键**：`enable.auto.commit=true` 会让

@@ -1,7 +1,6 @@
 # Changelog
 
 ### Fixed
-### Fixed
 
 - **`freeway.kafka.properties` 不能覆盖适配器自有的客户端键**：`enable.auto.commit=true` 会让
   Kafka 在订阅方的显式 commit 之外推进 offset，把 handler 失败重试的 at-least-once 静默降成

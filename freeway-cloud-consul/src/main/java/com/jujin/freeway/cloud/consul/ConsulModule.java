@@ -16,10 +16,11 @@ import java.time.Duration;
  *
  * <p>Nothing else is re-implemented. The core's {@code RegistryLifecycleHook} registers on start,
  * renews, re-registers on a lost lease and unregisters on stop; its {@code
- * RegistryHealthContributor} deactivates itself because the active binding is no longer
- * {@code @Local}; {@code drainWindow()} here feeds {@code
- * freeway.cloud.registry.shutdown-drain=auto}. All of that follows from the interface, so it is
- * driven by the core, not copied.
+ * RegistryHealthContributor} keeps answering {@code /health/ready} with the registration, renewal
+ * and draining state it observed, whichever registry is bound — that state is the core's, not the
+ * backend's, so binding this module does not remove the check; {@code drainWindow()} here feeds
+ * {@code freeway.cloud.registry.shutdown-drain=auto}. All of that follows from the interface, so it
+ * is driven by the core, not copied.
  *
  * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least
  * {@code CloudDiscoveryModule} and the HTTP module): the

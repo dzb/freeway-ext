@@ -22,8 +22,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The Consul agent's HTTP API, wrapped in the four operations the discovery seam needs. JDK {@link
- * HttpClient} only — no third-party Consul client, matching the core's dependency discipline.
+ * The Consul agent's HTTP API, wrapped in the operations the discovery seam needs: register with
+ * its probe state, renew, publish readiness, and unregister. JDK {@link HttpClient} only — no
+ * third-party Consul client, matching the core's dependency discipline.
  *
  * <p>The wire format is Consul's, so it is built and read with the static {@link JsonUtils} rather
  * than the application's {@code JsonCodec}: an injected codec exists to serve the application's
@@ -64,8 +65,18 @@ final class ConsulClient {
     this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
   }
 
-  /** Registers (or re-registers) the instance, arming its TTL check. */
+  /** Registers (or re-registers) the instance, arming its TTL check as passing. */
   public void register(ServiceInstance instance) {
+    register(instance, true);
+  }
+
+  /**
+   * Registers (or re-registers) the instance with the probe state the caller can already name: a
+   * warming instance registers with a critical check, so it is in Consul but not in the
+   * passing-only discovery result — the one-write ordering {@code
+   * ServiceRegistry.register(instance, Health)} exists for.
+   */
+  public void register(ServiceInstance instance, boolean ready) {
     Objects.requireNonNull(instance, "instance");
     JsonObject check =
         JsonUtils.object()
@@ -73,10 +84,11 @@ final class ConsulClient {
             // and renew (which passes the service id) would miss it.
             .put("CheckID", consulId(instance))
             .put("TTL", wiring.ttl().toSeconds() + "s")
-            // A TTL check starts critical, so without this the instance is
-            // undiscoverable from register until the first heartbeat — up to a
-            // full renew interval of blackout on every (re)start.
-            .put("Status", "passing")
+            // A TTL check starts critical, so a ready instance registers passing
+            // and is discoverable immediately (without it: up to a full renew
+            // interval of blackout on every restart). A warming one stays
+            // critical on purpose — in Consul, not in discovery.
+            .put("Status", ready ? "passing" : "critical")
             .put("DeregisterCriticalServiceAfter", DEREGISTER_CRITICAL_AFTER);
     JsonObject body =
         JsonUtils.object()
@@ -90,30 +102,53 @@ final class ConsulClient {
   }
 
   /**
-   * Heartbeat. {@code false} means the agent no longer holds the instance (evicted, TTL expired,
-   * agent restarted) — the contract the core reads as "re-register me".
+   * Publishes readiness by flipping the TTL check: passing is discoverable, critical is not. Same
+   * answer shape as {@link #renew}: {@code false} means the agent does not hold the check (the
+   * caller's heartbeat re-registers), and an indeterminate failure throws instead of looping.
    */
-  public boolean renew(String serviceId, String instanceId) {
+  public boolean markReady(ServiceInstance instance, boolean ready) {
+    Objects.requireNonNull(instance, "instance");
+    return updateCheck(ready ? "pass" : "fail", consulId(instance), "readiness update");
+  }
+
+  /**
+   * One TTL-check write: {@code pass} or {@code fail} for {@code checkId}. Renewal and readiness
+   * are the same endpoint with a different action, so the status handling — and the rule that 404
+   * means "the agent does not hold it" while anything else is indeterminate — lives once.
+   */
+  private boolean updateCheck(String action, String checkId, String operation) {
     HttpResponse<String> response =
-        exchange("PUT", "/v1/agent/check/pass/" + segment(consulId(serviceId, instanceId)), null);
+        exchange("PUT", "/v1/agent/check/" + action + "/" + segment(checkId), null);
     int status = response.statusCode();
     if (status / 100 == 2) {
       return true;
     }
     if (status == 404) {
-      return false; // the agent does not know this check — re-register
+      LOG.debug("Consul check {} is gone; the heartbeat re-registers it", checkId);
+      return false;
     }
-    // Anything else (403 on a bad token, 5xx) is "could not determine", not
-    // "not held": throwing lets the core's heartbeat mark the node unhealthy
-    // and log it, instead of looping a re-register that will fail the same way.
     throw new IllegalStateException(
-        "Consul renew for '"
-            + consulId(serviceId, instanceId)
+        "Consul "
+            + operation
+            + " for '"
+            + checkId
             + "' failed: HTTP "
             + status
             + (response.body() == null || response.body().isBlank()
                 ? ""
                 : " — " + response.body().strip()));
+  }
+
+  /**
+   * Heartbeat. {@code false} means the agent no longer holds the instance (evicted, TTL expired,
+   * agent restarted) — the contract the core reads as "re-register me".
+   */
+  public boolean renew(String serviceId, String instanceId) {
+    // 404 means "not held" and the caller re-registers; anything else (403 on a
+    // bad token, 5xx) is "could not determine": throwing lets the core's
+    // heartbeat mark the node unhealthy instead of looping a re-register that
+    // will fail the same way.
+    return updateCheck("pass", consulId(serviceId, instanceId), "renew");
   }
 
   /** Removes the instance from the agent. */

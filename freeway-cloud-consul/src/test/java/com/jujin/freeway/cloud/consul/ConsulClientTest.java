@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.cloud.discovery.Endpoint;
+import com.jujin.freeway.cloud.discovery.Health;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -62,6 +63,9 @@ class ConsulClientTest {
           } else if (requestPath.startsWith("/v1/agent/check/pass")) {
             status = renewStatus;
             response = "";
+          } else if (requestPath.startsWith("/v1/agent/check/fail")) {
+            status = renewStatus;
+            response = "";
           } else if (requestPath.startsWith("/v1/agent/service/deregister")) {
             status = 200;
             response = "";
@@ -88,6 +92,57 @@ class ConsulClientTest {
 
   private ConsulWiring wiring() {
     return ConsulWiring.defaults().withAgentPort(port);
+  }
+
+  @Test
+  void aWarmingRegistrationArmsItsCheckCritical() {
+    ServiceInstance instance =
+        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+
+    new ConsulClient(wiring()).register(instance, false);
+
+    String sent = body.get();
+    assertTrue(sent.contains("\"Status\":\"critical\""), sent);
+    assertFalse(sent.contains("\"Status\":\"passing\""), sent);
+  }
+
+  @Test
+  void markReadyFlipsTheCheckBothWays() {
+    ServiceInstance instance =
+        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+    ConsulClient client = new ConsulClient(wiring());
+
+    assertTrue(client.markReady(instance, true));
+    assertEquals("PUT", method.get());
+    assertTrue(path.get().startsWith("/v1/agent/check/pass/order:i1"), path.get());
+
+    assertTrue(client.markReady(instance, false));
+    assertTrue(path.get().startsWith("/v1/agent/check/fail/order:i1"), path.get());
+  }
+
+  @Test
+  void markReadyAnswersFalseWhenTheAgentDoesNotHoldTheCheck() {
+    // renew and markReady(true) share Consul's pass endpoint, so one status
+    // control governs "the agent does not know this check".
+    renewStatus = 404;
+    ServiceInstance instance =
+        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+
+    assertFalse(new ConsulClient(wiring()).markReady(instance, true));
+  }
+
+  @Test
+  void theRegistryForwardsHealthAndReadinessToTheCheck() {
+    ServiceInstance instance =
+        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+    ConsulServiceRegistry registry =
+        new ConsulServiceRegistry(new ConsulClient(wiring()), wiring());
+
+    registry.register(instance, Health.starting());
+    assertTrue(body.get().contains("\"Status\":\"critical\""), body.get());
+
+    registry.markReady(instance, true);
+    assertTrue(path.get().startsWith("/v1/agent/check/pass/order:i1"), path.get());
   }
 
   @Test

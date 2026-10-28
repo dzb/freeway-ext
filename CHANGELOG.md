@@ -2,6 +2,18 @@
 
 ### Fixed
 
+- **入站头上限 `maxHeaderBytes` 之前是两个引擎各自的常量**：Undertow 硬编码
+  `MAX_HEADER_SIZE=8192`；Jetty 的明文分支用裸 `ServerConnector`，连共享 `HttpConfiguration` 都
+  没建，所以这个新字段（默认 16 KiB）在两个适配器上都不生效、也不报告。现在 Undertow 接
+  `MAX_HEADER_SIZE` 并同值映射 h2 的 `HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE`；Jetty 三个分支
+  共用一份 `HttpConfiguration.setRequestHeaderSize`（明文分支也走 `HttpConnectionFactory`，不再
+  让 Jetty 默认值顶替共享配置）。testkit 新增 `HeaderBudgetContract`：1 KiB 预算拒绝 4 KiB 头、
+  16 KiB 预算接受 4 KiB 头，两个引擎各自继承。
+- **Consul 没有实现 readiness 接缝**：`register(instance, Health)` 走接口默认实现，
+  `ConsulClient.register` 把 TTL check 写成 `passing` —— 未就绪实例注册即可被发现；
+  `markReady` 是默认 no-op，core 的就绪门对 Consul 完全失效。现在按 `Health.ready()` 写
+  `passing`/`critical`，`markReady` 调 `/v1/agent/check/pass|fail`（404 回答 false，让心跳
+  重新注册；其它非 2xx 抛出让 core 记为 unhealthy），并补了 starting→passing 的测试。
 - **`freeway.kafka.properties` 不能覆盖适配器自有的客户端键**：`enable.auto.commit=true` 会让
   Kafka 在订阅方的显式 commit 之外推进 offset，把 handler 失败重试的 at-least-once 静默降成
   at-most-once；group/cluster/(de)serializer 同理。启动期拒绝并点名 key。

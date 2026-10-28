@@ -163,9 +163,13 @@ public final class UndertowHttpEngine implements HttpEngine {
             // request header would be dropped on the floor.
             .setServerOption(UndertowOptions.IDLE_TIMEOUT, readTimeoutMillis(config))
             .setServerOption(UndertowOptions.REQUEST_PARSE_TIMEOUT, readTimeoutMillis(config))
-            // The built-in engine's HTTP/1 parser budget (Http1xParser): the same
-            // request must not be accepted by one engine and rejected by another.
-            .setServerOption(UndertowOptions.MAX_HEADER_SIZE, 8192)
+            // The shared inbound header budget (HttpServerConfig.maxHeaderBytes):
+            // HTTP/1.1's header block and HTTP/2's advertised-and-enforced header
+            // list, so the same request is not accepted by one engine and rejected
+            // by the other (or by the built-in engine on another protocol).
+            .setServerOption(UndertowOptions.MAX_HEADER_SIZE, config.maxHeaderBytes())
+            .setServerOption(
+                UndertowOptions.HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE, config.maxHeaderBytes())
             .setServerOption(UndertowOptions.MAX_ENTITY_SIZE, config.maxBodySize())
             .setServerOption(UndertowOptions.MULTIPART_MAX_ENTITY_SIZE, config.maxBodySize());
     if (config.backlog() > 0) {

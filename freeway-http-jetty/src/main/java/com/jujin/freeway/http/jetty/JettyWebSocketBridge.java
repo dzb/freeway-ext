@@ -54,7 +54,7 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
       Map<String, List<String>> queryParams,
       Map<String, List<String>> headers) {
     this.match = Objects.requireNonNull(match, "match");
-    // Null is fine: ExchangeMetaDefault auto-generates when blank.
+    // Null is fine: ExchangeMetaImpl auto-generates when blank.
     this.correlationId = correlationId;
     this.method = Objects.requireNonNull(method, "method");
     this.path = Objects.requireNonNull(path, "path");

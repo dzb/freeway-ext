@@ -22,12 +22,12 @@ import java.time.Duration;
  * {@code freeway.cloud.registry.shutdown-drain=auto}. All of that follows from the interface, so it
  * is driven by the core, not copied.
  *
- * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least
- * {@code CloudDiscoveryModule} and the HTTP module): the
- * registration/renewal/deregistration lifecycle and the {@code /health/ready} registry check live
- * in {@code CloudDiscoveryModule}, and a primary registry binding without it is registered
- * nowhere. It cannot declare that as a submodule because the container holds one declaration per
- * module class — a user placing both would be a duplicate, not a bundle.
+ * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least {@code
+ * CloudDiscoveryModule} and the HTTP module): the registration/renewal/deregistration lifecycle and
+ * the {@code /health/ready} registry check live in {@code CloudDiscoveryModule}, and a primary
+ * registry binding without it is registered nowhere. It cannot declare that as a submodule because
+ * the container holds one declaration per module class — a user placing both would be a duplicate,
+ * not a bundle.
  *
  * <p>The {@code freeway.cloud.registry.type} / {@code freeway.cloud.discovery.type} keys are
  * advisory: this module does not read them (the binding is the choice — placing the module is what

@@ -37,6 +37,11 @@ mvn spotless:check                           # format gate — not part of `mvn 
   `mvn -o spotless:check` when there is no network.
 - **Never run two builds over the same modules at once** — they share `target/`, and an
   incremental compile keeps the previous class, which turns an ABI break green.
+- **A core change is verified only by a `clean` build here**: when core changes but ext
+  sources do not, an incremental build sees "nothing to compile" and reuses the old
+  `target/classes`, so a removed/renarrowed core type surfaces later as
+  `NoSuchMethodError`/`IllegalAccessError` in a test run — or not at all. `mvn -o clean test`
+  after installing core is the only proof.
 
 ## Module Map
 
@@ -91,7 +96,8 @@ exception — comparing engines requires both of them — and it is excluded fro
 JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 
 - **A new engine passes the testkit contracts** (`CompressionContract`,
-  `ContextContract`, `RemoteRpcContract`) instead of copying another adapter's tests.
+  `ContextContract`, `HeaderBudgetContract`, `RemoteRpcContract`,
+  `WebSocketUpgradeContract`) instead of copying another adapter's tests.
   `EngineFixture` assembles the server through `HttpModule` and `Pipelines`, so a
   contract cannot depend on one engine's assembly style.
 - **Tests that need a real service are gated by an environment variable**

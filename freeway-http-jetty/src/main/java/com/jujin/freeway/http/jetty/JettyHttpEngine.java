@@ -240,7 +240,12 @@ public final class JettyHttpEngine implements HttpEngine {
     boolean h2c =
         !sslEnabled && Boolean.parseBoolean(symbols.resolve("freeway.http.http2", "false"));
     if (!sslEnabled && !h2c) {
-      return new ServerConnector(server);
+      // The plaintext branch still needs the shared configuration: a bare
+      // ServerConnector would run on Jetty's own defaults and silently ignore
+      // maxHeaderBytes (and every other knob set on an HttpConfiguration).
+      HttpConfiguration plain = new HttpConfiguration();
+      plain.setRequestHeaderSize(config.maxHeaderBytes());
+      return new ServerConnector(server, new HttpConnectionFactory(plain));
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
@@ -272,6 +277,10 @@ public final class JettyHttpEngine implements HttpEngine {
         ssl.setCertAlias(alias);
       }
       HttpConfiguration https = new HttpConfiguration();
+      // The shared inbound header budget (HttpServerConfig.maxHeaderBytes). The
+      // same configuration feeds the HTTP/1.1 and HTTP/2 factories, so one line
+      // covers both protocols and both ALPN branches.
+      https.setRequestHeaderSize(config.maxHeaderBytes());
       https.addCustomizer(new SecureRequestCustomizer());
       HttpConnectionFactory http11 = new HttpConnectionFactory(https);
       if (alpnHttp2) {
@@ -287,10 +296,11 @@ public final class JettyHttpEngine implements HttpEngine {
       return new ServerConnector(
           server, new SslConnectionFactory(ssl, http11.getProtocol()), http11);
     }
-    // h2c: HTTP/2 over cleartext.
-    HttpConfiguration http = new HttpConfiguration();
+    // h2c: HTTP/2 over cleartext, on a shared configuration like the TLS branch.
+    HttpConfiguration cleartext = new HttpConfiguration();
+    cleartext.setRequestHeaderSize(config.maxHeaderBytes());
     return new ServerConnector(
-        server, new HttpConnectionFactory(http), new HTTP2CServerConnectionFactory(http));
+        server, new HttpConnectionFactory(cleartext), new HTTP2CServerConnectionFactory(cleartext));
   }
 
   /** Splits a comma-separated property value into trimmed, non-empty tokens. */

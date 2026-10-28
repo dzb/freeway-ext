@@ -27,6 +27,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -137,6 +138,62 @@ public abstract class ContextContract extends EngineFixture {
   }
 
   @Test
+  void requestHeaderNamesAreReportedLowercase() throws Exception {
+    // The RequestView contract says headers() keys are lowercase, and both
+    // engines achieve it by canonicalizing at their context boundary — inside
+    // the engine, not in a shared wrapper. A new engine can therefore silently
+    // skip it, so the map shape is a contract, not an implementation detail.
+    try (var server = start(Pipelines.of(routes()))) {
+      var response =
+          HttpClients.plain()
+              .send(
+                  HttpRequest.newBuilder(uri(server, "/header-names"))
+                      .header("X-Trace-Id", "t-1")
+                      .GET()
+                      .build(),
+                  HttpResponse.BodyHandlers.ofString());
+      String names = response.body();
+      assertTrue(
+          names.contains("x-trace-id"),
+          engineName() + " must report the header under its lowercase name, got: " + names);
+      assertEquals(
+          names.toLowerCase(Locale.ROOT),
+          names,
+          engineName() + " must report every header name lowercase, got: " + names);
+    }
+  }
+
+  @Test
+  void aBodylessStatusCarriesNoContentLengthEvenWhenTheHandlerSetsOne() throws Exception {
+    // RFC 9110 §8.6: 204/205/304 must not carry Content-Length. The shared
+    // output path decides this, but each engine writes its own wire headers —
+    // a handler-set value must not leak past the engine's writer.
+    try (var server =
+        start(
+            Pipelines.of(
+                List.of(
+                    Route.get(
+                        "/nobody",
+                        ctx -> {
+                          ctx.setHeader("Content-Length", "5");
+                          ctx.send(204, "");
+                        }))))) {
+      var response =
+          HttpClients.plain()
+              .send(
+                  HttpRequest.newBuilder(uri(server, "/nobody")).GET().build(),
+                  HttpResponse.BodyHandlers.ofString());
+      assertEquals(204, response.statusCode());
+      assertTrue(
+          response.headers().firstValue("content-length").isEmpty(),
+          engineName()
+              + " must drop Content-Length on a 204 (got headers "
+              + response.headers().map()
+              + ")");
+    }
+  }
+
+  @Test
   void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
     // maxBodySize must answer the same 413 whatever layer trips first: the
     // shared AbstractHttpContext.readBody accounting, or Undertow's native
@@ -166,6 +223,7 @@ public abstract class ContextContract extends EngineFixture {
   private static List<Route> routes() {
     return List.of(
         Route.get("/ping", ctx -> ctx.send(200, "pong")),
+        Route.get("/header-names", ctx -> ctx.send(200, String.join(",", ctx.headers().keySet()))),
         Route.get("/id", ctx -> ctx.send(200, ctx.correlationId())),
         Route.get(
             "/facts",

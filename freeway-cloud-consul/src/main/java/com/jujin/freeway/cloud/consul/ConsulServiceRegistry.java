@@ -1,5 +1,6 @@
 package com.jujin.freeway.cloud.consul;
 
+import com.jujin.freeway.cloud.discovery.Health;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
 import java.time.Duration;
@@ -7,8 +8,8 @@ import java.util.Objects;
 
 /**
  * Consul-backed {@link ServiceRegistry}. Lifecycle, re-registration on a lost lease and shutdown
- * ordering stay in the core's {@code RegistryLifecycleHook} — this type only answers the four
- * operations.
+ * ordering stay in the core's {@code RegistryLifecycleHook} — this type only answers the seam's
+ * operations (registration, readiness, renewal, removal and the drain window).
  */
 final class ConsulServiceRegistry implements ServiceRegistry {
 
@@ -23,6 +24,22 @@ final class ConsulServiceRegistry implements ServiceRegistry {
   @Override
   public void register(ServiceInstance instance) {
     client.register(instance);
+  }
+
+  /**
+   * Registers with the probe state the core hook already knows: a warming instance goes in with a
+   * critical check, so it is in Consul but not in discovery from the first write.
+   */
+  @Override
+  public void register(ServiceInstance instance, Health health) {
+    Objects.requireNonNull(health, "health");
+    client.register(instance, health.ready());
+  }
+
+  /** Flips the TTL check; the core's readiness gate reaches Consul through this. */
+  @Override
+  public void markReady(ServiceInstance instance, boolean ready) {
+    client.markReady(instance, ready);
   }
 
   @Override

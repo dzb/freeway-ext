@@ -4,6 +4,11 @@
 
 ### Fixed
 
+- **发布包不再被 Central 拒绝**：`central-publishing-maven-plugin` 0.11.0 会把
+  `maven-metadata-local.xml` / `_remote.repositories` 一并打进 bundle，Central 看到
+  没有 POM 的目录即拒绝整批（"Bundle has content that does NOT have a .pom file"）。
+  升级到 core 已使用的 0.12.0，插件在打包前清理这些元数据。
+
 - **入站头上限 `maxHeaderBytes` 之前是两个引擎各自的常量**：Undertow 硬编码
   `MAX_HEADER_SIZE=8192`；Jetty 的明文分支用裸 `ServerConnector`，连共享 `HttpConfiguration` 都
   没建，所以这个新字段（默认 16 KiB）在两个适配器上都不生效、也不报告。现在 Undertow 接

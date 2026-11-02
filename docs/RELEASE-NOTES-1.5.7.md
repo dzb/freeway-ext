@@ -41,6 +41,12 @@ placed with `CloudModule` (or at least `CloudDiscoveryModule`); the module's
 documentation now says so. The container declares one module class once, so it
 cannot be a `@SubModule` of the cloud bundle.
 
+## Build
+
+The release uses `central-publishing-maven-plugin` 0.12.0, matching core. 0.11
+put Maven's local metadata files into the bundle and Central rejected the
+bundle; 0.12 removes them before upload.
+
 ## Compatibility
 
 - All ext modules track core `1.5.7`; `freeway.version` and the parent version

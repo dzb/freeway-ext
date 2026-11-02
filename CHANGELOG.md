@@ -1,5 +1,7 @@
 # Changelog
 
+## 1.5.7 - 2026-11-02
+
 ### Fixed
 
 - **入站头上限 `maxHeaderBytes` 之前是两个引擎各自的常量**：Undertow 硬编码

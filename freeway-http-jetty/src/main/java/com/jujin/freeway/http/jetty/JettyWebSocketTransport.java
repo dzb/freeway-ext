@@ -16,20 +16,22 @@
 
 package com.jujin.freeway.http.jetty;
 
-import com.jujin.freeway.http.websocket.AbstractWebSocketSession;
+import com.jujin.freeway.http.websocket.WebSocketTransport;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.eclipse.jetty.websocket.api.Callback;
 import org.eclipse.jetty.websocket.api.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Jetty-backed {@link WebSocketSession} with asynchronous frame sends. */
-final class JettyWebSocketSession extends AbstractWebSocketSession {
-  private static final Logger LOG = LoggerFactory.getLogger(JettyWebSocketSession.class);
+/**
+ * Jetty-backed {@link WebSocketTransport} with asynchronous frame sends. The session view
+ * (metadata, request snapshot) is the composed {@code WebSocketSessionSupport} the bridge builds
+ * around this transport.
+ */
+final class JettyWebSocketTransport implements WebSocketTransport {
+  private static final Logger LOG = LoggerFactory.getLogger(JettyWebSocketTransport.class);
   private static final Callback COMPLETION_CALLBACK =
       new Callback() {
         @Override
@@ -47,16 +49,8 @@ final class JettyWebSocketSession extends AbstractWebSocketSession {
   private final Object sendLock = new Object();
   private volatile boolean localCloseRequested;
 
-  JettyWebSocketSession(
-      Session session,
-      String correlationId,
-      String method,
-      String path,
-      Map<String, String> pathVariables,
-      Map<String, List<String>> queryParams,
-      Map<String, List<String>> headers) {
+  JettyWebSocketTransport(Session session) {
     this.session = Objects.requireNonNull(session, "session");
-    super(correlationId, method, path, pathVariables, queryParams, headers);
   }
 
   @Override
@@ -100,7 +94,8 @@ final class JettyWebSocketSession extends AbstractWebSocketSession {
   public void close(int code, String reason) throws IOException {
     localCloseRequested = true;
     // "Initiates a graceful close" per the interface contract — no join.
-    session.close(code, closeReason(reason), completionCallback());
+    // The reason arrives already truncated to 123 bytes by the support object.
+    session.close(code, reason, completionCallback());
   }
 
   boolean localCloseRequested() {

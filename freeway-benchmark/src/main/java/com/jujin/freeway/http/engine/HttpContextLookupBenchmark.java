@@ -18,6 +18,7 @@ package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.HttpContextSupport;
 import com.jujin.freeway.http.HttpServerConfig;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -37,12 +38,13 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 /**
- * JMH benchmark for {@link HttpContextImpl} lookup methods.
+ * JMH benchmark for {@link HttpContextSupport} lookup methods.
  *
- * <p>Uses a real {@link HttpContextImpl} populated via {@code reset()} with realistic request
- * headers and query parameters. This replaces the earlier custom {@code BenchContext} stub that did
- * not reflect the real O(1)-then-O(n) header lookup strategy. It lives in the core {@code
- * http.engine} package because {@code reset()} is package-private.
+ * <p>Uses a real {@link HttpContextSupport} over a real {@link HttpTransportImpl} populated with
+ * realistic request headers and query parameters. This replaces the earlier custom {@code
+ * BenchContext} stub that did not reflect the real O(1)-then-O(n) header lookup strategy. The
+ * exchange is built once in {@code setup}: every benchmark method below is a read, so construction
+ * would only add noise to what is being measured.
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -63,24 +65,32 @@ public class HttpContextLookupBenchmark {
           Map.entry("X-Forwarded-For", List.of("127.0.0.1")),
           Map.entry("Authorization", List.of("Bearer token")));
 
-  private HttpContextImpl ctx;
+  private HttpContextSupport ctx;
 
   @Setup
   public void setup() {
+    var transport =
+        new HttpTransportImpl(
+            "GET",
+            "/users/42",
+            "page=3&q=freeway",
+            REQUEST_HEADERS,
+            InputStream.nullInputStream(),
+            -1,
+            false,
+            OutputStream.nullOutputStream(),
+            true,
+            false,
+            null,
+            "");
     ctx =
-        new HttpContextImpl(
-            new JsonCodecDefault(), new CoercerDefault(), HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    ctx.reset(
-        "GET",
-        "/users/42",
-        "page=3&q=freeway",
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        OutputStream.nullOutputStream(),
-        null,
-        true);
+        new HttpContextSupport(
+            transport,
+            new JsonCodecDefault(),
+            new CoercerDefault(),
+            HttpServerConfig.DEFAULT_MAX_BODY_SIZE,
+            HttpServerConfig.CompressionConfig.DEFAULT,
+            null);
     ctx.setPathVars(Map.of("id", "42"));
   }
 

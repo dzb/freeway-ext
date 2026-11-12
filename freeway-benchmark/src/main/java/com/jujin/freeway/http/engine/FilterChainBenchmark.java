@@ -16,8 +16,11 @@
 
 package com.jujin.freeway.http.engine;
 
+import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.HttpContextSupport;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
@@ -45,11 +48,10 @@ import org.openjdk.jmh.annotations.Warmup;
  * HealthFilter} &rarr; no-op route handler. Request timing is measured by {@code HttpServer} itself
  * rather than a filter.
  *
- * <p>Uses a real {@link HttpContextImpl} (not a stub) so that filter overhead includes real
- * header/body/status operations. It therefore lives in the core {@code http.engine} package: a
- * reused pooled context is only reachable through the package-private {@link
- * HttpContextImpl#reset(String, String, String, String, String, String, String, String, Object[],
- * Object[])}.
+ * <p>Uses a real {@link HttpContextSupport} over a real {@link HttpTransportImpl} (not a stub), so
+ * that filter overhead includes real header/body/status operations plus the per-request exchange
+ * construction production pays — there is no pooled context to reuse since the composition refactor
+ * made the exchange per-request.
  *
  * <p>Three request shapes exercise different filter code paths:
  *
@@ -67,84 +69,69 @@ import org.openjdk.jmh.annotations.Warmup;
 @State(Scope.Benchmark)
 public class FilterChainBenchmark {
 
-  private HttpContextImpl normalCtx;
-  private HttpContextImpl healthCtx;
-  private HttpContextImpl corsCtx;
+  private static final JsonCodec JSON = new JsonCodecDefault();
+  private static final Coercer COERCER = new CoercerDefault();
+
   private RouteHandler chain;
 
   @Setup
   public void setup() {
-    var json = new JsonCodecDefault();
-    var coercer = new CoercerDefault();
-
     // Real filter chain: cors -> health -> noop handler
     var cors = CorsFilter.defaults();
     var health = HealthFilter.defaults();
     RouteHandler noop = ctx -> {};
     RouteHandler h = ctx -> health.doFilter(ctx, noop);
     chain = ctx -> cors.doFilter(ctx, h);
+  }
 
-    // Normal GET /ping — passes through all filters
-    normalCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    normalCtx.reset(
-        "GET",
-        "/ping",
-        null,
-        Map.of("Host", List.of("127.0.0.1")),
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        OutputStream.nullOutputStream(),
-        null,
-        true);
-
-    // Health check request — intercepted by HealthFilter
-    healthCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    healthCtx.reset(
-        "GET",
-        "/healthz",
-        null,
-        Map.of("Host", List.of("127.0.0.1")),
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        OutputStream.nullOutputStream(),
-        null,
-        true);
-
-    // CORS preflight — intercepted by CorsFilter
-    corsCtx = new HttpContextImpl(json, coercer, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    corsCtx.reset(
-        "OPTIONS",
-        "/api/data",
-        null,
-        Map.ofEntries(
-            Map.entry("Host", List.of("127.0.0.1")),
-            Map.entry("Origin", List.of("https://example.com")),
-            Map.entry("Access-Control-Request-Method", List.of("POST"))),
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        OutputStream.nullOutputStream(),
-        null,
-        true);
+  /** A fresh exchange, the shape every request takes in production. */
+  private HttpContextSupport exchange(
+      String method, String path, Map<String, List<String>> headers) {
+    var transport =
+        new HttpTransportImpl(
+            method,
+            path,
+            null,
+            headers,
+            InputStream.nullInputStream(),
+            -1,
+            false,
+            OutputStream.nullOutputStream(),
+            true,
+            false,
+            null,
+            "");
+    return new HttpContextSupport(
+        transport,
+        JSON,
+        COERCER,
+        HttpServerConfig.DEFAULT_MAX_BODY_SIZE,
+        HttpServerConfig.CompressionConfig.DEFAULT,
+        null);
   }
 
   /** Request passes through all filters to the handler. */
   @Benchmark
   public void normalRequest() throws Exception {
-    chain.handle(normalCtx);
+    chain.handle(exchange("GET", "/ping", Map.of("Host", List.of("127.0.0.1"))));
   }
 
   /** HealthFilter matches /healthz and short-circuits with 200 + JSON. */
   @Benchmark
   public void healthCheckMatch() throws Exception {
-    chain.handle(healthCtx);
+    chain.handle(exchange("GET", "/healthz", Map.of("Host", List.of("127.0.0.1"))));
   }
 
   /** CorsFilter intercepts OPTIONS + Access-Control-Request-Method as preflight. */
   @Benchmark
   public void corsPreflight() throws Exception {
-    chain.handle(corsCtx);
+    chain.handle(
+        exchange(
+            "OPTIONS",
+            "/api/data",
+            Map.ofEntries(
+                Map.entry("Host", List.of("127.0.0.1")),
+                Map.entry("Origin", List.of("https://example.com")),
+                Map.entry("Access-Control-Request-Method", List.of("POST")))));
   }
 }

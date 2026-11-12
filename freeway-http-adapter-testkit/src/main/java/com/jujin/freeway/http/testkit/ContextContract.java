@@ -34,8 +34,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * What an engine adapter tells the application about the transport, and what it must forget between
- * two requests: a pooled context has to report TLS honestly and must never carry one request's
- * state into the next.
+ * two requests: the exchange is built per request (a transport plus the composed {@code
+ * HttpContextSupport}), so it has to report TLS honestly and must never carry one request's state
+ * into the next — a shape the lifecycle now guarantees rather than a reset that has to be
+ * remembered.
  */
 public abstract class ContextContract extends EngineFixture {
 
@@ -112,10 +114,10 @@ public abstract class ContextContract extends EngineFixture {
 
   @Test
   void contextStateIsFreshWhenTheRequestDoesNotSendACorrelationId() throws Exception {
-    // The context is pooled per thread and keeps its own correlation id: a
-    // context reused for the next request must not still carry the previous
-    // request's id (an absent X-Request-Id leaves setCorrelationId a no-op, so
-    // only the metadata reset can clear it).
+    // Each request gets its own exchange (transport + HttpContextSupport), so
+    // an absent X-Request-Id must produce a freshly generated id rather than
+    // the previous request's one: there is no reused context that could carry
+    // it over, and the test pins that against a regression to pooling.
     try (var server = start(Pipelines.of(routes()))) {
       var client = HttpClients.plain();
       String base = uri(server, "/id").toString();
@@ -196,10 +198,10 @@ public abstract class ContextContract extends EngineFixture {
   @Test
   void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
     // maxBodySize must answer the same 413 whatever layer trips first: the
-    // shared AbstractHttpContext.readBody accounting, or Undertow's native
-    // MAX_ENTITY_SIZE mapped from the same config (surfaced as the shared
-    // BodyTooLargeException). Never a dropped connection, never a body
-    // truncated to look complete.
+    // shared HttpContextSupport accounting (LimitedInputStream wrapped around
+    // transport.bodyStream()), or Undertow's native MAX_ENTITY_SIZE mapped
+    // from the same config (surfaced as the shared BodyTooLargeException).
+    // Never a dropped connection, never a body truncated to look complete.
     var config = defaultConfig().withMaxBodySize(16);
     try (var server = start(Pipelines.of(routes()), config)) {
       var resp =

@@ -19,6 +19,7 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
+import com.jujin.freeway.http.HttpContextSupport;
 import com.jujin.freeway.http.HttpEngine;
 import com.jujin.freeway.http.HttpModule.ConfigKeys;
 import com.jujin.freeway.http.HttpServerConfig;
@@ -70,12 +71,6 @@ public final class JettyHttpEngine implements HttpEngine {
   private final Coercer coercer;
   private final SymbolSource symbols;
 
-  /**
-   * Built in {@link #start}: a context needs the configured body limit, which only exists once the
-   * server does.
-   */
-  private ThreadLocal<JettyHttpContext> contextPool;
-
   public JettyHttpEngine(JsonCodec jsonCodec, Coercer coercer) {
     this(jsonCodec, coercer, SymbolSource.of(coercer, SymbolProvider.systemProperties()));
   }
@@ -107,10 +102,6 @@ public final class JettyHttpEngine implements HttpEngine {
       throws IOException {
     Objects.requireNonNull(config, "config");
     Objects.requireNonNull(handler, "handler");
-
-    this.contextPool =
-        ThreadLocal.withInitial(
-            () -> new JettyHttpContext(jsonCodec, coercer, config.maxBodySize()));
 
     Server server = new Server();
     ServerConnector connector = buildConnector(server, config);
@@ -174,25 +165,48 @@ public final class JettyHttpEngine implements HttpEngine {
               return handleWebSocket(
                   request, response, callback, handler, correlationId, webSocketContainer);
             }
-            JettyHttpContext ctx = contextPool.get();
-            ctx.reset(request, response, correlationId, callback);
-            ctx.setCompression(config.compression());
+            // One transport + one support object per request: no pool, no reset, and no
+            // per-request state that can survive into the next exchange on this connection.
+            JettyHttpTransport transport = new JettyHttpTransport(request, response, callback);
+            HttpContextSupport ctx =
+                new HttpContextSupport(
+                    transport,
+                    jsonCodec,
+                    coercer,
+                    config.maxBodySize(),
+                    config.compression(),
+                    correlationId);
+            // Echo for tracing only — a hostile value (CR/LF) fails validation and is skipped,
+            // leaving the sanitized header the engine put above in place.
+            try {
+              ctx.setHeader("X-Request-Id", ctx.correlationId());
+            } catch (IllegalArgumentException ignored) {
+              // defense in depth: never let a hostile id break the response head
+            }
             try {
               handler.handle(ctx);
             } catch (Exception ex) {
-              LOG.error("Jetty request failed for {} {}", method(request), path(request), ex);
-              if (!response.isCommitted()) {
-                response.setStatus(500);
-                response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
-                response.write(true, ByteBuffer.wrap(INTERNAL_ERROR_BODY), callback);
-              } else {
-                // Response was already committed by the handler before it
-                // failed; writing a 500 now would throw. Just end the exchange.
-                callback.succeeded();
+              LOG.error("Jetty request failed for {} {}", ctx.method(), ctx.path(), ex);
+              // The support object knows whether the response was committed; once it has been,
+              // the response path owns the callback (completed by writeResponse, or still open
+              // for SSE) and nothing more may be written here.
+              if (!ctx.isResponded()) {
+                if (!response.isCommitted()) {
+                  try {
+                    ctx.setStatus(500)
+                        .setHeader("Content-Type", MediaTypes.TEXT_PLAIN_UTF8)
+                        .output(INTERNAL_ERROR_BODY);
+                  } catch (Exception writeFailure) {
+                    callback.succeeded();
+                  }
+                } else {
+                  // The container committed without a Freeway response; release the request.
+                  callback.succeeded();
+                }
               }
               return true;
             }
-            if (!ctx.responded()) {
+            if (!ctx.isResponded()) {
               callback.succeeded();
             }
             return true;

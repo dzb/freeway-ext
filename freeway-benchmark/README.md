@@ -142,10 +142,10 @@ Useful benchmark classes:
 - `com.jujin.freeway.http.engine.ws.WebSocketFrameBenchmark` — WebSocket frame read/write/construct
 
 The last five deliberately live in the core `com.jujin.freeway.http.*` packages: they measure the
-real engine internals (`HttpContextImpl.reset`, `Http1xParser`, `WebSocketFrame.read/write`) and
-those are package-private, so a white-box package is the only way to reach them. Every other
-benchmark class belongs to `com.jujin.freeway.bench.*` — nothing in this module owns a
-`com.jujin.freeway.http` package.
+real engine internals (a per-request `HttpTransportImpl` + `HttpContextSupport`, `Http1xParser`,
+`WebSocketFrame.read/write`) and the parser/frame codecs are package-private, so a white-box
+package is the only way to reach them. Every other benchmark class belongs to
+`com.jujin.freeway.bench.*` — nothing in this module owns a `com.jujin.freeway.http` package.
 
 The microbenchmarks are the decision-grade inputs. The HTTP black-box benchmarks
 are for local validation and release gating, not for final performance claims.

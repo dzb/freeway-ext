@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **HTTP 适配器迁移到 core 的组合式 SPI**（`freeway-http-undertow`、`freeway-http-jetty`）：
+  `UndertowHttpContext` / `JettyHttpContext`（继承 `AbstractHttpContext`）删除，改为
+  `UndertowHttpTransport` / `JettyHttpTransport` 实现 `HttpTransport`；WebSocket 会话改为
+  `UndertowWebSocketTransport` / `JettyWebSocketTransport` 实现 `WebSocketTransport`，并组合
+  `WebSocketSessionSupport`（close reason 由 support 统一截断到 123 字节）。状态码/头校验、
+  `Date`、`Content-Length`、gzip 决策、`Vary`、body 上限与 JSON/强转现在全部来自 core 的
+  `HttpContextSupport`，两个引擎与内建引擎同一份实现。
+  - **每请求 exchange**：删除 `ThreadLocal` context 池与 `reset`/`setCompression`；每次请求
+    `new HttpTransport + new HttpContextSupport`，跨请求状态串扰在形状上不可能发生。
+  - **`Content-Length` 框架权威**：适配器不再各自决定长度；HEAD 不读响应源（SPI 契约：
+    `sendsBodyBytes()==false` 时只写 head），Undertow 的 `RequestTooBigException` 在
+    `bodyStream()` 内翻译为 `BodyTooLargeException`（413 语义不变）。
+  - **SSE 的 `Connection`**：共享层不再写 `Connection: keep-alive`，交给容器决定；
+    `X-Request-Id` 回显改从 `support.correlationId()` 取值（非法值跳过，保留引擎预置的消毒值）。
+  - handler 异常改用 `ctx.isResponded()` 判断能否再写 500，而不是容器的 wire 状态。
+- **benchmark 同步**（`freeway-benchmark`）：`FilterChainBenchmark` /
+  `HttpContextLookupBenchmark` / `HttpContextOutputBenchmark` 从包私有 `HttpContextImpl.reset`
+  改为每 op 构造 `HttpTransportImpl + HttpContextSupport`（lookup 基准在 setup 构造一次，
+  只测读取），与生产路径一致。
+
 ## 1.5.7 - 2026-11-02
 
 ### Fixed

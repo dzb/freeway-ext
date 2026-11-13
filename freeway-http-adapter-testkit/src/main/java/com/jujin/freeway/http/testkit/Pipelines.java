@@ -1,7 +1,7 @@
 package com.jujin.freeway.http.testkit;
 
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.ErrorHandler;
+import com.jujin.freeway.http.filter.ErrorMapper;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
@@ -15,12 +15,12 @@ import java.util.List;
  * and the default error handler included.
  */
 public record Pipelines(
-    List<Route> routes, List<WebSocketGroup> webSocketGroups, List<ErrorHandler> errorHandlers) {
+    List<Route> routes, List<WebSocketGroup> webSocketGroups, List<ErrorMapper> errorMappers) {
 
   public Pipelines {
     routes = List.copyOf(routes);
     webSocketGroups = List.copyOf(webSocketGroups);
-    errorHandlers = List.copyOf(errorHandlers);
+    errorMappers = List.copyOf(errorMappers);
   }
 
   public static Pipelines of(List<Route> routes) {
@@ -32,13 +32,13 @@ public record Pipelines(
   }
 
   /**
-   * The pipeline plus error handlers that must run <em>before</em> the default one — the shape a
+   * The pipeline plus error mappers that must run <em>before</em> the default one — the shape a
    * test needs when it asserts on a thrown exception or on a mapping the framework installs (413
-   * for an oversized body). Handlers are consulted in order and the first one returning true wins.
+   * for an oversized body). Mappers are consulted in order and the first one answering wins.
    */
   public static Pipelines of(
-      List<Route> routes, List<WebSocketGroup> webSocketGroups, List<ErrorHandler> errorHandlers) {
-    return new Pipelines(routes, webSocketGroups, errorHandlers);
+      List<Route> routes, List<WebSocketGroup> webSocketGroups, List<ErrorMapper> errorMappers) {
+    return new Pipelines(routes, webSocketGroups, errorMappers);
   }
 
   /**

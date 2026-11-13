@@ -1,5 +1,45 @@
 # Changelog
 
+## 2.0.0 - 未发布
+
+### Changed
+
+- **两个 HTTP 适配器改为组合 `HttpTransport` / `HttpExchangeSupport`**：core 2.0 删除了
+  `AbstractHttpContext` / `AbstractWebSocketSession` 两个基类，扩展点改为两个 SPI 加两个
+  final 策略对象。`UndertowHttpContext` / `JettyHttpContext` 因此删除，替换为
+  `UndertowHttpTransport` / `JettyHttpTransport`（实现 `HttpTransport`）：它们只保留本引擎的
+  请求读取与响应落地，状态码/头校验、`Date`、`Content-Length`、gzip 决策、`Vary`、body 上限
+  全部由 support 承担。引擎 dispatch 每请求构造 transport + support，两个 `ThreadLocal`
+  池、`reset` 与 `setCompression` 一并删除——每请求对象换掉了复位义务和跨请求状态串扰。
+- **WebSocket 会话改为组合 `WebSocketTransport` / `WebSocketSessionSupport`**：
+  `UndertowWebSocketSession` / `JettyWebSocketSession` 删除，替换为
+  `UndertowWebSocketTransport` / `JettyWebSocketTransport`。close reason 的 123 字节截断
+  现在只有一份实现（在 support 里），适配器不再各写一次。
+- **核心 API 跟随 2.0 改名**：`SslSettings` → `SslConfig`、`HttpEngine.secure()` →
+  `isSecure()`、`ExchangeHandler.websocket()` → `matchWebSocket()`、
+  `HttpResponse.output(byte[])` → `body(byte[])`、`send(int, String)` → `sendText(int, String)`；
+  `ErrorHandler` → `ErrorMapper`（返回 `Optional<ErrorResponse>` 而不是写响应再返回 boolean：
+  `HttpServer` 是唯一写入点）。
+- **Cloud 面跟随 2.0 改名**：`Endpoint` → `ServiceEndpoint`、`Health` → `ServiceHealth`、
+  `CloudException` → `RpcException`、`CloudHttpClientDefault` → `RpcHttpClientDefault`、
+  `CloudDiscoveryModule` → `DiscoveryModule`、`Container.isActiveBinding` →
+  `isActiveBindingMarked`、`JsonUtils.stringify` → `toJson`、`DatabaseStats` → `PoolStats`。
+- **testkit 的契约形状跟随 core**：`Pipelines` 的错误处理器列表类型改为 `ErrorMapper`；
+  `ContextContract` 的共享记账断言注释指向 `HttpExchangeSupport` + `LimitedInputStream`，
+  并要求"每请求新 exchange"而不是"池化 context 的复位"。
+
+### Removed
+
+- **`freeway-benchmark` 对池化 `HttpContextImpl` 的依赖**：三个 HTTP benchmark 改为每 op 构造
+  `HttpExchangeSupport` + 一个 `BenchTransport`（新增）。复用单个 support 会被 `committed`
+  守卫挡住第二次输出，那样测的就不是生产路径。
+
+### Fixed
+
+- **Kafka 适配器测试绑了第二个 `JsonCodec`**：2.0 起 `JsonCodec` 是 IoC 内建能力，
+  `KafkaModuleContainerTest` 的显式绑定让它与内建默认并存、`container.get(JsonCodec.class)`
+  抛 `AmbiguousBindingException`。三处绑定删除，改由容器内建提供。
+
 ## 1.5.7 - 2026-11-02
 
 ### Fixed

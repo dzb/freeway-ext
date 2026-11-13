@@ -1,6 +1,6 @@
 package com.jujin.freeway.cloud.consul;
 
-import com.jujin.freeway.cloud.discovery.Endpoint;
+import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.commons.json.JsonArray;
 import com.jujin.freeway.commons.json.JsonObject;
@@ -31,7 +31,7 @@ import org.slf4j.LoggerFactory;
  * data model, and this is not that.
  *
  * <p><b>Bookkeeping keys.</b> Consul's service model is {@code Address} + {@code Port} + a flat
- * string {@code Meta} map; freeway's {@link Endpoint} also carries {@code scheme} and {@code
+ * string {@code Meta} map; freeway's {@link ServiceEndpoint} also carries {@code scheme} and {@code
  * basePath}, and {@code CloudHttpClientDefault} renders the outbound URL from all four ({@code
  * endpoint().uri() + request.path()}). Dropping the two extra fields would silently mis-call an
  * https service or a path-prefixed one, so they travel in {@code Meta} under reserved {@code
@@ -74,7 +74,7 @@ final class ConsulClient {
    * Registers (or re-registers) the instance with the probe state the caller can already name: a
    * warming instance registers with a critical check, so it is in Consul but not in the
    * passing-only discovery result — the one-write ordering {@code
-   * ServiceRegistry.register(instance, Health)} exists for.
+   * ServiceRegistry.register(instance, ServiceHealth)} exists for.
    */
   public void register(ServiceInstance instance, boolean ready) {
     Objects.requireNonNull(instance, "instance");
@@ -98,7 +98,7 @@ final class ConsulClient {
             .put("Port", instance.endpoint().port())
             .put("Meta", meta(instance))
             .put("Check", check);
-    send("PUT", "/v1/agent/service/register", JsonUtils.stringify(body));
+    send("PUT", "/v1/agent/service/register", JsonUtils.toJson(body));
   }
 
   /**
@@ -217,8 +217,8 @@ final class ConsulClient {
               ? consulId.substring(prefix.length())
               : consulId;
     }
-    Endpoint endpoint =
-        Endpoint.of(
+    ServiceEndpoint endpoint =
+        ServiceEndpoint.of(
             scheme == null || scheme.isBlank() ? "http" : scheme,
             address,
             port,

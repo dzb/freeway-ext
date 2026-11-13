@@ -17,9 +17,9 @@
 package com.jujin.freeway.db.hikari;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
-import com.jujin.freeway.db.DatabaseStats;
 import com.jujin.freeway.db.Pool;
 import com.jujin.freeway.db.PoolConfig;
+import com.jujin.freeway.db.PoolStats;
 import com.jujin.freeway.db.PooledConnection;
 import com.jujin.freeway.db.SqlException;
 import com.jujin.freeway.ioc.symbol.SymbolProvider;
@@ -59,7 +59,7 @@ import org.slf4j.LoggerFactory;
  *   <li><b>{@code cleanInterval} is not mapped</b> — HikariCP runs its own housekeeping.
  * </ul>
  *
- * <p>{@link DatabaseStats#longLeased()} is always 0: HikariCP does not expose per-connection borrow
+ * <p>{@link PoolStats#longLeased()} is always 0: HikariCP does not expose per-connection borrow
  * durations, so leak detection is configured through {@code freeway.db.pool.leak-detection}
  * (HikariCP's own threshold) instead of being reported here. {@link #close()} delegates to {@code
  * HikariDataSource.close()} and does not wait for borrowed connections to return; HikariCP aborts
@@ -198,7 +198,7 @@ public final class HikariPool implements Pool {
   }
 
   @Override
-  public DatabaseStats stats() {
+  public PoolStats stats() {
     int active = 0;
     int idle = 0;
     int total = 0;
@@ -210,7 +210,7 @@ public final class HikariPool implements Pool {
       total = pool.getTotalConnections();
       awaiting = pool.getThreadsAwaitingConnection();
     }
-    return new DatabaseStats(
+    return new PoolStats(
         active,
         idle,
         total,

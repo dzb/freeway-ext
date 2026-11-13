@@ -18,9 +18,9 @@ package com.jujin.freeway.http.engine;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.HttpExchangeSupport;
 import com.jujin.freeway.http.HttpServerConfig;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,12 +37,12 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 /**
- * JMH benchmark for {@link HttpContextImpl} lookup methods.
+ * JMH benchmark for {@link HttpExchangeSupport} lookup methods.
  *
- * <p>Uses a real {@link HttpContextImpl} populated via {@code reset()} with realistic request
- * headers and query parameters. This replaces the earlier custom {@code BenchContext} stub that did
- * not reflect the real O(1)-then-O(n) header lookup strategy. It lives in the core {@code
- * http.engine} package because {@code reset()} is package-private.
+ * <p>The exchange is real (the shared policy object every engine composes) and is populated with
+ * realistic request headers and query parameters, so the measured lookups are the ones handlers
+ * actually run — the O(1)-then-O(n) header strategy included. Construction happens in setup: the
+ * lookup cost is what this benchmark varies, not allocation.
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -54,52 +54,51 @@ public class HttpContextLookupBenchmark {
 
   private static final Map<String, List<String>> REQUEST_HEADERS =
       Map.ofEntries(
-          Map.entry("X-Trace-Id", List.of("trace-1")),
-          Map.entry("Accept", List.of("text/plain")),
-          Map.entry("Content-Type", List.of("application/json")),
-          Map.entry("Cache-Control", List.of("no-cache")),
-          Map.entry("User-Agent", List.of("freeway-bench")),
-          Map.entry("X-Request-Id", List.of("req-1")),
-          Map.entry("X-Forwarded-For", List.of("127.0.0.1")),
-          Map.entry("Authorization", List.of("Bearer token")));
+          Map.entry("x-trace-id", List.of("trace-1")),
+          Map.entry("accept", List.of("text/plain")),
+          Map.entry("content-type", List.of("application/json")),
+          Map.entry("cache-control", List.of("no-cache")),
+          Map.entry("user-agent", List.of("freeway-bench")),
+          Map.entry("x-request-id", List.of("req-1")),
+          Map.entry("x-forwarded-for", List.of("127.0.0.1")),
+          Map.entry("authorization", List.of("Bearer token")));
 
-  private HttpContextImpl ctx;
+  private HttpExchangeSupport ctx;
 
   @Setup
   public void setup() {
     ctx =
-        new HttpContextImpl(
-            new JsonCodecDefault(), new CoercerDefault(), HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    ctx.reset(
-        "GET",
-        "/users/42",
-        "page=3&q=freeway",
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        OutputStream.nullOutputStream(),
-        null,
-        true);
+        new HttpExchangeSupport(
+            new BenchTransport(
+                "GET",
+                "/users/42",
+                Map.of("page", List.of("3"), "q", List.of("freeway")),
+                REQUEST_HEADERS,
+                InputStream.nullInputStream()),
+            new JsonCodecDefault(),
+            new CoercerDefault(),
+            HttpServerConfig.DEFAULT_MAX_BODY_SIZE,
+            HttpServerConfig.CompressionConfig.DEFAULT,
+            null);
     ctx.setPathVars(Map.of("id", "42"));
   }
 
-  /** O(1) exact-match query param lookup (LinkedHashMap.get). */
+  /** O(1) exact-match query param lookup. */
   @Benchmark
   public Optional<String> queryParam() {
     return ctx.queryParam("page");
   }
 
-  /** O(1) exact-match header lookup. */
+  /** O(1) exact-match header lookup (names are lowercase in the snapshot). */
   @Benchmark
   public Optional<String> headerExactMatch() {
-    return ctx.header("X-Trace-Id");
+    return ctx.header("x-trace-id");
   }
 
-  /** Exact miss, then O(n) case-insensitive fallback scan. */
+  /** Exact miss, then the case-insensitive fallback scan. */
   @Benchmark
   public Optional<String> headerCaseInsensitive() {
-    return ctx.header("x-trace-id");
+    return ctx.header("X-Trace-Id");
   }
 
   /** Full miss: O(1) miss + O(n) case-insensitive scan. */
@@ -108,7 +107,7 @@ public class HttpContextLookupBenchmark {
     return ctx.header("x-missing-header");
   }
 
-  /** queryParam fallback to pathVar via {@code HttpContext#param(String)}. */
+  /** queryParam fallback to pathVar via {@code HttpRequest#param(String)}. */
   @Benchmark
   public Optional<String> paramLookup() {
     return ctx.param("id");

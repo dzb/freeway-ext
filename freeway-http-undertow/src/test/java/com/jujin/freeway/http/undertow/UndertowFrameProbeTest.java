@@ -144,7 +144,7 @@ class UndertowFrameProbeTest {
                                       + session.correlationId());
                             }
                           })));
-      binder.contribute(Route.class).add(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+      binder.contribute(Route.class).add(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
     }
   }
 

@@ -21,16 +21,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.cloud.discovery.Endpoint;
 import com.jujin.freeway.cloud.discovery.LoadBalancer;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
+import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.rpc.CloudException;
-import com.jujin.freeway.cloud.rpc.CloudHttpClientDefault;
 import com.jujin.freeway.cloud.rpc.RemoteCaller;
 import com.jujin.freeway.cloud.rpc.RemoteInvocationException;
 import com.jujin.freeway.cloud.rpc.RpcEndpoint;
+import com.jujin.freeway.cloud.rpc.RpcException;
 import com.jujin.freeway.cloud.rpc.RpcExport;
+import com.jujin.freeway.cloud.rpc.RpcHttpClientDefault;
 import com.jujin.freeway.cloud.rpc.TransportSecurity;
 import com.jujin.freeway.commons.metrics.NoopMetrics;
 import java.time.Duration;
@@ -92,9 +92,9 @@ public abstract class RemoteRpcContract extends EngineFixture {
   @Test
   void businessFailureMapsToNonRetryableWithRemoteClass() {
     startServer();
-    CloudException ex =
+    RpcException ex =
         assertThrows(
-            CloudException.class,
+            RpcException.class,
             () -> caller.invoke("target", "user", "boom", List.of(), String.class));
     assertFalse(ex.retryable());
     Object cause = ex.getCause();
@@ -107,9 +107,9 @@ public abstract class RemoteRpcContract extends EngineFixture {
   @Test
   void unknownTopicIs404() {
     startServer();
-    CloudException ex =
+    RpcException ex =
         assertThrows(
-            CloudException.class,
+            RpcException.class,
             () -> caller.invoke("target", "user", "missing", List.of(), String.class));
     assertEquals(404, ex.status());
   }
@@ -122,21 +122,24 @@ public abstract class RemoteRpcContract extends EngineFixture {
                     RpcEndpoint.route(
                         RpcExport.of("user", Handlers.class), new Handlers(), jsonCodec()))));
 
-    // RemoteCaller needs CloudHttpClient; build a minimal standalone stack
+    // RemoteCaller needs RpcHttpClient; build a minimal standalone stack
     // that always resolves the service to the server just started.
     ServiceDiscovery discovery =
         serviceId ->
             List.of(
                 ServiceInstance.of(
-                    serviceId, "i1", Endpoint.of("http", "127.0.0.1", server.port()), Map.of()));
+                    serviceId,
+                    "i1",
+                    ServiceEndpoint.of("http", "127.0.0.1", server.port()),
+                    Map.of()));
     LoadBalancer loadBalancer =
         instances ->
             instances.isEmpty() ? Optional.empty() : Optional.ofNullable(instances.getFirst());
     var cloudClient =
-        new CloudHttpClientDefault(
+        new RpcHttpClientDefault(
             discovery,
             loadBalancer,
-            new CloudHttpClientDefault.Wiring(
+            new RpcHttpClientDefault.Wiring(
                 List.of(), // no propagators
                 null, // retryer -> built-in default fallback
                 null, // no breaker

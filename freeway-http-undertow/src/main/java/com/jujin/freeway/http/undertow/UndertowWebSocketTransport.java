@@ -16,8 +16,9 @@
 
 package com.jujin.freeway.http.undertow;
 
-import com.jujin.freeway.http.websocket.AbstractWebSocketSession;
 import com.jujin.freeway.http.websocket.WebSocketListener;
+import com.jujin.freeway.http.websocket.WebSocketSession;
+import com.jujin.freeway.http.websocket.WebSocketTransport;
 import io.undertow.websockets.core.AbstractReceiveListener;
 import io.undertow.websockets.core.BufferedBinaryMessage;
 import io.undertow.websockets.core.BufferedTextMessage;
@@ -27,16 +28,17 @@ import io.undertow.websockets.core.WebSocketChannel;
 import io.undertow.websockets.core.WebSockets;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xnio.IoUtils;
 
-/** Undertow-backed {@link WebSocketSession} with asynchronous frame sends. */
-final class UndertowWebSocketSession extends AbstractWebSocketSession {
-  private static final Logger LOG = LoggerFactory.getLogger(UndertowWebSocketSession.class);
+/**
+ * Undertow's half of one WebSocket connection: frame sends and the receive listener that forwards
+ * frames to the application. The session identity, metadata and close-reason truncation live in the
+ * composed {@code WebSocketSessionSupport}; this class never sees them.
+ */
+final class UndertowWebSocketTransport implements WebSocketTransport {
+  private static final Logger LOG = LoggerFactory.getLogger(UndertowWebSocketTransport.class);
   private static final WebSocketCallback<Void> SEND_CALLBACK =
       new WebSocketCallback<>() {
         @Override
@@ -56,23 +58,15 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
   private volatile boolean localCloseRequested;
   private volatile WebSocketListener listener = WebSocketListener.NOOP;
 
-  UndertowWebSocketSession(
-      WebSocketChannel channel,
-      String correlationId,
-      String method,
-      String path,
-      Map<String, String> pathVariables,
-      Map<String, List<String>> queryParams,
-      Map<String, List<String>> headers,
-      long maxMessageSize) {
+  UndertowWebSocketTransport(WebSocketChannel channel, long maxMessageSize) {
     this.channel = Objects.requireNonNull(channel, "channel");
-    super(correlationId, method, path, pathVariables, queryParams, headers);
     this.maxMessageSize = maxMessageSize;
   }
 
-  void open(WebSocketListener listener) throws Exception {
+  /** Starts the receive listener and notifies the application that the session opened. */
+  void open(WebSocketListener listener, WebSocketSession session) throws Exception {
     this.listener = listener != null ? listener : WebSocketListener.NOOP;
-    this.listener.onOpen(this);
+    this.listener.onOpen(session);
     channel
         .getReceiveSetter()
         .set(
@@ -98,7 +92,7 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
                 // there is nothing to re-check here.
                 String text = message.getData();
                 try {
-                  UndertowWebSocketSession.this.listener.onText(text);
+                  UndertowWebSocketTransport.this.listener.onText(text);
                 } catch (Exception ex) {
                   fail(channel, ex);
                 }
@@ -112,19 +106,14 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
                 var pooled = message.getData();
                 byte[] data;
                 try {
-                  ByteBuffer[] buffers = pooled.getResource();
-                  long total = 0;
-                  for (ByteBuffer buffer : buffers) {
-                    total += buffer.remaining();
-                  }
-                  ByteBuffer merged = WebSockets.mergeBuffers(buffers);
+                  ByteBuffer merged = WebSockets.mergeBuffers(pooled.getResource());
                   data = new byte[merged.remaining()];
                   merged.get(data);
                 } finally {
                   pooled.free();
                 }
                 try {
-                  UndertowWebSocketSession.this.listener.onBinary(data);
+                  UndertowWebSocketTransport.this.listener.onBinary(data);
                 } catch (Exception ex) {
                   fail(channel, ex);
                 }
@@ -141,7 +130,7 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
                   pooled.free();
                 }
                 try {
-                  UndertowWebSocketSession.this.listener.onClose(
+                  UndertowWebSocketTransport.this.listener.onClose(
                       closeMessage.getCode(), closeMessage.getReason(), !localCloseRequested);
                   if (!channel.isCloseFrameSent()) {
                     WebSockets.sendClose(closeMessage, channel, SEND_CALLBACK);
@@ -154,13 +143,13 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
               @Override
               protected void onError(WebSocketChannel channel, Throwable error) {
                 try {
-                  UndertowWebSocketSession.this.listener.onError(error);
+                  UndertowWebSocketTransport.this.listener.onError(error);
                 } catch (Exception ignored) {
                 }
                 // Undertow's default onError closes the channel; without it a
                 // read-level error leaves the connection hanging with onClose
                 // never delivered to the application.
-                IoUtils.safeClose(channel);
+                org.xnio.IoUtils.safeClose(channel);
               }
             });
     channel.resumeReceives();
@@ -175,9 +164,9 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
   public void sendText(String text) throws IOException {
     synchronized (sendLock) {
       requireOpen();
-      // Async send: receive callbacks run on XNIO I/O threads, where
-      // blocking sends must never be used. Frames are queued per channel;
-      // failures are logged via SEND_CALLBACK (never thrown to the caller).
+      // Async send: receive callbacks run on XNIO I/O threads, where blocking
+      // sends must never be used. Frames are queued per channel; failures are
+      // logged via SEND_CALLBACK (never thrown to the caller).
       WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, SEND_CALLBACK);
     }
   }
@@ -200,11 +189,15 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
     }
   }
 
+  /**
+   * {@code reason} arrives already truncated to the 123-byte close-frame payload by {@code
+   * WebSocketSessionSupport.close}; this method does not touch it again.
+   */
   @Override
   public void close(int code, String reason) throws IOException {
     localCloseRequested = true;
     // "Initiates a graceful close" per the interface contract — no blocking.
-    WebSockets.sendClose(code, closeReason(reason), channel, SEND_CALLBACK);
+    WebSockets.sendClose(code, reason, channel, SEND_CALLBACK);
   }
 
   @Override
@@ -222,7 +215,7 @@ final class UndertowWebSocketSession extends AbstractWebSocketSession {
           1011,
           cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
     } catch (IOException ex) {
-      IoUtils.safeClose(channel);
+      org.xnio.IoUtils.safeClose(channel);
       throw ex;
     }
   }

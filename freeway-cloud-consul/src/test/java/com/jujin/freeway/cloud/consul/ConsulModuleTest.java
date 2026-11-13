@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import com.jujin.freeway.cloud.annotation.Local;
-import com.jujin.freeway.cloud.discovery.CloudDiscoveryModule;
+import com.jujin.freeway.cloud.discovery.DiscoveryModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
 import com.jujin.freeway.ioc.Container;
@@ -29,12 +29,12 @@ class ConsulModuleTest {
 
   @Test
   void placingTheModuleReplacesTheLocalDefaults() {
-    try (Container container = Freeway.create(new CloudDiscoveryModule(), new ConsulModule())) {
+    try (Container container = Freeway.create(new DiscoveryModule(), new ConsulModule())) {
       assertFalse(
-          container.isActiveBinding(ServiceRegistry.class, Local.class),
+          container.isActiveBindingMarked(ServiceRegistry.class, Local.class),
           "the @Local in-process registry must no longer be the active binding");
       assertFalse(
-          container.isActiveBinding(ServiceDiscovery.class, Local.class),
+          container.isActiveBindingMarked(ServiceDiscovery.class, Local.class),
           "the @Local in-process discovery must no longer be the active binding");
 
       // The active registry answers the Consul window, not the local ZERO.
@@ -47,7 +47,7 @@ class ConsulModuleTest {
 
   @Test
   void theLocalDefaultIsStillReachableUnderItsMarker() {
-    try (Container container = Freeway.create(new CloudDiscoveryModule(), new ConsulModule())) {
+    try (Container container = Freeway.create(new DiscoveryModule(), new ConsulModule())) {
       // The marker stays meaningful: a caller may still ask for the
       // built-in explicitly even while the adapter is primary — and it is
       // the built-in by behavior (zero drain), not the adapter.

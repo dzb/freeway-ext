@@ -24,8 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.db.Database;
-import com.jujin.freeway.db.DatabaseStats;
 import com.jujin.freeway.db.PoolConfig;
+import com.jujin.freeway.db.PoolStats;
 import com.jujin.freeway.db.PooledConnection;
 import com.jujin.freeway.db.SqlException;
 import com.jujin.freeway.db.dialect.H2Dialect;
@@ -69,7 +69,7 @@ class HikariPoolIntegrationTest {
     try (db) {
       assertTrue(db.ping(), "ping should succeed with HikariCP");
 
-      DatabaseStats stats = db.stats();
+      PoolStats stats = db.stats();
       assertEquals(config.maxSize(), stats.maxSize(), "maxSize should match config from HikariCP");
 
       assertTrue(
@@ -97,7 +97,7 @@ class HikariPoolIntegrationTest {
       long count = db.query("select count(*) from items").one(Long.class).orElseThrow();
       assertEquals(2L, count);
 
-      DatabaseStats stats = db.stats();
+      PoolStats stats = db.stats();
       assertEquals(0, stats.active(), "no active connections after queries");
     }
   }
@@ -123,7 +123,7 @@ class HikariPoolIntegrationTest {
     Database db = Database.create(Database.Wiring.defaults(config).withPool(pool));
 
     try (db) {
-      DatabaseStats stats = db.stats();
+      PoolStats stats = db.stats();
       assertEquals(7, stats.maxSize(), "custom maxSize from HikariCP config");
     }
   }
@@ -179,7 +179,7 @@ class HikariPoolIntegrationTest {
     assertEquals(
         threads, success.get(), "borrows queue instead of failing while below the timeout");
 
-    DatabaseStats stats = pool.stats();
+    PoolStats stats = pool.stats();
     assertEquals(3, stats.maxSize());
     pool.close();
   }

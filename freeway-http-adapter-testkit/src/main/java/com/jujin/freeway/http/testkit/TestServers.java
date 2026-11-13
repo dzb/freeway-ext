@@ -21,7 +21,7 @@ import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.filter.CorsFilter;
-import com.jujin.freeway.http.filter.ErrorHandler;
+import com.jujin.freeway.http.filter.ErrorMapper;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.websocket.WebSocketGroup;
@@ -68,7 +68,7 @@ public final class TestServers {
     }
 
     public boolean secure() {
-      return server.secure();
+      return server.isSecure();
     }
 
     public boolean isRunning() {
@@ -115,8 +115,8 @@ public final class TestServers {
               for (WebSocketGroup group : pipeline.webSocketGroups()) {
                 binder.contribute(WebSocketGroup.class).add(group);
               }
-              for (ErrorHandler handler : pipeline.errorHandlers()) {
-                binder.contribute(ErrorHandler.class).add(handler);
+              for (ErrorMapper mapper : pipeline.errorMappers()) {
+                binder.contribute(ErrorMapper.class).add(mapper);
               }
             });
     return new TestServer(container, container.get(HttpServer.class));

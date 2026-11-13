@@ -1,6 +1,6 @@
 package com.jujin.freeway.cloud.consul;
 
-import com.jujin.freeway.cloud.discovery.Health;
+import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
 import java.time.Duration;
@@ -31,7 +31,7 @@ final class ConsulServiceRegistry implements ServiceRegistry {
    * critical check, so it is in Consul but not in discovery from the first write.
    */
   @Override
-  public void register(ServiceInstance instance, Health health) {
+  public void register(ServiceInstance instance, ServiceHealth health) {
     Objects.requireNonNull(health, "health");
     client.register(instance, health.ready());
   }

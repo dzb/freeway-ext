@@ -124,7 +124,7 @@ class UndertowTransportLimitsTest {
   }
 
   private static Pipelines pipeline() {
-    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    var routes = List.of(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
     return Pipelines.of(routes);
   }
 }

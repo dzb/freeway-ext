@@ -57,7 +57,7 @@ class JettyTransportContractTest extends EngineFixture {
   void maxConnectionsCapsConcurrencyAndReleasesWhenASlotFrees() throws Exception {
     var config = defaultConfig().withMaxConnections(2).withReadTimeout(Duration.ofMinutes(2));
     try (var server =
-        start(Pipelines.of(List.of(Route.get("/", ctx -> ctx.send(200, "ok")))), config)) {
+        start(Pipelines.of(List.of(Route.get("/", ctx -> ctx.sendText(200, "ok")))), config)) {
       try (Socket first = new Socket("127.0.0.1", server.port());
           Socket second = new Socket("127.0.0.1", server.port())) {
         Thread.sleep(200); // let both sessions register with the connector

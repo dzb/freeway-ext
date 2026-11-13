@@ -20,12 +20,12 @@ import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.http.HttpContext;
+import com.jujin.freeway.http.HttpExchange;
+import com.jujin.freeway.http.HttpExchangeSupport;
 import com.jujin.freeway.http.HttpServerConfig;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,11 +43,15 @@ import org.openjdk.jmh.annotations.State;
 import org.openjdk.jmh.annotations.Warmup;
 
 /**
- * JMH benchmark for {@link HttpContextImpl} response output paths.
+ * JMH benchmark for {@link HttpExchangeSupport} response output paths.
  *
  * <p>Covers plain-text, JSON, and not-found responses as well as request-body reading combined with
- * output and the {@code sendJson} convenience shortcut. It lives in the core {@code http.engine}
- * package because the pooled context is only populated through the package-private {@code reset()}.
+ * output and the {@code sendJson} convenience shortcut.
+ *
+ * <p>Each operation builds a fresh exchange over its own {@link BenchTransport}, because production
+ * builds one per request: the commit guard, the header store and the body cache are per-exchange
+ * state, so reusing one object would measure a state machine no engine has (and the second
+ * operation would be an ignored duplicate output).
  */
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -67,124 +71,75 @@ public class HttpContextOutputBenchmark {
 
   static {
     REQUEST_HEADERS = new LinkedHashMap<>();
-    REQUEST_HEADERS.put("Host", List.of("127.0.0.1"));
-    REQUEST_HEADERS.put("Connection", List.of("keep-alive"));
-    REQUEST_HEADERS.put("User-Agent", List.of("freeway-bench"));
-    REQUEST_HEADERS.put("Accept", List.of("*/*"));
+    REQUEST_HEADERS.put("host", List.of("127.0.0.1"));
+    REQUEST_HEADERS.put("connection", List.of("keep-alive"));
+    REQUEST_HEADERS.put("user-agent", List.of("freeway-bench"));
+    REQUEST_HEADERS.put("accept", List.of("*/*"));
   }
-
-  private HttpContextImpl ctx;
-  private OutputStream sink;
-  private HttpContextImpl bodyReadCtx;
-  private HttpContextImpl sendJsonCtx;
 
   @Setup
   public void setup() {
-    sink = OutputStream.nullOutputStream();
-    ctx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-
-    // Context pre-configured for body-read scenario (POST with body)
-    bodyReadCtx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    bodyReadCtx.reset(
-        "POST",
-        "/api/data",
-        null,
-        REQUEST_HEADERS,
-        new ByteArrayInputStream(LARGE_BODY),
-        LARGE_BODY.length,
-        false,
-        sink,
-        null,
-        true);
-
-    // Context pre-configured for sendJson convenience shortcut
-    sendJsonCtx = new HttpContextImpl(JSON, COERCER, HttpServerConfig.DEFAULT_MAX_BODY_SIZE);
-    sendJsonCtx.reset(
-        "GET",
-        "/api/resource",
-        null,
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        sink,
-        null,
-        true);
+    // Warm the shared codec/coercer so the first measured op does not pay
+    // their class initialization.
+    JSON.toJson(Map.of("status", "ok"));
+    COERCER.coerce("1", Integer.class);
   }
 
-  // --- Existing scenarios (preserved) ---
+  private static HttpExchangeSupport exchange(String method, String path, InputStream body) {
+    return new HttpExchangeSupport(
+        new BenchTransport(method, path, null, REQUEST_HEADERS, body),
+        JSON,
+        COERCER,
+        HttpServerConfig.DEFAULT_MAX_BODY_SIZE,
+        HttpServerConfig.CompressionConfig.DEFAULT,
+        null);
+  }
+
+  // --- Buffered body shapes ---
 
   @Benchmark
-  public HttpContext sendPongText() throws IOException {
-    ctx.reset(
-        "GET",
-        "/ping",
-        null,
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        sink,
-        null,
-        true);
+  public HttpExchange sendPongText() throws IOException {
+    HttpExchangeSupport ctx = exchange("GET", "/ping", InputStream.nullInputStream());
     ctx.setStatus(200);
     ctx.setHeader("Content-Type", "text/plain; charset=utf-8");
-    ctx.output(PONG);
+    ctx.body(PONG);
     return ctx;
   }
 
   @Benchmark
-  public HttpContext sendPongJson() throws IOException {
-    ctx.reset(
-        "GET",
-        "/ping",
-        null,
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        sink,
-        null,
-        true);
+  public HttpExchange sendPongJson() throws IOException {
+    HttpExchangeSupport ctx = exchange("GET", "/ping", InputStream.nullInputStream());
     ctx.setStatus(200);
-    ctx.outputJson(Map.of("status", "ok"));
+    ctx.json(Map.of("status", "ok"));
     return ctx;
   }
 
   @Benchmark
-  public HttpContext sendNotFound() throws IOException {
-    ctx.reset(
-        "GET",
-        "/missing",
-        null,
-        REQUEST_HEADERS,
-        InputStream.nullInputStream(),
-        -1,
-        false,
-        sink,
-        null,
-        true);
+  public HttpExchange sendNotFound() throws IOException {
+    HttpExchangeSupport ctx = exchange("GET", "/missing", InputStream.nullInputStream());
     ctx.setStatus(404);
-    ctx.output("Not Found".getBytes(StandardCharsets.UTF_8));
+    ctx.body("Not Found".getBytes(StandardCharsets.UTF_8));
     return ctx;
   }
 
-  // --- New scenarios ---
+  // --- Request body + output ---
 
   /** Read request body then output response — simulates POST handler. */
   @Benchmark
-  public HttpContext readBodyThenOutput() throws IOException {
-    bodyReadCtx.body(); // reads + caches body
-    bodyReadCtx.setStatus(201);
-    bodyReadCtx.setHeader("Content-Type", "application/json");
-    bodyReadCtx.output(PONG);
-    return bodyReadCtx;
+  public HttpExchange readBodyThenOutput() throws IOException {
+    HttpExchangeSupport ctx = exchange("POST", "/api/data", new ByteArrayInputStream(LARGE_BODY));
+    ctx.body(); // reads + caches body
+    ctx.setStatus(201);
+    ctx.setHeader("Content-Type", "application/json");
+    ctx.body(PONG);
+    return ctx;
   }
 
   /** Convenience shortcut: sendJson(status, value). */
   @Benchmark
-  public HttpContext sendJsonShortcut() throws IOException {
-    sendJsonCtx.sendJson(200, Map.of("id", 42, "name", "Alice"));
-    return sendJsonCtx;
+  public HttpExchange sendJsonShortcut() throws IOException {
+    HttpExchangeSupport ctx = exchange("GET", "/api/resource", InputStream.nullInputStream());
+    ctx.sendJson(200, Map.of("id", 42, "name", "Alice"));
+    return ctx;
   }
 }

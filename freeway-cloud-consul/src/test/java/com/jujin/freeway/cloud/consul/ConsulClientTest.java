@@ -7,8 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import com.jujin.freeway.cloud.discovery.Endpoint;
-import com.jujin.freeway.cloud.discovery.Health;
+import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
+import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -97,7 +97,7 @@ class ConsulClientTest {
   @Test
   void aWarmingRegistrationArmsItsCheckCritical() {
     ServiceInstance instance =
-        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+        ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
 
     new ConsulClient(wiring()).register(instance, false);
 
@@ -109,7 +109,7 @@ class ConsulClientTest {
   @Test
   void markReadyFlipsTheCheckBothWays() {
     ServiceInstance instance =
-        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+        ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
     ConsulClient client = new ConsulClient(wiring());
 
     assertTrue(client.markReady(instance, true));
@@ -126,7 +126,7 @@ class ConsulClientTest {
     // control governs "the agent does not know this check".
     renewStatus = 404;
     ServiceInstance instance =
-        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+        ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
 
     assertFalse(new ConsulClient(wiring()).markReady(instance, true));
   }
@@ -134,11 +134,11 @@ class ConsulClientTest {
   @Test
   void theRegistryForwardsHealthAndReadinessToTheCheck() {
     ServiceInstance instance =
-        ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080));
+        ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
     ConsulServiceRegistry registry =
         new ConsulServiceRegistry(new ConsulClient(wiring()), wiring());
 
-    registry.register(instance, Health.starting());
+    registry.register(instance, ServiceHealth.starting());
     assertTrue(body.get().contains("\"Status\":\"critical\""), body.get());
 
     registry.markReady(instance, true);
@@ -149,7 +149,10 @@ class ConsulClientTest {
   void registerPutsTheInstanceAndTheBookkeepingMeta() {
     ServiceInstance instance =
         ServiceInstance.of(
-            "order", "i1", Endpoint.of("https", "10.0.0.5", 8443, "/api"), Map.of("zone", "a"));
+            "order",
+            "i1",
+            ServiceEndpoint.of("https", "10.0.0.5", 8443, "/api"),
+            Map.of("zone", "a"));
 
     new ConsulClient(wiring()).register(instance);
 
@@ -187,7 +190,8 @@ class ConsulClientTest {
   @Test
   void unregisterHitsTheDeregisterEndpoint() {
     new ConsulClient(wiring())
-        .unregister(ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080)));
+        .unregister(
+            ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
 
     assertTrue(path.get().contains("/v1/agent/service/deregister/order:i1"), path.get());
   }
@@ -231,11 +235,11 @@ class ConsulClientTest {
   @Test
   void tokenHeaderIsSentOnlyWhenConfigured() {
     new ConsulClient(wiring().withToken("secret"))
-        .register(ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080)));
+        .register(ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
     assertEquals("secret", token.get());
 
     new ConsulClient(wiring())
-        .register(ServiceInstance.of("order", "i1", Endpoint.of("http", "10.0.0.5", 8080)));
+        .register(ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
     assertNull(token.get());
   }
 

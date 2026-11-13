@@ -18,6 +18,7 @@ package com.jujin.freeway.http.jetty;
 
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.http.websocket.WebSocketSessionSupport;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,7 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
   private final Map<String, List<String>> queryParams;
   private final Map<String, List<String>> headers;
   private volatile WebSocketListener appListener = WebSocketListener.NOOP;
-  private volatile JettyWebSocketSession session;
+  private volatile JettyWebSocketTransport transport;
 
   JettyWebSocketBridge(
       WebSocketMatch match,
@@ -65,10 +66,11 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
 
   @Override
   public void onWebSocketOpen(Session session) {
-    JettyWebSocketSession wsSession =
-        new JettyWebSocketSession(
-            session, correlationId, method, path, pathVariables, queryParams, headers);
-    this.session = wsSession;
+    JettyWebSocketTransport wsTransport = new JettyWebSocketTransport(session);
+    this.transport = wsTransport;
+    var wsSession =
+        new WebSocketSessionSupport(
+            wsTransport, correlationId, method, path, pathVariables, queryParams, headers);
     try {
       appListener = match.endpoint().open(wsSession);
       if (appListener == null) {
@@ -114,7 +116,8 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
   public void onWebSocketClose(
       int statusCode, String reason, org.eclipse.jetty.websocket.api.Callback callback) {
     try {
-      appListener.onClose(statusCode, reason, session != null && !session.localCloseRequested());
+      appListener.onClose(
+          statusCode, reason, transport != null && !transport.localCloseRequested());
       callback.succeed();
     } catch (Exception ex) {
       callback.fail(ex);
@@ -131,11 +134,11 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
   }
 
   private void closeWithError(Throwable cause) {
-    if (session == null || !session.isOpen()) {
+    if (transport == null || !transport.isOpen()) {
       return;
     }
     try {
-      session.close(
+      transport.close(
           1011,
           cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
     } catch (Exception ex) {

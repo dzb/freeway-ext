@@ -20,14 +20,16 @@ import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpExchangeSupport;
 import com.jujin.freeway.http.HttpModule.ConfigKeys;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
+import com.jujin.freeway.http.SslConfig;
 import com.jujin.freeway.http.SslContexts;
-import com.jujin.freeway.http.SslSettings;
 import com.jujin.freeway.http.websocket.WebSocketListener;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
+import com.jujin.freeway.http.websocket.WebSocketSessionSupport;
 import com.jujin.freeway.ioc.symbol.SymbolProvider;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import io.undertow.Handlers;
@@ -63,18 +65,11 @@ import org.xnio.SslClientAuthMode;
 /** Undertow transport adapter for the Freeway HTTP engine. */
 public final class UndertowHttpEngine implements HttpEngine {
   private static final Logger LOG = LoggerFactory.getLogger(UndertowHttpEngine.class);
-  private static final HttpString X_REQUEST_ID = new HttpString("X-Request-Id");
   private static final String INTERNAL_ERROR_BODY = "Internal Server Error";
 
   private final JsonCodec jsonCodec;
   private final Coercer coercer;
   private final SymbolSource symbols;
-
-  /**
-   * Built in {@link #start}: a context needs the configured body limit, which only exists once the
-   * server does.
-   */
-  private ThreadLocal<UndertowHttpContext> contextPool;
 
   private volatile long wsMaxMessageSize = -1;
 
@@ -100,8 +95,8 @@ public final class UndertowHttpEngine implements HttpEngine {
    * reports are the same answer from the same rule.
    */
   @Override
-  public boolean secure() {
-    return SslSettings.from(symbols).enabled();
+  public boolean isSecure() {
+    return SslConfig.from(symbols).enabled();
   }
 
   @Override
@@ -124,9 +119,6 @@ public final class UndertowHttpEngine implements HttpEngine {
     // unlimited, which lets a remote client buffer unbounded messages (OOM).
     this.wsMaxMessageSize =
         parseMaxFrameSize(symbols.resolve("freeway.http.websocket.max-frame-size", "65536"));
-    this.contextPool =
-        ThreadLocal.withInitial(
-            () -> new UndertowHttpContext(jsonCodec, coercer, config.maxBodySize()));
     HttpHandler root =
         exchange -> {
           if (dispatchIo && exchange.isInIoThread()) {
@@ -135,17 +127,18 @@ public final class UndertowHttpEngine implements HttpEngine {
             handle(exchange, handler, config);
           }
         };
-    // gzip response compression (HttpServerConfig.compression) is applied in
-    // UndertowHttpContext.output(), mirroring the built-in engine's buffered
-    // path (min-size, status, Accept-Encoding and Content-Type gates). A
-    // handler-level EncodingHandler is deliberately not used: Undertow's
-    // dynamic encoding has no minimum-size gate, so it would compress small
-    // responses the shared config says to leave alone.
+    // gzip response compression (HttpServerConfig.compression) runs in the
+    // shared HttpExchangeSupport the dispatch composes below — the same
+    // decision path every engine runs, so this adapter carries no second copy
+    // of the min-size / Accept-Encoding / Content-Type gates. A handler-level
+    // EncodingHandler is deliberately not used either: Undertow's dynamic
+    // encoding has no minimum-size gate, so it would compress small responses
+    // the shared config says to leave alone.
     GracefulShutdownHandler gracefulShutdown = Handlers.gracefulShutdown(root);
     // The shared TLS section, resolved once by core: the same keys, defaults
     // and three-state activation the built-in engine and Jetty use, so the
     // HttpServer's secure() verdict and this adapter cannot disagree.
-    SslSettings tls = SslSettings.from(symbols);
+    SslConfig tls = SslConfig.from(symbols);
     boolean sslEnabled = tls.enabled();
     Undertow.Builder builder =
         Undertow.builder()
@@ -317,10 +310,9 @@ public final class UndertowHttpEngine implements HttpEngine {
       HttpServerExchange exchange, ExchangeHandler handler, HttpServerConfig config)
       throws Exception {
     String correlationId = exchange.getRequestHeaders().getFirst("X-Request-Id");
-    exchange.getResponseHeaders().put(X_REQUEST_ID, safeCorrelationId(correlationId));
     if (isWebSocketRequest(exchange)) {
       String origin = exchange.getRequestHeaders().getFirst(Headers.ORIGIN);
-      WebSocketMatch match = handler.websocket(method(exchange), path(exchange), origin);
+      WebSocketMatch match = handler.matchWebSocket(method(exchange), path(exchange), origin);
       if (match == null) {
         ResponseCodeHandler.HANDLE_404.handleRequest(exchange);
         return;
@@ -329,9 +321,23 @@ public final class UndertowHttpEngine implements HttpEngine {
       return;
     }
 
-    UndertowHttpContext ctx = contextPool.get();
-    ctx.reset(exchange, correlationId);
-    ctx.setCompression(config.compression());
+    // One transport + one support object per exchange: nothing is pooled, so
+    // no request can inherit the previous one's metadata, status or headers.
+    var transport = new UndertowHttpTransport(exchange, config.maxBodySize());
+    var ctx =
+        new HttpExchangeSupport(
+            transport,
+            jsonCodec,
+            coercer,
+            config.maxBodySize(),
+            config.compression(),
+            correlationId);
+    // The correlation id is echoed for tracing; the shared header validation
+    // in the support object rejects a hostile value instead of writing it.
+    try {
+      ctx.setHeader("X-Request-Id", ctx.correlationId());
+    } catch (IllegalArgumentException ignored) {
+    }
     try {
       handler.handle(ctx);
     } catch (Exception ex) {
@@ -344,16 +350,16 @@ public final class UndertowHttpEngine implements HttpEngine {
       throws Exception {
     WebSocketConnectionCallback callback =
         (wsExchange, channel) -> {
-          UndertowWebSocketSession session =
-              new UndertowWebSocketSession(
-                  channel,
+          var transport = new UndertowWebSocketTransport(channel, maxMessageSize);
+          var session =
+              new WebSocketSessionSupport(
+                  transport,
                   correlationId,
                   method(exchange),
                   path(exchange),
                   snapshotPathVariables(match.pathVariables()),
                   snapshotQueryParameters(exchange),
-                  snapshotHeaders(exchange),
-                  maxMessageSize);
+                  snapshotHeaders(exchange));
           WebSocketListener listener;
           try {
             listener = match.endpoint().open(session);
@@ -361,7 +367,7 @@ public final class UndertowHttpEngine implements HttpEngine {
             throw new IllegalStateException("WebSocket endpoint failed", ex);
           }
           try {
-            session.open(listener);
+            transport.open(listener, session);
           } catch (Exception ex) {
             throw new IllegalStateException("WebSocket listener initialization failed", ex);
           }

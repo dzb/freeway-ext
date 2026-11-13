@@ -219,13 +219,13 @@ public final class ServerHarness implements AutoCloseable {
                 .withShutdownGrace(Duration.ofSeconds(5)),
             ctx -> {
               if (!spec.method().equals(ctx.method())) {
-                ctx.send(405, "");
+                ctx.sendText(405, "");
                 return;
               }
               if (contentType != null) {
                 ctx.setHeader("Content-Type", contentType);
               }
-              ctx.setStatus(200).output(body);
+              ctx.setStatus(200).body(body);
             });
     int port = handle.port();
     return new ServerHarness(handle::close, port);
@@ -294,7 +294,7 @@ public final class ServerHarness implements AutoCloseable {
               spec.path(),
               ctx -> {
                 ctx.setStatus(200);
-                ctx.output(ctx.body());
+                ctx.body(ctx.body());
               }));
     }
     if (spec.json()) {
@@ -303,7 +303,7 @@ public final class ServerHarness implements AutoCloseable {
       return List.of(Route.get(spec.path(), ctx -> ctx.sendJson(200, new JsonResponse(1, "test"))));
     }
     String body = new String(spec.responseBody(), StandardCharsets.ISO_8859_1);
-    return List.of(Route.get(spec.path(), ctx -> ctx.send(200, body)));
+    return List.of(Route.get(spec.path(), ctx -> ctx.sendText(200, body)));
   }
 
   /** Creates the WebSocket echo route for {@link Scenario#WS_ECHO} (empty for HTTP scenarios). */

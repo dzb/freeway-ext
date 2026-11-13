@@ -6,9 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.CloudModule.ConfigKeys;
-import com.jujin.freeway.cloud.discovery.CloudDiscoveryModule;
-import com.jujin.freeway.cloud.discovery.Endpoint;
+import com.jujin.freeway.cloud.discovery.DiscoveryModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
+import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServer;
@@ -58,7 +58,7 @@ class ConsulIntegrationTest {
         ServiceInstance.of(
             serviceId,
             "i1",
-            Endpoint.of("https", "10.1.2.3", 8443, "/api"),
+            ServiceEndpoint.of("https", "10.1.2.3", 8443, "/api"),
             Map.of("zone", "test"));
     try {
       client.register(instance);
@@ -89,8 +89,7 @@ class ConsulIntegrationTest {
     System.setProperty(ConfigKeys.REGISTRY_SHUTDOWN_DRAIN, "PT0S");
 
     try (AppRuntime app =
-        FreewayApp.create(new HttpModule(), new CloudDiscoveryModule(), new ConsulModule())
-            .start()) {
+        FreewayApp.create(new HttpModule(), new DiscoveryModule(), new ConsulModule()).start()) {
 
       int port = app.get(HttpServer.class).port();
       ServiceDiscovery discovery = app.get(ServiceDiscovery.class);

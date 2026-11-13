@@ -33,8 +33,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * What an engine adapter tells the application about the transport, and what it must forget between
- * two requests: a pooled context has to report TLS honestly and must never carry one request's
+ * What an engine adapter tells the application about the transport, and what it must not inherit
+ * between two requests: an exchange has to report TLS honestly and must never carry one request's
  * state into the next.
  */
 public abstract class ContextContract extends EngineFixture {
@@ -112,10 +112,9 @@ public abstract class ContextContract extends EngineFixture {
 
   @Test
   void contextStateIsFreshWhenTheRequestDoesNotSendACorrelationId() throws Exception {
-    // The context is pooled per thread and keeps its own correlation id: a
-    // context reused for the next request must not still carry the previous
-    // request's id (an absent X-Request-Id leaves setCorrelationId a no-op, so
-    // only the metadata reset can clear it).
+    // The exchange is created per request, so it cannot inherit a previous
+    // request's metadata: an absent X-Request-Id must still yield a fresh id,
+    // and no two requests may report the same one.
     try (var server = start(Pipelines.of(routes()))) {
       var client = HttpClients.plain();
       String base = uri(server, "/id").toString();
@@ -176,7 +175,7 @@ public abstract class ContextContract extends EngineFixture {
                         "/nobody",
                         ctx -> {
                           ctx.setHeader("Content-Length", "5");
-                          ctx.send(204, "");
+                          ctx.sendText(204, "");
                         }))))) {
       var response =
           HttpClients.plain()
@@ -196,10 +195,10 @@ public abstract class ContextContract extends EngineFixture {
   @Test
   void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
     // maxBodySize must answer the same 413 whatever layer trips first: the
-    // shared AbstractHttpContext.readBody accounting, or Undertow's native
-    // MAX_ENTITY_SIZE mapped from the same config (surfaced as the shared
-    // BodyTooLargeException). Never a dropped connection, never a body
-    // truncated to look complete.
+    // shared HttpExchangeSupport body accounting (one limiter,
+    // LimitedInputStream), or Undertow's native MAX_ENTITY_SIZE mapped from
+    // the same config (surfaced as the shared BodyTooLargeException). Never a
+    // dropped connection, never a body truncated to look complete.
     var config = defaultConfig().withMaxBodySize(16);
     try (var server = start(Pipelines.of(routes()), config)) {
       var resp =
@@ -222,13 +221,14 @@ public abstract class ContextContract extends EngineFixture {
 
   private static List<Route> routes() {
     return List.of(
-        Route.get("/ping", ctx -> ctx.send(200, "pong")),
-        Route.get("/header-names", ctx -> ctx.send(200, String.join(",", ctx.headers().keySet()))),
-        Route.get("/id", ctx -> ctx.send(200, ctx.correlationId())),
+        Route.get("/ping", ctx -> ctx.sendText(200, "pong")),
+        Route.get(
+            "/header-names", ctx -> ctx.sendText(200, String.join(",", ctx.headers().keySet()))),
+        Route.get("/id", ctx -> ctx.sendText(200, ctx.correlationId())),
         Route.get(
             "/facts",
             ctx ->
-                ctx.send(
+                ctx.sendText(
                     200,
                     ctx.isSecure()
                         + "|"
@@ -239,7 +239,7 @@ public abstract class ContextContract extends EngineFixture {
             "/echo",
             ctx -> {
               ctx.body();
-              ctx.send(200, "ok");
+              ctx.sendText(200, "ok");
             }));
   }
 }

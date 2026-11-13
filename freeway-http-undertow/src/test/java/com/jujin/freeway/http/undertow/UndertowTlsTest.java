@@ -17,6 +17,7 @@
 package com.jujin.freeway.http.undertow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -24,6 +25,7 @@ import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.testkit.Pipelines;
 import com.jujin.freeway.http.testkit.TestServers;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -51,6 +53,7 @@ class UndertowTlsTest {
     System.clearProperty("freeway.http.ssl.key-password");
     System.clearProperty("freeway.http.ssl.key-store-type");
     System.clearProperty("freeway.http.ssl.http2");
+    System.clearProperty("freeway.http.ssl.protocols");
   }
 
   @Test
@@ -116,6 +119,53 @@ class UndertowTlsTest {
       assertEquals(200, resp.statusCode());
       assertEquals("pong", resp.body());
       assertEquals(HttpClient.Version.HTTP_2, resp.version());
+    }
+  }
+
+  @Test
+  void restrictedProtocolsActuallyNarrowTheHandshake() throws Exception {
+    // The adapter reads protocols from SslConfig instead of re-splitting the
+    // raw key, so this pins that the parsed list reaches XNIO: with only
+    // TLSv1.3 offered, a client that requires TLSv1.2 cannot connect.
+    System.setProperty("freeway.http.ssl.enabled", "true");
+    System.setProperty("freeway.http.ssl.key-store", KEYSTORE.toString());
+    System.setProperty("freeway.http.ssl.key-store-password", PASSWORD);
+    System.setProperty("freeway.http.ssl.protocols", "TLSv1.3");
+    var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
+
+    try (var server = TestServers.start(engine, config, pipeline())) {
+      server.start();
+      assertThrows(
+          IOException.class,
+          () -> handshakeWithTls12Only(server.port()),
+          "a TLSv1.2-only client must be refused when the server offers only TLSv1.3");
+    }
+  }
+
+  /**
+   * One TLS handshake attempt that trusts the test certificate but offers only TLSv1.2. The trust
+   * setup matters: a client without it fails on the self-signed cert, which would make this probe
+   * pass for the wrong reason and hide a server that ignores the protocol list.
+   */
+  private static void handshakeWithTls12Only(int port) throws IOException {
+    SSLContext context;
+    try {
+      context = trustingSslContext();
+    } catch (Exception ex) {
+      throw new IOException("Unable to build the client SSL context", ex);
+    }
+    try (var plain = new java.net.Socket("127.0.0.1", port);
+        var socket =
+            (javax.net.ssl.SSLSocket)
+                context.getSocketFactory().createSocket(plain, "127.0.0.1", port, true)) {
+      socket.setSoTimeout(5000);
+      socket.setEnabledProtocols(new String[] {"TLSv1.2"});
+      socket.startHandshake();
     }
   }
 

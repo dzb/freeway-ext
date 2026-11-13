@@ -32,7 +32,7 @@ import org.slf4j.LoggerFactory;
  *
  * <p><b>Bookkeeping keys.</b> Consul's service model is {@code Address} + {@code Port} + a flat
  * string {@code Meta} map; freeway's {@link ServiceEndpoint} also carries {@code scheme} and {@code
- * basePath}, and {@code CloudHttpClientDefault} renders the outbound URL from all four ({@code
+ * basePath}, and {@code RpcHttpClientDefault} renders the outbound URL from all four ({@code
  * endpoint().uri() + request.path()}). Dropping the two extra fields would silently mis-call an
  * https service or a path-prefixed one, so they travel in {@code Meta} under reserved {@code
  * freeway-*} keys — which also keeps them from colliding with the application's own metadata,

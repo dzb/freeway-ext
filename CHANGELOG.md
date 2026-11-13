@@ -34,6 +34,40 @@
   `HttpExchangeSupport` + 一个 `BenchTransport`（新增）。复用单个 support 会被 `committed`
   守卫挡住第二次输出，那样测的就不是生产路径。
 
+### 按 2.0 收敛理念清理冗余
+
+判据是 core `TASTE.md` 的"一个事实一个所有者"，不是"看起来重复就合并"。
+
+- **请求快照的转换只保留一份**：两个适配器都曾各写一遍 `snapshotQueryParameters` /
+  `snapshotHeaders`（引擎里一份给 WebSocket 升级用，transport 里一份给 HTTP 路径用），
+  同一请求的两种视图靠两段代码保持一致。现在转换归 transport 所有
+  （`UndertowHttpTransport.snapshotHeaders/snapshotQueryParams`、`JettyHttpTransport` 同名），
+  引擎的 WebSocket 路径直接调用它们，引擎里那三份私有 helper 删除。路径变量改由
+  `WebSocketMatch` 自身的 compact constructor 快照（它本来就 `List.copyOf`），
+  适配器不再复制一遍。
+- **Undertow 的 TLS 协议/密码套件不再二次解析**：`SslConfig` 已把
+  `freeway.http.ssl.protocols` / `ciphers` 解析成 `List<String>`，适配器却再用
+  `prop(...)` 取原始字符串、用私有 `splitCommaSeparated` 重切一遍——同一规则两个所有者。
+  现在直接读 `tls.protocols()` / `tls.ciphers()`，私有 `splitCommaSeparated`、无调用者的
+  `keyStoreType` 与 `prop(key, default)` 重载一并删除。新增
+  `UndertowTlsTest.restrictedProtocolsActuallyNarrowTheHandshake` 钉住"解析后的列表真的
+  到达 XNIO"（删掉该 `setSocketOption` 即红）。
+- **Jetty 的三处 `HttpConfiguration` 收敛为一个工厂**：明文、TLS、h2c 三条分支各自
+  重设 `setSendDateHeader(false)` 与 `setRequestHeaderSize(maxHeaderBytes)`，其中一处
+  漏改就会让 Date 或头上限只在一个分支生效。现在 `httpConfiguration(config, secure)` 是
+  唯一构造点，`secure` 只决定要不要加 `SecureRequestCustomizer`。
+- **`safeCorrelationId` 从 Undertow 删除**：support 的 header 校验
+  （`HttpHeaders.requireValidValue` 拒绝 CTL）已是唯一防线，适配器那个
+  UUID 替换 helper 在改造后没有任何调用者。Jetty 的同名方法仍有调用者
+  （WebSocket 升级响应），保留。
+- **Kafka 的列表解析交给 `SymbolSpec.splitList`**：`KafkaConfig.parseList` 手写的
+  "trim、丢空段"与 cascade 用的规则逐字相同；现在委托给后者，规则仍只有一个所有者。
+- **benchmark 的类名与 README 跟上 2.0 词汇**：`HttpContextLookupBenchmark` /
+  `HttpContextOutputBenchmark` → `HttpExchangeLookupBenchmark` /
+  `HttpExchangeOutputBenchmark`（对应类型早已改名 `HttpExchange`），`repro.sh` 同步；
+  README 里"这些类型是 package-private"的说法改准——`HttpExchangeSupport` 是 public，
+  真正需要白盒包的是 `Http1xParser` / `WebSocketFrame`。
+
 ### Fixed
 
 - **Kafka 适配器测试绑了第二个 `JsonCodec`**：2.0 起 `JsonCodec` 是 IoC 内建能力，

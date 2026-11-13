@@ -50,7 +50,7 @@ import org.openjdk.jmh.annotations.Warmup;
 @Measurement(iterations = 5, time = 1)
 @Fork(2)
 @State(Scope.Thread)
-public class HttpContextLookupBenchmark {
+public class HttpExchangeLookupBenchmark {
 
   private static final Map<String, List<String>> REQUEST_HEADERS =
       Map.ofEntries(

@@ -40,22 +40,14 @@ import io.undertow.server.HttpServerExchange;
 import io.undertow.server.handlers.GracefulShutdownHandler;
 import io.undertow.server.handlers.ResponseCodeHandler;
 import io.undertow.util.Headers;
-import io.undertow.util.HttpString;
 import io.undertow.websockets.WebSocketConnectionCallback;
 import io.undertow.websockets.WebSocketProtocolHandshakeHandler;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.xnio.Options;
@@ -180,19 +172,19 @@ public final class UndertowHttpEngine implements HttpEngine {
       builder.addHttpsListener(config.port(), config.host(), SslContexts.build(tls));
       // mTLS / protocol / cipher constraints, keyed on the same
       // freeway.http.ssl.* options the built-in engine uses. XNIO applies
-      // these socket options when the SSL engine is created.
+      // these socket options when the SSL engine is created. The values come
+      // from SslConfig, which already parsed the comma lists — re-splitting
+      // the raw strings here would be a second owner of that rule.
       if (tls.clientAuth()) {
         builder.setSocketOption(Options.SSL_CLIENT_AUTH_MODE, SslClientAuthMode.REQUIRED);
       }
-      String protocols = prop(ConfigKeys.SSL_PROTOCOLS);
-      if (protocols != null && !protocols.isBlank()) {
+      if (tls.protocols() != null && !tls.protocols().isEmpty()) {
         builder.setSocketOption(
-            Options.SSL_ENABLED_PROTOCOLS, Sequence.of(splitCommaSeparated(protocols)));
+            Options.SSL_ENABLED_PROTOCOLS, Sequence.of(tls.protocols().toArray(String[]::new)));
       }
-      String ciphers = prop(ConfigKeys.SSL_CIPHERS);
-      if (ciphers != null && !ciphers.isBlank()) {
+      if (tls.ciphers() != null && !tls.ciphers().isEmpty()) {
         builder.setSocketOption(
-            Options.SSL_ENABLED_CIPHER_SUITES, Sequence.of(splitCommaSeparated(ciphers)));
+            Options.SSL_ENABLED_CIPHER_SUITES, Sequence.of(tls.ciphers().toArray(String[]::new)));
       }
       // HTTP/2 over TLS via ALPN, keyed on the same freeway.http.ssl.http2
       // flag the built-in engine uses (default true). Undertow performs ALPN
@@ -230,17 +222,6 @@ public final class UndertowHttpEngine implements HttpEngine {
   }
 
   /**
-   * Builds a TLS context from the shared {@code freeway.http.ssl.*} keys, mirroring the built-in
-   * engine's {@code SslContextFactory}: keystore type from {@code freeway.http.ssl.key-store-type}
-   * (inferred from the file extension when unset), optional truststore for peer validation, and
-   * client-auth/protocols/ciphers enforced via XNIO socket options (the JDK SSLContext itself is
-   * configured with key/trust managers only).
-   */
-  /**
-   * Resolves the keystore type: explicit {@code freeway.http.ssl.key-store-type} wins, else
-   * inferred from the {@code .jks} extension, else PKCS12 (the built-in engine's default).
-   */
-  /**
    * The shared {@code freeway.http.server.read-timeout} in Undertow's vocabulary: milliseconds for
    * a positive timeout, {@code -1} (never expire) when Freeway says {@code 0 disables}.
    */
@@ -249,22 +230,8 @@ public final class UndertowHttpEngine implements HttpEngine {
     return millis <= 0 ? -1 : (int) Math.min(millis, Integer.MAX_VALUE);
   }
 
-  private String keyStoreType(String keyStorePath) {
-    String explicit = prop(ConfigKeys.SSL_KEY_STORE_TYPE);
-    if (explicit != null && !explicit.isBlank()) {
-      return explicit;
-    }
-    return keyStorePath != null && keyStorePath.toLowerCase(Locale.ROOT).endsWith(".jks")
-        ? "JKS"
-        : "PKCS12";
-  }
-
   private String prop(String key) {
     return symbols.resolve(key, null);
-  }
-
-  private String prop(String key, String defaultValue) {
-    return symbols.resolve(key, defaultValue);
   }
 
   /**
@@ -278,14 +245,6 @@ public final class UndertowHttpEngine implements HttpEngine {
       throw new IllegalArgumentException(
           "freeway.http.websocket.max-frame-size must be a byte count, got: '" + raw + "'", ex);
     }
-  }
-
-  /** Splits a comma-separated property value into trimmed, non-empty tokens. */
-  private static String[] splitCommaSeparated(String value) {
-    return Arrays.stream(value.split(","))
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
-        .toArray(String[]::new);
   }
 
   private void handle(
@@ -350,6 +309,9 @@ public final class UndertowHttpEngine implements HttpEngine {
       throws Exception {
     WebSocketConnectionCallback callback =
         (wsExchange, channel) -> {
+          // Request facts come from the same conversion the HTTP path uses, so
+          // an upgraded session and an ordinary exchange read one request the
+          // same way (header names lowercase included).
           var transport = new UndertowWebSocketTransport(channel, maxMessageSize);
           var session =
               new WebSocketSessionSupport(
@@ -357,9 +319,9 @@ public final class UndertowHttpEngine implements HttpEngine {
                   correlationId,
                   method(exchange),
                   path(exchange),
-                  snapshotPathVariables(match.pathVariables()),
-                  snapshotQueryParameters(exchange),
-                  snapshotHeaders(exchange));
+                  match.pathVariables(),
+                  UndertowHttpTransport.snapshotQueryParams(exchange),
+                  UndertowHttpTransport.snapshotHeaders(exchange));
           WebSocketListener listener;
           try {
             listener = match.endpoint().open(session);
@@ -389,46 +351,9 @@ public final class UndertowHttpEngine implements HttpEngine {
     return exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
   }
 
-  /**
-   * Guarantees the echoed correlation id cannot inject response headers (defense in depth: HTTP/2
-   * header values may legally contain CR/LF).
-   */
-  static String safeCorrelationId(String correlationId) {
-    if (correlationId == null
-        || correlationId.indexOf('\r') >= 0
-        || correlationId.indexOf('\n') >= 0) {
-      return UUID.randomUUID().toString().replace("-", "");
-    }
-    return correlationId;
-  }
-
   private static String path(HttpServerExchange exchange) {
     String relative = exchange.getRelativePath();
     return relative != null ? relative : "/";
-  }
-
-  private static Map<String, String> snapshotPathVariables(Map<String, String> vars) {
-    return vars == null ? Map.of() : Map.copyOf(vars);
-  }
-
-  private static Map<String, List<String>> snapshotQueryParameters(HttpServerExchange exchange) {
-    LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
-    for (Map.Entry<String, Deque<String>> entry : exchange.getQueryParameters().entrySet()) {
-      params.put(entry.getKey(), List.copyOf(entry.getValue()));
-    }
-    return Map.copyOf(params);
-  }
-
-  private static Map<String, List<String>> snapshotHeaders(HttpServerExchange exchange) {
-    LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
-    for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
-      List<String> values = new ArrayList<>();
-      for (String value : exchange.getRequestHeaders().get(name)) {
-        values.add(value);
-      }
-      headers.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
-    }
-    return Map.copyOf(headers);
   }
 
   private record UndertowHandle(

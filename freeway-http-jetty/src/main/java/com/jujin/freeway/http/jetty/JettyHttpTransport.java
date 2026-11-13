@@ -29,7 +29,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.LinkOption;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -84,12 +83,7 @@ final class JettyHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> queryParams() {
     if (queryParams == null) {
-      Fields fields = Request.extractQueryParameters(request);
-      LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
-      for (Fields.Field field : fields) {
-        params.put(field.getName(), List.copyOf(field.getValues()));
-      }
-      queryParams = Map.copyOf(params);
+      queryParams = snapshotQueryParams(request);
     }
     return queryParams;
   }
@@ -97,12 +91,7 @@ final class JettyHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> headers() {
     if (requestHeaders == null) {
-      LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
-      for (String name : request.getHeaders().getFieldNamesCollection()) {
-        List<String> values = request.getHeaders().getValuesList(name);
-        map.put(name.toLowerCase(Locale.ROOT), values != null ? List.copyOf(values) : List.of());
-      }
-      requestHeaders = Map.copyOf(map);
+      requestHeaders = snapshotHeaders(request);
     }
     return requestHeaders;
   }
@@ -269,9 +258,27 @@ final class JettyHttpTransport implements HttpTransport {
         });
   }
 
-  /** Every header value for the name, in wire order. */
-  static List<String> headerValues(Request request, String name) {
-    List<String> values = request.getHeaders().getValuesList(name);
-    return values != null ? new ArrayList<>(values) : List.of();
+  /**
+   * Request-header snapshot keyed by lowercase name. The single conversion from Jetty's native
+   * header map: {@link #headers()} and the WebSocket upgrade path both call it, so the HTTP and
+   * upgrade views of one request cannot disagree about header casing.
+   */
+  static Map<String, List<String>> snapshotHeaders(Request request) {
+    LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
+    for (String name : request.getHeaders().getFieldNamesCollection()) {
+      List<String> values = request.getHeaders().getValuesList(name);
+      map.put(name.toLowerCase(Locale.ROOT), values != null ? List.copyOf(values) : List.of());
+    }
+    return Map.copyOf(map);
+  }
+
+  /** Query-parameter snapshot; the same single conversion {@link #queryParams()} uses. */
+  static Map<String, List<String>> snapshotQueryParams(Request request) {
+    Fields fields = Request.extractQueryParameters(request);
+    LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
+    for (Fields.Field field : fields) {
+      params.put(field.getName(), List.copyOf(field.getValues()));
+    }
+    return Map.copyOf(params);
   }
 }

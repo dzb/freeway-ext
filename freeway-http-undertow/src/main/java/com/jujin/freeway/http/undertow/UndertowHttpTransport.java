@@ -35,7 +35,6 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -95,7 +94,7 @@ final class UndertowHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> queryParams() {
     if (queryParams == null) {
-      queryParams = snapshotQuery(exchange.getQueryParameters());
+      queryParams = snapshotQueryParams(exchange);
     }
     return queryParams;
   }
@@ -103,12 +102,7 @@ final class UndertowHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> headers() {
     if (requestHeaders == null) {
-      var headerMap = new LinkedHashMap<String, List<String>>();
-      for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
-        Deque<String> values = exchange.getRequestHeaders().get(name);
-        headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
-      }
-      requestHeaders = Map.copyOf(headerMap);
+      requestHeaders = snapshotHeaders(exchange);
     }
     return requestHeaders;
   }
@@ -388,6 +382,25 @@ final class UndertowHttpTransport implements HttpTransport {
     }
   }
 
+  /**
+   * Request-header snapshot keyed by lowercase name. The single conversion from Undertow's native
+   * header map: {@link #headers()} and the WebSocket upgrade path both call it, so the HTTP and
+   * upgrade views of one request cannot disagree about header casing.
+   */
+  static Map<String, List<String>> snapshotHeaders(HttpServerExchange exchange) {
+    var headerMap = new LinkedHashMap<String, List<String>>();
+    for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
+      Deque<String> values = exchange.getRequestHeaders().get(name);
+      headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
+    }
+    return Map.copyOf(headerMap);
+  }
+
+  /** Query-parameter snapshot; the same single conversion {@link #queryParams()} uses. */
+  static Map<String, List<String>> snapshotQueryParams(HttpServerExchange exchange) {
+    return snapshotQuery(exchange.getQueryParameters());
+  }
+
   private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {
     if (source.isEmpty()) {
       return Map.of();
@@ -397,11 +410,5 @@ final class UndertowHttpTransport implements HttpTransport {
       params.put(entry.getKey(), List.copyOf(entry.getValue()));
     }
     return Map.copyOf(params);
-  }
-
-  /** Every header value for the name, in wire order. */
-  static List<String> headerValues(HttpServerExchange exchange, String name) {
-    Deque<String> values = exchange.getRequestHeaders().get(name);
-    return values == null || values.isEmpty() ? List.of() : new ArrayList<>(values);
   }
 }

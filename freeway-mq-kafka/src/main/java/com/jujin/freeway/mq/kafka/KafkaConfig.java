@@ -18,7 +18,6 @@ package com.jujin.freeway.mq.kafka;
 
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
@@ -214,16 +213,20 @@ public record KafkaConfig(
     return dlqTopic != null && !dlqTopic.isBlank();
   }
 
+  /**
+   * Comma-separated list parsing is {@link SymbolSpec#splitList}'s rule, not this adapter's: the
+   * cascade applies it to every {@code SymbolSpec.list} key, and {@link #of} is the adapting
+   * factory for callers that hand over raw strings. Re-implementing the split here would be a
+   * second owner of "trim, drop empty".
+   */
   private static List<String> parseList(String raw) {
-    if (raw == null || raw.isBlank()) return List.of();
-    return Arrays.stream(raw.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
+    return SymbolSpec.splitList(raw);
   }
 
   /**
-   * Parses extra Kafka client properties in {@code key=value} pairs separated by semicolons (e.g.
-   * {@code security.protocol=SASL_SSL;sasl.mechanism=PLAIN}).
+   * Parses {@code freeway.kafka.properties} ({@code key=value} pairs separated by semicolons) and
+   * refuses the keys the adapter owns.
    */
-  /** Parses {@code freeway.kafka.properties} and refuses the keys the adapter owns. */
   private static Properties validatedExtraProperties(String raw) {
     Properties props = parseProperties(raw);
     for (String key : props.stringPropertyNames()) {

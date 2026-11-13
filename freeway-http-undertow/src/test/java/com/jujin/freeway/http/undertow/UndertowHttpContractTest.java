@@ -17,7 +17,6 @@
 package com.jujin.freeway.http.undertow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
@@ -125,15 +124,6 @@ class UndertowHttpContractTest {
       assertEquals(200, response.statusCode());
       assertEquals("hello-worker", new String(response.body(), StandardCharsets.UTF_8));
     }
-  }
-
-  @Test
-  void sanitizesCorrelationIdForResponseHeaders() {
-    assertEquals("abc-123", UndertowHttpEngine.safeCorrelationId("abc-123"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
-    assertFalse(UndertowHttpEngine.safeCorrelationId("a\r\nb").contains("\r"));
   }
 
   @Test

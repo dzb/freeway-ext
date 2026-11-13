@@ -59,7 +59,7 @@ import org.openjdk.jmh.annotations.Warmup;
 @Measurement(iterations = 5, time = 1)
 @Fork(2)
 @State(Scope.Thread)
-public class HttpContextOutputBenchmark {
+public class HttpExchangeOutputBenchmark {
 
   private static final JsonCodec JSON = new JsonCodecDefault();
   private static final Coercer COERCER = new CoercerDefault();

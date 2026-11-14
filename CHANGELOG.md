@@ -12,6 +12,10 @@
 
 ### Changed
 
+- **Documentation reorganised and translated to English**: the docs tree now
+  follows the core conventions (`audits/`, `benchmarks/`, `design/`, `releases/`,
+  lower-case kebab-case names, `docs/README.md` index); every remaining Chinese
+  document and all historical CHANGELOG sections were translated.
 - **Both HTTP adapters now compose `HttpTransport` / `HttpExchangeSupport`**: core 2.0 deleted
   `AbstractHttpContext` / `AbstractWebSocketSession`, so the extension points are two SPIs plus
   two final policy objects. `UndertowHttpContext` / `JettyHttpContext` are therefore gone,
@@ -175,7 +179,7 @@ The criterion is core `TASTE.md`'s "one owner per fact", not "merge what looks d
   registers/deregisters through Consul. **Run against a live agent** (Consul 2.0.4 dev agent):
   13/13 green; skipped without the variable, red against a dead address. Four behaviors the
   stub could not catch were found and fixed this way (see the design doc's §3.1). Design:
-  `docs/consul-adapter-design.md`.
+  `docs/design/consul-adapter.md`.
 
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
   jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core
@@ -1046,7 +1050,7 @@ The criterion is core `TASTE.md`'s "one owner per fact", not "merge what looks d
   Dependabot keep the build green and dependencies current; Apache-2.0 license
   headers added to all sources; Spotless (google-java-format) enforces a
   consistent style at `verify`.
-- **Docs**: `docs/RELEASE.md` documents the snapshot release flow (verify →
+- **Docs**: `docs/release.md` documents the snapshot release flow (verify →
   changelog → tag → deploy → benchmark archive).
 - **Benchmark**: `compare`/`list`/`history` render local time and tolerate null
   `created_at` rows.

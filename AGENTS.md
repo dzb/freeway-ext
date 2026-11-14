@@ -87,7 +87,7 @@ exception — comparing engines requires both of them — and it is excluded fro
 - **Engine adapters stay self-contained**: the two engines share the testkit contracts and
   the core SPI, not an internal abstraction layer. Duplication between them is deliberate
   — a shared abstraction that then needs per-engine fixes misrepresents the engines (see
-  `docs/audit-structure-consistency-1.5.2.md` §6).
+  `docs/audits/structure-consistency-1.5.2.md` §6).
 - The parent POM inherits its build plugins from `freeway-parent` (compiler 25, surefire,
   source, javadoc, GPG signing, Central publishing) and pins core versions through
   `<freeway.version>` in `dependencyManagement`.
@@ -137,6 +137,7 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 - Core [AGENTS.md](https://github.com/dzb/freeway/blob/main/AGENTS.md) — the repo-wide
   conventions this repository follows unchanged.
 - [README.md](README.md) — which module to use, per use case.
-- [docs/RELEASE.md](docs/RELEASE.md) — release and publishing steps.
-- [docs/audit-structure-consistency-1.5.2.md](docs/audit-structure-consistency-1.5.2.md)
+- [docs/README.md](docs/README.md) — documentation index (audits, design, benchmarks, releases).
+- [docs/release.md](docs/release.md) — release and publishing steps.
+- [docs/audits/structure-consistency-1.5.2.md](docs/audits/structure-consistency-1.5.2.md)
   — the current structure audit and status record.

@@ -56,7 +56,7 @@ Consul 2.0.4 dev agent it is 13/13 green, skipped without the variable and red a
 dead address. Four behaviours a stub could not catch were found this way — Meta keys
 cannot contain dots, a TTL check starts critical, the check id must be explicit, and
 errors must carry the agent's response body — and are recorded in
-[`consul-adapter-design.md`](consul-adapter-design.md).
+[`consul-adapter-design.md`](../design/consul-adapter.md).
 
 ### Every module declares its configuration keys (all modules)
 
@@ -108,6 +108,6 @@ and measure a different cell.
 
 199 tests (7 skipped — 5 broker-gated, 2 Consul-agent-gated), 8 modules. The Consul
 adapter is the one module with **no** third-party dependency; its design note is
-[`consul-adapter-design.md`](consul-adapter-design.md), and its module's four collaborators
+[`consul-adapter-design.md`](../design/consul-adapter.md), and its module's four collaborators
 are package-private (only `ConsulModule` is public, since no public signature names the
 others).

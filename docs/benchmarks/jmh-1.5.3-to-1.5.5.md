@@ -4,7 +4,7 @@
 **Question**: did the core convergence series (WebServer→HttpServer assembly,
 HttpContext two-half split / RequestView, in-chain error mapping, mime table into
 `MediaTypes`, …) regress the freeway-http hot paths?
-**Protocol**: [BENCHMARK_PROTOCOL.md](../freeway-benchmark/BENCHMARK_PROTOCOL.md) §3 —
+**Protocol**: [BENCHMARK_PROTOCOL.md](../../freeway-benchmark/BENCHMARK_PROTOCOL.md) §3 —
 the annotated defaults on every class: 2 forks, 5×1s warmup, 5×1s measurement,
 `thrpt`, identical options on both sides, fresh JVM per benchmark. Classes were run
 one at a time, interleaved baseline→candidate (09-22) and candidate→baseline (09-23).

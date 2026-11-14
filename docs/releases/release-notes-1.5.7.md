@@ -52,7 +52,7 @@ bundle; 0.12 removes them before upload.
 - All ext modules track core `1.5.7`; `freeway.version` and the parent version
   are `1.5.7`.
 - No public adapter API was added in this release; the changes are behavior and
-  contract tests. The full list is in [CHANGELOG.md](../CHANGELOG.md).
+  contract tests. The full list is in [CHANGELOG.md](../../CHANGELOG.md).
 
 ## Numbers
 

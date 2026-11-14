@@ -19,3 +19,42 @@ jobs:
           cache: maven
       - name: Build and test
         run: mvn -B -ntp verify -Dgpg.skip=true
+
+  docs:
+    name: docs consistency
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # English-only docs and resolving relative links: the same drift the core
+      # repository guards with DocsLayoutConsistencyTest, without a Java test
+      # module here (the ext test suite is adapter-focused).
+      - name: Documentation checks
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path('.')
+          han = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
+          link = re.compile(r'\]\(([^)\s]+)\)')
+          docs = list((root / 'docs').rglob('*'))
+          docs += [root / 'README.md', root / 'AGENTS.md', root / 'CHANGELOG.md']
+          cjk = [str(p) for p in docs
+                 if p.is_file() and p.suffix in {'.md', '.sample', '.reference'}
+                 and han.search(p.read_text(encoding='utf-8'))]
+          broken = []
+          for p in docs:
+              if not p.is_file() or p.suffix != '.md':
+                  continue
+              for m in link.finditer(p.read_text(encoding='utf-8')):
+                  target = m.group(1).split('#', 1)[0]
+                  if not target or target.startswith(('http://', 'https://', 'mailto:', '#')):
+                      continue
+                  if not (p.parent / target).exists():
+                      broken.append(f'{p} -> {m.group(1)}')
+          if cjk or broken:
+              print('CJK documentation:', cjk)
+              print('broken links:', broken)
+              sys.exit(1)
+          print('documentation checks passed')
+          PY

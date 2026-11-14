@@ -1,5 +1,10 @@
 # Release process
 
+Release signing and deployment are **manual by design**: CI never signs or
+publishes, and no release credentials are stored in this repository or in
+GitHub Actions. Run this process on a machine that owns the signing key and the
+Central credentials.
+
 1. **Verify** — run the full build with signing locally:
 
    ```bash

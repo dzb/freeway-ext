@@ -32,7 +32,9 @@ mvn spotless:check                           # format gate — not part of `mvn 
 CI (GitHub Actions) does exactly what the local loop does, plus the part that
 cannot be done locally by accident: it clones core `main`, installs that
 snapshot, then runs `verify` here, so an adapter left behind by a core change
-fails against the core it will actually consume.
+fails against the core it will actually consume. CI is verification-only: it
+never signs or deploys. Release is manual ([docs/release.md](docs/release.md));
+the signing key and Central credentials stay on the machine that runs it.
 
 - **The format gate is not in the test lifecycle**: `spotless:check` is bound to
   `verify` (google-java-format, which also removes unused imports), so run it explicitly

@@ -27,6 +27,13 @@
             <artifactId>freeway-cloud</artifactId>
         </dependency>
         <dependency>
+            <!-- Test-only: the registration lifecycle lives in freeway-fleet's
+                 LocalDiscoveryModule. -->
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <!-- JsonUtils: the Consul wire format is Consul's, not the app's. -->
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-commons</artifactId>

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.CloudModule.ConfigKeys;
-import com.jujin.freeway.cloud.discovery.DiscoveryModule;
+import com.jujin.freeway.fleet.LocalDiscoveryModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
@@ -89,7 +89,7 @@ class ConsulIntegrationTest {
     System.setProperty(ConfigKeys.REGISTRY_SHUTDOWN_DRAIN, "PT0S");
 
     try (AppRuntime app =
-        FreewayApp.create(new HttpModule(), new DiscoveryModule(), new ConsulModule()).start()) {
+        FreewayApp.create(new HttpModule(), new LocalDiscoveryModule(), new ConsulModule()).start()) {
 
       int port = app.get(HttpServer.class).port();
       ServiceDiscovery discovery = app.get(ServiceDiscovery.class);

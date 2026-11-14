@@ -230,10 +230,6 @@ public final class UndertowHttpEngine implements HttpEngine {
     return millis <= 0 ? -1 : (int) Math.min(millis, Integer.MAX_VALUE);
   }
 
-  private String prop(String key) {
-    return symbols.resolve(key, null);
-  }
-
   /**
    * Parses the shared WebSocket max-frame-size knob. Malformed values fail startup naming the key
    * instead of silently falling back the way {@code Long.getLong} did.

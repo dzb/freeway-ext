@@ -111,13 +111,12 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 
 ## Regressions to Watch
 
-- **Kafka bridge contract** — all three keys must agree across nodes:
-  `freeway.kafka.topics` is the bridge topic the sink writes and the subscriber polls,
-  while the *local* topic travels in the `ce-fwtopic` header;
-  `freeway.kafka.allowed-event-types` must list every bridged type (including
-  `java.lang.String` for string topics — an empty list accepts nothing and warns at
-  startup); `freeway.kafka.client-id` must be unique per node, or suppress-own swallows
-  the peer's events.
+- **Kafka plane contract** — `freeway.kafka.topics` is the topic the plane sends to and
+  its subscriber polls; the topic *is* the routing key (the 1.5 bridge header
+  `ce-fwtopic` and `freeway.kafka.allowed-event-types` no longer exist).
+  `freeway.kafka.client-id` must be unique per node, or `suppress-own` swallows the
+  peer's events. `freeway.kafka.properties` may not override the adapter-owned client
+  keys (`enable.auto.commit`, `auto.offset.reset`, group/servers, (de)serializers).
 - **WebSocket sends are asynchronous**: the Jetty/Undertow sessions never block the
   calling (often receive/I/O) thread — send failures are logged rather than thrown, and
   `close()` returns immediately after starting the close handshake.

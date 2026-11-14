@@ -22,7 +22,7 @@ core moved to 1.5.2-SNAPSHOT the benchmark sources were never recompiled. The re
 compile** (see §2; independently reproduced).
 
 Apart from that, functionality and code hygiene are in good shape: no unused types, license headers and
-class-level javadoc are 100% consistent, and no TODO is left behind (1 place in benchmark). Structural
+class-level javadoc are 100% consistent, and no TODOs are left behind (1 place in benchmark). Structural
 problems concentrate in three places that "have already been quietly forking":
 
 | # | Topic | Location | Severity |
@@ -631,9 +631,8 @@ the builder, and the harness no longer passes `ErrorHandlers.defaultHandler()` i
 `HttpModule`'s contribution semantics (custom first, built-in default always last). CORS/health are still
 explicitly disabled (the scenario sends no `Origin` and probes no health endpoint, since leaving them on
 would mean every engine is measuring per-request overhead unrelated to the scenario), and the reason is
-written in a code
-comment. While there, a documentation error in core was fixed: the `WebServerBuilder` example wrote
-`WebServer.builder()`, but core has no such method (core commit `593ac00c`).
+written in a code comment. While there, a documentation error in core was fixed: the `WebServerBuilder`
+example wrote `WebServer.builder()`, but core has no such method (core commit `593ac00c`).
 
 **(2026-09-13, another round: three shared seams carved out by "does it contain engine API")** After a
 normalized diff + method-level pairing of the two adapters, three blocks that contain no engine API and
@@ -892,9 +891,9 @@ at §5, §6 and the ends of §4.x as process records.
 
 ### 9.2 Intentionally Kept (not done; reasoning in the body)
 
-- The two adapters implement their own per engine API and each stay self-contained: transport start/stop,
-  per-request dispatch (Undertow's worker handoff), response mapping, TLS assembly, `*Handle` record types,
-  404 body, `readTimeout=0` spelling, WS frame-limit rejection timing.
+- The two adapters each implement the engine API themselves and each stay self-contained: transport
+  start/stop, per-request dispatch (Undertow's worker handoff), response mapping, TLS assembly, `*Handle`
+  record types, 404 body, `readTimeout=0` spelling, WS frame-limit rejection timing.
 - `AbstractHttpContext` / `HttpContextImpl.reset` 10 args (two internal call sites, ten required, per-request
   hot path).
 - `ServiceRegistry.drainWindow()` default method (the established SPI shape; the hook reads it, tests

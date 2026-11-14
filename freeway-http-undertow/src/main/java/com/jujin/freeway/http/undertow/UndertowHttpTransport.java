@@ -174,8 +174,8 @@ final class UndertowHttpTransport implements HttpTransport {
   /**
    * Writes one planned response. Undertow's sender is asynchronous, so this adapter buffers the
    * body it was given — a materialized body is what the minimal adapter can hand over, and the
-   * short-circuit in {@link #writeResponse} keeps the {@code Content-Length} the support
-   * object declared.
+   * short-circuit in {@link #writeResponse} keeps the {@code Content-Length} the support object
+   * declared.
    */
   @Override
   public void writeResponse(ResponsePlan plan) throws IOException {

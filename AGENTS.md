@@ -9,7 +9,7 @@ convention over configuration.
 This file is the single home for ext-repo conventions: build, module layout, naming,
 design rules, testing, commit rules. Framework-wide conventions live in the core
 repository — [AGENTS.md](https://github.com/dzb/freeway/blob/main/AGENTS.md) and
-[docs/ARCHITECTURE.md](https://github.com/dzb/freeway/blob/main/docs/ARCHITECTURE.md)
+[docs/ARCHITECTURE.md](https://github.com/dzb/freeway/blob/main/docs/architecture.md)
 — and apply here unchanged.
 
 ## Build

@@ -4,10 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: adapters (JDK 25)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -17,12 +27,21 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+      # The adapters pin 2.0.0-SNAPSHOT. Building core main first (instead of
+      # resolving whatever snapshot Central holds) makes this job fail on the
+      # ABI break it is meant to catch, and keeps the two repositories moving
+      # together.
+      - name: Check out core
+        run: git clone --depth 1 https://github.com/dzb/freeway.git freeway-core
+      - name: Install core snapshot
+        run: mvn -B -ntp -f freeway-core/pom.xml -DskipTests -Dgpg.skip=true install
       - name: Build and test
         run: mvn -B -ntp verify -Dgpg.skip=true
 
   docs:
     name: docs consistency
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -58,3 +77,16 @@ jobs:
               sys.exit(1)
           print('documentation checks passed')
           PY
+
+  dependency-review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high

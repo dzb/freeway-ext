@@ -29,6 +29,11 @@ mvn -pl freeway-http-adapter-testkit,freeway-http-jetty test   # the testkit is 
 mvn spotless:check                           # format gate — not part of `mvn test`
 ```
 
+CI (GitHub Actions) does exactly what the local loop does, plus the part that
+cannot be done locally by accident: it clones core `main`, installs that
+snapshot, then runs `verify` here, so an adapter left behind by a core change
+fails against the core it will actually consume.
+
 - **The format gate is not in the test lifecycle**: `spotless:check` is bound to
   `verify` (google-java-format, which also removes unused imports), so run it explicitly
   before committing.

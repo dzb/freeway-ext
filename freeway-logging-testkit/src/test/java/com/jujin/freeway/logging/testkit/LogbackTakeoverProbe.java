@@ -14,6 +14,10 @@ import org.slf4j.LoggerFactory;
  * One JVM that resolves Freeway's logging backend and reports what SLF4J actually bound. The mode
  * selects the configuration under test; the parent test forks this class so the JVM-global SLF4J
  * binding starts from scratch.
+ *
+ * <p>The probe also pins the JUL contract: with an external backend Freeway must leave {@code
+ * java.util.logging} untouched, so JUL records neither reach the backend nor carry Freeway
+ * handlers.
  */
 public final class LogbackTakeoverProbe {
 
@@ -52,25 +56,28 @@ public final class LogbackTakeoverProbe {
       long slf4jEvents =
           events.stream().filter(e -> "probe.slf4j".equals(e.getLoggerName())).count();
       long julEvents = events.stream().filter(e -> "probe.jul".equals(e.getLoggerName())).count();
-      boolean bridge =
+      long freewayJulHandlers =
           Arrays.stream(Logger.getLogger("").getHandlers())
-              .anyMatch(h -> h.getClass().getName().contains("JULSlf4jBridge"));
+              .filter(h -> h.getClass().getName().startsWith("com.jujin.freeway"))
+              .count();
 
       require(slf4jEvents == 1, "one SLF4J event expected, got " + slf4jEvents);
-      require(julEvents == 1, "JUL must be bridged into logback exactly once, got " + julEvents);
-      require(bridge, "the JUL->SLF4J bridge handler must be installed");
+      require(julEvents == 0, "JUL records must NOT be forwarded into logback, got " + julEvents);
+      require(
+          freewayJulHandlers == 0,
+          "Freeway must leave the JUL root handlers untouched, found " + freewayJulHandlers);
 
       System.out.println(
           "PROBE_OK mode="
               + mode
               + " factory="
               + factoryClass
-              + " bridge="
-              + bridge
               + " slf4jEvents="
               + slf4jEvents
-              + " julEvents="
-              + julEvents);
+              + " julForwarded="
+              + julEvents
+              + " freewayJulHandlers="
+              + freewayJulHandlers);
     } catch (Throwable failure) {
       failure.printStackTrace(System.out);
       System.out.println("PROBE_FAIL " + failure.getMessage());

@@ -15,9 +15,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Cross-JVM proof that a real third-party SLF4J backend takes over when selected, that the JUL
- * bridge follows it, and that Freeway's own provider stays the default while logback sits on the
- * classpath.
+ * Cross-JVM proof that a real third-party SLF4J backend takes over when selected, that JUL is left
+ * untouched in that mode, and that Freeway's own provider stays the default while logback sits on
+ * the classpath.
  *
  * <p>Same-JVM assertions cannot catch a binding misconfiguration: SLF4J binds once per JVM, and
  * this test JVM already owns the Freeway provider. Forking starts the selection from a clean slate,
@@ -28,16 +28,20 @@ class LogbackTakeoverTest {
   private static final String JUL_FACTORY = "com.jujin.freeway.commons.logging.JULLoggerFactory";
 
   @Test
-  void explicitLogbackTakesOverAndTheJulBridgeFollows(@TempDir Path work) throws Exception {
+  void explicitLogbackTakesOverWithoutTouchingJul(@TempDir Path work) throws Exception {
     ProbeRun run = run(work, "takeover", "-Dfreeway.log.system=logback");
 
     assertEquals(0, run.exitCode(), run.output());
     assertTrue(run.output().contains("PROBE_OK mode=takeover"), run.output());
     assertTrue(run.output().contains("factory=ch.qos.logback.classic.LoggerContext"), run.output());
-    assertTrue(run.output().contains("bridge=true"), run.output());
     assertTrue(
         run.output().contains("[Freeway] logging: logback"),
         "the startup report must name logback: " + run.output());
+    assertTrue(
+        run.output().contains("julForwarded=0"), "JUL must not be forwarded: " + run.output());
+    assertTrue(
+        run.output().contains("freewayJulHandlers=0"),
+        "Freeway must not touch the JUL root handlers: " + run.output());
   }
 
   @Test

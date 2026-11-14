@@ -4,10 +4,11 @@
 
 ### Added
 
-- **`freeway-logging-testkit`**（不发布）：跨 JVM 的日志后端集成测试。真实 Logback 在
-  `-Dfreeway.log.system=logback` / `auto` 下接管 SLF4J 绑定，JUL 日志经桥进入 Logback；
-  默认仍是 Freeway 的 JUL 后端，并报告 classpath 上未被选中的 Logback。同 JVM 无法验证
-  SLF4J 的一次性绑定，所以探针在独立进程中运行。
+- **`freeway-logging-testkit`** (not published): cross-JVM logging-backend integration tests. Real
+  Logback takes over the SLF4J binding under `-Dfreeway.log.system=logback` / `auto`; the default
+  stays Freeway's JUL backend and reports the unselected Logback on the classpath. The probe also
+  pins that Freeway leaves JUL untouched in external mode (no JUL handlers, no forwarding). A single
+  JVM cannot verify the one-time SLF4J binding, so the probe runs in its own process.
 
 ### Changed
 

@@ -30,7 +30,7 @@ For the vast majority of applications, this is all you need.
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | [JMH](https://github.com/openjdk/jmh) 1.37, [robaho](https://github.com/robaho/httpserver) 1.0.29 |
 | `freeway-http-adapter-testkit` | Shared fixtures and contracts every engine must pass (test scope only) | JUnit 6.1.3 |
-| `freeway-logging-testkit` | Cross-JVM proof that Logback takes over when selected and stays out of the default (test scope only, not published) | [Logback](https://logback.qos.ch) 1.5.38 |
+| `freeway-logging-testkit` | Cross-JVM proof that Logback takes over when selected, leaves JUL alone, and stays out of the default (test scope only, not published) | [Logback](https://logback.qos.ch) 1.5.38 |
 
 Adapter modules are leaf nodes: no cross-dependencies between them. `freeway-benchmark` is the
 one exception — comparing engines requires both of them — and is excluded from deployment.

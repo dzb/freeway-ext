@@ -54,6 +54,7 @@ mvn spotless:check                           # format gate — not part of `mvn 
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |
+| `freeway-logging-testkit` | Cross-JVM logging-backend integration tests (not published): Logback takeover, `auto`, and the default staying Freeway's JUL provider | core commons; logback-classic at test scope |
 
 The adapter modules are leaf nodes: no cross-dependencies between them, and each depends
 only on core modules plus its own third-party library — `freeway-cloud-consul` being the

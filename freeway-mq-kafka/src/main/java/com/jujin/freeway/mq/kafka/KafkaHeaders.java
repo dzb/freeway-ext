@@ -10,8 +10,8 @@ import org.apache.kafka.common.header.Headers;
  *
  * <p>Headers follow the CloudEvents Kafka binding: every CloudEvents attribute rides as a {@code
  * ce-} header, so a record carries the same logical envelope as the WS mesh's JSON frames ({@code
- * MeshEnvelope} in freeway-cloud) — same attributes, JSON content mode there, header mode
- * here. Attribute mapping:
+ * MeshEnvelope} in freeway-cloud) — same attributes, JSON content mode there, header mode here.
+ * Attribute mapping:
  *
  * <ul>
  *   <li>{@code ce-specversion} = {@code "1.0"}, always;

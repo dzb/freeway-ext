@@ -140,7 +140,7 @@ public abstract class RemoteRpcContract extends EngineFixture {
             discovery,
             loadBalancer,
             new RpcHttpClientDefault.Wiring(
-                List.of(), // no propagators
+                List.of(), // no context codecs
                 null, // retryer -> built-in default fallback
                 null, // no breaker
                 null, // no rate limiter

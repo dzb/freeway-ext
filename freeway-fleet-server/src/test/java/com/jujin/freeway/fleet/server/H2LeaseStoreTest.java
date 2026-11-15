@@ -53,8 +53,11 @@ class H2LeaseStoreTest {
     }
 
     @Test
-    void staleEntriesAreEvictedFromTheTable() {
+    void staleEntriesAreEvictedFromTheTable() throws InterruptedException {
         store.register(instance);
+        // The store's clock has millisecond resolution; leave a boundary gap so
+        // a zero max-age cannot race the registration timestamp.
+        Thread.sleep(5);
         assertTrue(store.liveReadyInstances("orders", Duration.ZERO).isEmpty());
         assertEquals(0, store.instanceCount());
     }

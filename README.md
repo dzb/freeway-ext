@@ -1,6 +1,6 @@
 # freeway-ext
 
-Optional third-party integrations for the [Freeway](https://github.com/dzb/freeway) framework.
+Optional extensions and integrations for the [Freeway](https://github.com/dzb/freeway) framework.
 
 ## Built-in engine
 
@@ -26,6 +26,8 @@ For the vast majority of applications, this is all you need.
 | `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.13 |
 | `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.3.Final |
 | `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
+| `freeway-fleet` | Fleet client, discovery/registrar and wire protocol | **none** — JDK `HttpClient` only |
+| `freeway-fleet-server` | Standalone Fleet registry server + `LeaseStore` | **none** — JDK `HttpClient` only |
 | `freeway-cloud-consul` | Service discovery/registration backed by Consul (non-Kubernetes deployments) | **none** — JDK `HttpClient` only |
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | [JMH](https://github.com/openjdk/jmh) 1.37, [robaho](https://github.com/robaho/httpserver) 1.0.29 |

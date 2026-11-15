@@ -1,8 +1,9 @@
 # Repository Guidelines
 
-`freeway-ext` is the JDK 25+ Maven repository holding Freeway's third-party
-integrations: the HTTP engine adapters, the message-queue and connection-pool
-adapters, the shared adapter testkit, and the benchmark suite. It consumes Freeway
+`freeway-ext` is the JDK 25+ Maven repository holding Freeway's optional
+extensions: the HTTP engine adapters, the message-queue and connection-pool
+adapters, the Fleet registry client/server, the shared adapter testkit and the
+benchmark suite. It consumes Freeway
 core as a dependency — core never depends on it. Keep changes scoped, explicit, and
 convention over configuration.
 
@@ -58,6 +59,8 @@ the signing key and Central credentials stay on the machine that runs it.
 | `freeway-http-jetty` | Jetty 12 engine adapter (`HttpEngine`) | core ioc + http + commons; jetty-server, jetty-websocket-jetty-server, jetty-http2-server, jetty-alpn-*-server |
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
+| `freeway-fleet` | Fleet client/protocol (`FleetModule`, `FleetDiscovery`, `FleetRegistrar`) | core ioc + cloud + commons + http; **no third-party client** |
+| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, `LeaseStore`) | core ioc + cloud + commons + http + boot (test); freeway-fleet |
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |

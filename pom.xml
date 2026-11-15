@@ -83,6 +83,11 @@
             <artifactId>freeway-fleet</artifactId>
             <version>${freeway.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet-server</artifactId>
+            <version>${freeway.version}</version>
+        </dependency>
 
             <dependency>
                 <groupId>io.undertow</groupId>
@@ -160,9 +165,12 @@
         <module>freeway-http-jetty</module>
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>
+        <module>freeway-fleet</module>
+        <module>freeway-fleet-server</module>
         <module>freeway-cloud-consul</module>
         <module>freeway-db-hikari</module>
         <module>freeway-benchmark</module>
+        <module>demo/registry-server</module>
     </modules>
 
     <build>

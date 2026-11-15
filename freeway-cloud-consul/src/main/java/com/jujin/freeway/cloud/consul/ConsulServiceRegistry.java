@@ -38,6 +38,11 @@ final class ConsulServiceRegistry implements ServiceRegistry {
 
   /** Flips the TTL check; the core's readiness gate reaches Consul through this. */
   @Override
+  public boolean supportsReadiness() {
+    return true;
+  }
+
+  @Override
   public void markReady(ServiceInstance instance, boolean ready) {
     client.markReady(instance, ready);
   }

@@ -35,6 +35,9 @@ final class FleetRegistrar implements ServiceRegistry {
     }
 
     @Override
+    public boolean supportsReadiness() { return true; }
+
+    @Override
     public void markReady(ServiceInstance instance, boolean ready) {
         client.markReady(instance, ready);
     }

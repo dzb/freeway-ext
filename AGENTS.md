@@ -59,19 +59,19 @@ the signing key and Central credentials stay on the machine that runs it.
 | `freeway-http-jetty` | Jetty 12 engine adapter (`HttpEngine`) | core ioc + http + commons; jetty-server, jetty-websocket-jetty-server, jetty-http2-server, jetty-alpn-*-server |
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
-| `freeway-fleet` | Fleet client/protocol (`FleetModule`, `FleetDiscovery`, `FleetRegistrar`) | core ioc + cloud + commons + http; **no third-party client** |
-| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, H2 `LeaseStore`) | core ioc + cloud + commons + http + boot (test); freeway-fleet; H2 |
+| `freeway-fleet-protocol` | Fleet wire contract: routes, headers, version and shared `freeway.fleet.*` keys | no runtime dependency |
+| `freeway-fleet` | Fleet client/discovery/registrar (`FleetModule`, `FleetClient`, `FleetDiscovery`, `FleetRegistrar`) | core ioc + cloud + commons + http; freeway-fleet-protocol; **no third-party client** |
+| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, H2 `LeaseStore`) | core ioc + cloud + commons + http; freeway-fleet-protocol; H2; freeway-fleet (test) |
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |
 | `freeway-logging-testkit` | Cross-JVM logging-backend integration tests (not published): Logback takeover, `auto`, the default staying Freeway's JUL provider, and JUL staying untouched in external mode | core commons; logback-classic at test scope |
 
-The adapter modules are leaf nodes: no cross-dependencies between them, and each depends
-only on core modules plus its own third-party library — `freeway-cloud-consul` being the
-one with no third-party library at all (Consul's agent is reached over its HTTP API with
-the JDK `HttpClient`). `freeway-benchmark` is the one
-exception — comparing engines requires both of them — and it is excluded from deployment
-(`skipPublishing`, plus `maven.deploy.skip` for the plain deploy lifecycle).
+HTTP/DB adapter modules are leaf nodes: each depends on core plus its own third-party
+library. `freeway-cloud-consul` has no third-party client (the agent is reached with the
+JDK `HttpClient`). Fleet is a first-party client/server pair (`server -> protocol`, with
+the client only in server tests), and `freeway-benchmark` intentionally depends on both
+engines; both are distinct from the leaf-adapter rule.
 
 ## Naming
 

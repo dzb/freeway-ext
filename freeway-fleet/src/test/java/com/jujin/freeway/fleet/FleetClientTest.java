@@ -66,6 +66,19 @@ class FleetClientTest {
         assertEquals(1, second.registrations.size(), "node 2 got the write too — fan-out is the HA model");
         assertEquals("i1", first.registrations.get(0).instanceId());
         assertEquals("s3cret", first.lastToken, "the shared secret rides the header");
+        assertEquals(FleetProtocol.register("svc"), first.lastPath,
+            "the client must use the protocol's register route");
+    }
+
+    @Test
+    void readiness_publish_uses_the_protocol_route() throws Exception {
+        StubNode node = stub();
+        FleetClient client = client(node);
+
+        client.markReady(instance("i1"), true);
+
+        assertEquals(FleetProtocol.ready("svc", "i1"), node.lastPath,
+            "the explicit readiness route must be the one the protocol owns");
     }
 
     @Test
@@ -184,6 +197,7 @@ class FleetClientTest {
         private final List<ServiceInstance> registrations = new CopyOnWriteArrayList<>();
         private volatile String lastToken = "";
         private volatile String lastProto = "";
+        private volatile String lastPath = "";
         private volatile String instancesBody = "[]";
         private volatile int renewStatus = 200;
         /** 0 = honour the request; otherwise answer every call with this status. */
@@ -199,6 +213,7 @@ class FleetClientTest {
                     lastProto = exchange.getRequestHeaders()
                         .getFirst(FleetProtocol.PROTOCOL_HEADER);
                     String path = exchange.getRequestURI().getPath();
+                    lastPath = path;
                     byte[] body = exchange.getRequestBody().readAllBytes();
                     int status = forcedStatus == 0 ? 404 : forcedStatus;
                     String response = "";

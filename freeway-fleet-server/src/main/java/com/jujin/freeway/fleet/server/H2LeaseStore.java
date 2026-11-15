@@ -46,13 +46,27 @@ public final class H2LeaseStore implements LeaseStore, AutoCloseable {
 
     public H2LeaseStore(String url, String user, String password, JsonCodec codec) {
         this.codec = java.util.Objects.requireNonNull(codec, "codec");
+        Connection opened = null;
         try {
-            this.connection = DriverManager.getConnection(url, user, password);
-            try (Statement statement = connection.createStatement()) {
+            opened = DriverManager.getConnection(url, user, password);
+            try (Statement statement = opened.createStatement()) {
                 statement.execute(SCHEMA);
             }
         } catch (SQLException e) {
+            closeQuietly(opened, e);
             throw new IllegalStateException("cannot open Fleet H2 store at " + url, e);
+        }
+        this.connection = opened;
+    }
+
+    private static void closeQuietly(Connection connection, SQLException failure) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.close();
+        } catch (SQLException closeFailure) {
+            failure.addSuppressed(closeFailure);
         }
     }
 

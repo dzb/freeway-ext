@@ -20,8 +20,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * The whole freeway-native discovery story on real processes: one registry
- * node, two services that have never heard of each other, no static peers —
+ * The whole freeway-native discovery story with real HTTP across three apps in
+ * one JVM: one registry node, two services that have never heard of each other,
+ * no static peers —
  * they register through the wire, discover each other through the wire, the
  * feeder hands the answers to the mesh, and the mesh connects. When this test
  * is green, the freeway-native backend stands in for Consul end to end.
@@ -49,7 +50,6 @@ class FreewayFleetEndToEndTest {
         System.clearProperty(HttpModule.ConfigKeys.SERVER_PORT);
         System.clearProperty(FleetKeys.TOKEN);
         System.clearProperty(FleetKeys.NODES);
-        System.clearProperty(FleetKeys.TOKEN);
         System.clearProperty("freeway.cloud.event.enabled");
         System.clearProperty("freeway.cloud.event.discovery-feed-ms");
         System.clearProperty("freeway.cloud.event.backoff-base-ms");
@@ -113,10 +113,10 @@ class FreewayFleetEndToEndTest {
     }
 
     // A "wrong token" client cannot be expressed here: the credential is one
-    // key read by both sides (registry.token), so a node and a client in the
-    // same JVM necessarily share its value. The refusal itself is pinned where
-    // it lives — RegistryServerModuleTest (wrong/missing header → 401) and
-    // FleetRegistryClientTest (a refused registration fails the startup loudly).
+    // key read by both sides (freeway.fleet.token), so a node and a client in
+    // the same JVM necessarily share its value. The refusal is pinned in
+    // FleetServerModuleTest (wrong/missing header → 401); a refused
+    // registration is pinned in FleetModuleTest.
 
     private static boolean meshed(AppRuntime app) {
         return !app.get(com.jujin.freeway.cloud.event.PeerHub.class).connections().isEmpty();

@@ -15,6 +15,10 @@
     <packaging>jar</packaging>
     <dependencies>
         <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-commons</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>

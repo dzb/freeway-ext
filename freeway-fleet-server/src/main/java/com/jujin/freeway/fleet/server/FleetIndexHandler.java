@@ -1,10 +1,13 @@
 package com.jujin.freeway.fleet.server;
 
+import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.HttpExchange;
 import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.http.HttpStatus;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,6 +26,12 @@ import java.util.Map;
  */
 final class FleetIndexHandler implements RouteHandler {
 
+    private final SymbolSource symbols;
+
+    FleetIndexHandler(SymbolSource symbols) {
+        this.symbols = java.util.Objects.requireNonNull(symbols, "symbols");
+    }
+
     @Override
     public void handle(HttpExchange ctx) throws IOException {
         Map<String, Object> routes = new LinkedHashMap<>();
@@ -37,9 +46,15 @@ final class FleetIndexHandler implements RouteHandler {
         body.put("routes", routes);
         body.put("tokenHeader", FleetProtocol.TOKEN_HEADER);
         body.put("protoHeader", FleetProtocol.PROTOCOL_HEADER);
-        // A rotation window is a posture a client may want to know about: an
-        // operator reading this can tell whether accepting two secrets is on.
-        body.put("tokenRotation", List.of("current", "previous"));
+        String current = symbols.resolve(FleetKeys.TOKEN, "");
+        String previous = symbols.resolve(FleetKeys.TOKEN_PREVIOUS, "");
+        body.put("tokenRequired", !current.isBlank() || !previous.isBlank());
+        // Report the actual rotation posture, not a hardcoded one: a node with
+        // no previous token is not accepting two secrets.
+        List<String> rotation = new ArrayList<>(2);
+        if (!current.isBlank()) rotation.add("current");
+        if (!previous.isBlank()) rotation.add("previous");
+        if (!rotation.isEmpty()) body.put("tokenRotation", rotation);
         ctx.setHeader(FleetProtocol.PROTOCOL_HEADER,
             String.valueOf(FleetProtocol.PROTOCOL));
         ctx.sendJson(HttpStatus.OK, body);

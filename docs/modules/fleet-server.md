@@ -40,10 +40,10 @@ supports a rotation window.
 
 The module is a deployable starting point, not a production control plane yet:
 
-- the store is in-memory and at-most-once; a restart loses membership until
-  clients re-register;
+- the embedded H2 file store persists leases for one node; a restart keeps the
+  table, but there is no replication or HA coordination;
 - no TLS and no admin UI/RBAC;
-- no durable leases or HA coordination.
+- do not share one H2 file between Fleet processes; PostgreSQL is the HA path.
 
 Those are server responsibilities and belong here, not in `freeway-cloud`.
 H2 runs embedded with the process, so a single Fleet node is self-contained:

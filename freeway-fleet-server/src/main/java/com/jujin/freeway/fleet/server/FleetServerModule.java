@@ -1,6 +1,6 @@
 package com.jujin.freeway.fleet.server;
 
-import com.jujin.freeway.commons.json.JsonCodec;
+import com.jujin.freeway.fleet.FleetCodec;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.route.Route;
@@ -91,7 +91,7 @@ public final class FleetServerModule implements ModuleEx {
                 symbols.resolve(SymbolSpec.of(ConfigKeys.URL, String.class, ConfigKeys.URL_DEFAULT)),
                 symbols.resolve(SymbolSpec.of(ConfigKeys.USER, String.class, ConfigKeys.USER_DEFAULT)),
                 symbols.resolve(SymbolSpec.of(ConfigKeys.PASSWORD, String.class, "")),
-                container.get(JsonCodec.class));
+                FleetCodec.JSON);
         });
         for (Surface surface : SURFACE) {
             b.contribute(Route.class).add(surface.id(), route(surface));

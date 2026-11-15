@@ -1,5 +1,7 @@
 package com.jujin.freeway.fleet;
 
+import com.jujin.freeway.cloud.CloudKeys;
+import com.jujin.freeway.cloud.annotation.Local;
 import com.jujin.freeway.ioc.OptionalBinding;
 import com.jujin.freeway.cloud.discovery.CachingDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
@@ -10,7 +12,6 @@ import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.symbol.KnownKeys;
-import com.jujin.freeway.ioc.MissingBindingException;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.time.Duration;
@@ -37,9 +38,10 @@ import org.slf4j.LoggerFactory;
  * and name the fleet with
  * {@code freeway.fleet.nodes}; a token shared with the nodes
  * goes in {@code freeway.fleet.token}. It is one of the
- * alternatives for the same seam — the in-process store is the default, and
- * third-party backends (Consul and friends) ship as ext adapters; switching is
- * swapping the module and its keys, never application code.</p>
+ * alternatives for the same seam — there is no built-in in-process production
+ * backend; static discovery is the zero-infrastructure choice, and Consul ships
+ * as an ext adapter. Switching is swapping the module and its keys, never
+ * application code.</p>
  */
 public final class FleetModule implements ModuleEx {
 
@@ -63,11 +65,13 @@ public final class FleetModule implements ModuleEx {
                 cacheTtl(container),
                 OptionalBinding.get(container, com.jujin.freeway.commons.metrics.Metrics.class)))
             .primary();
+        // A caller-supplied policy must replace this fallback without an
+        // ambiguity error; the Local marker identifies the built-in default.
         b.bind(LoadBalancer.class)
             .to((Container container) -> new LoadBalancerDefault(
                 container.get(SymbolSource.class).resolve(
                     SymbolSpec.of(LoadBalancer.ConfigKeys.LOCAL_ZONE, String.class, ""))))
-            .primary();
+            .marker(Local.class);
 
         // Declared vocabulary: a key outside this backend's namespace fails the
         // bind instead of sitting outside the unknown-key check. The per-service
@@ -76,6 +80,7 @@ public final class FleetModule implements ModuleEx {
         b.contribute(KnownKeys.class)
             // Static keys plus the dynamic per-service TTL family.
             .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX))
+            .add(KnownKeys.of(LoadBalancer.ConfigKeys.class, CloudKeys.PREFIX))
             .add(KnownKeys.admit(FleetKeys.CACHE_TTL_PREFIX));
     }
 

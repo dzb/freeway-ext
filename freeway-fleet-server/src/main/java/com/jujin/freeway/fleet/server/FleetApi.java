@@ -2,15 +2,16 @@ package com.jujin.freeway.fleet.server;
 
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.util.ConstantTime;
 
-import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonObject;
 import com.jujin.freeway.commons.json.JsonUtils;
 import com.jujin.freeway.http.HttpExchange;
 import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
+import com.jujin.freeway.fleet.FleetCodec;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.HttpStatus;
@@ -36,15 +37,14 @@ final class FleetApi implements RouteHandler {
         SymbolSpec.of(FleetKeys.TOKEN_PREVIOUS, String.class, "");
 
     private final LeaseStore store;
-    private final JsonCodec codec;
+    private final JsonCodec codec = FleetCodec.JSON;
     /** Read per request, not captured at construction: the token is the one
      *  setting an operator rotates on a live node — a rotate-by-restart rule
      *  would make every secret change an outage. */
     private final SymbolSource symbols;
 
-    FleetApi(LeaseStore store, JsonCodec codec, SymbolSource symbols) {
+    FleetApi(LeaseStore store, SymbolSource symbols) {
         this.store = Objects.requireNonNull(store, "store");
-        this.codec = Objects.requireNonNull(codec, "codec");
         this.symbols = Objects.requireNonNull(symbols, "symbols");
     }
 

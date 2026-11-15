@@ -1,14 +1,15 @@
 # Fleet
 
-`freeway-fleet` contains the Fleet client, discovery adapter, registrar and
-wire protocol. It has no server and no in-process registry:
+`freeway-fleet` contains the Fleet client, discovery adapter and registrar.
+The wire protocol lives in `freeway-fleet-protocol`; the client depends on it.
+It has no server and no in-process registry:
 
 - `FleetModule` — binds the Fleet client, discovery/registrar and client-side
   load balancer;
 - `FleetClient` — the wire client;
 - `FleetDiscovery` / `FleetRegistrar` — the `ServiceDiscovery` /
   `ServiceRegistry` adapters;
-- `FleetProtocol` — routes, headers and version shared with the server.
+- `FleetProtocol` (in `freeway-fleet-protocol`) — routes, headers and version shared with the server.
 
 ## Assembly
 

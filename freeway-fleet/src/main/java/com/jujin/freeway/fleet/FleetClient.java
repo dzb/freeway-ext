@@ -2,20 +2,17 @@ package com.jujin.freeway.fleet;
 
 
 import com.jujin.freeway.cloud.http.HttpClients;
-import com.jujin.freeway.commons.json.JsonArray;
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.commons.json.JsonArray;
 import com.jujin.freeway.commons.json.JsonUtils;
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.http.MediaTypes;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,7 +41,7 @@ final class FleetClient implements AutoCloseable {
 
     private final FleetNodes nodes;
     private final HttpClient http;
-    private final JsonCodec codec = new JsonCodecDefault();
+    private final JsonCodec codec = FleetCodec.JSON;
     /** Readiness this client last published; carried on every heartbeat so a
      *  restarted node learns it without a second call. */
     private volatile boolean ready = true;
@@ -73,7 +70,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 HttpResponse<String> response = exchange(node,
-                    "POST", "/fleet/services/" + segment(instance.serviceId()) + "/instances"
+                    "POST", FleetProtocol.register(instance.serviceId())
                         + "?ready=" + health.ready(),
                     codec.toJson(instance));
                 if (response.statusCode() / 100 != 2) {
@@ -107,10 +104,14 @@ final class FleetClient implements AutoCloseable {
         this.ready = ready;
         for (URI node : nodes.addresses()) {
             try {
-                exchange(node, "POST",
-                    "/fleet/services/" + segment(instance.serviceId())
-                        + "/instances/" + segment(instance.instanceId()) + "/ready",
+                HttpResponse<String> response = exchange(node, "POST",
+                    FleetProtocol.ready(instance.serviceId(), instance.instanceId()),
                     "{\"ready\":" + ready + "}");
+                if (response.statusCode() / 100 != 2) {
+                    LOG.debug("Registry node {} answered {} to a readiness publish;"
+                            + " the next heartbeat will carry it",
+                        node, response.statusCode());
+                }
             } catch (Exception e) {
                 LOG.debug("Registry node {} unreachable for a readiness publish: {}",
                     node, e.getMessage());
@@ -124,9 +125,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 HttpResponse<String> response = exchange(node,
-                    "POST",
-                    "/fleet/services/" + segment(serviceId)
-                        + "/instances/" + segment(instanceId) + "/renew",
+                    "POST", FleetProtocol.renew(serviceId, instanceId),
                     "{\"ready\":" + ready + "}");
                 if (response.statusCode() == 200) {
                     aliveSomewhere = true;
@@ -151,10 +150,8 @@ final class FleetClient implements AutoCloseable {
     public void unregister(ServiceInstance instance) {
         for (URI node : nodes.addresses()) {
             try {
-                exchange(node,
-                    "DELETE",
-                    "/fleet/services/" + segment(instance.serviceId())
-                        + "/instances/" + segment(instance.instanceId()),
+                exchange(node, "DELETE",
+                    FleetProtocol.unregister(instance.serviceId(), instance.instanceId()),
                     "");
             } catch (Exception e) {
                 LOG.warn("Registry node {} unreachable for a deregistration: {}", node, e.getMessage());
@@ -173,7 +170,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 HttpResponse<String> response = exchange(node,
-                    "GET", "/fleet/services/" + segment(serviceId) + "/instances", "");
+                    "GET", FleetProtocol.discover(serviceId), "");
                 if (response.statusCode() / 100 != 2) {
                     failures++;
                     LOG.warn("Registry node {} answered {} to a discovery", node, response.statusCode());
@@ -228,9 +225,5 @@ final class FleetClient implements AutoCloseable {
                 + FleetProtocol.PROTOCOL + " — upgrade the client");
         }
         return response;
-    }
-
-    private static String segment(String raw) {
-        return URLEncoder.encode(raw, StandardCharsets.UTF_8);
     }
 }

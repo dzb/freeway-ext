@@ -12,6 +12,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -87,6 +88,26 @@ class FleetServerModuleTest {
                     uri(app, "/fleet/services/svc/instances")).GET());
             assertTrue(!after.body().contains("\"i1\""),
                 "after delete the store must no longer list it, got: " + after.body());
+        }
+    }
+
+    @Test
+    void defaultModuleUsesTheConfiguredH2Store() throws Exception {
+        System.setProperty(FleetServerModule.ConfigKeys.URL,
+            "jdbc:h2:mem:fleet-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1");
+        try (AppRuntime app = FreewayApp.create(
+                new HttpModule(), new FleetServerModule()).start()) {
+            HttpResponse<String> reg = http(app, HttpRequest.newBuilder(
+                    uri(app, "/fleet/services/svc/instances"))
+                .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+            assertTrue(reg.statusCode() == 200, "POST /instances returned " + reg.statusCode());
+
+            HttpResponse<String> discover = http(app, HttpRequest.newBuilder(
+                    uri(app, "/fleet/services/svc/instances")).GET());
+            assertTrue(discover.body().contains("\"i1\""),
+                "the default H2 store must persist and return the instance: " + discover.body());
+        } finally {
+            System.clearProperty(FleetServerModule.ConfigKeys.URL);
         }
     }
 
@@ -169,6 +190,10 @@ class FleetServerModuleTest {
                     + "cannot be missing here: " + index.body());
             assertTrue(index.body().contains("\"index\""),
                 "including the index itself: " + index.body());
+            assertTrue(index.body().contains("\"tokenRequired\":true"),
+                "the index must report the actual token posture: " + index.body());
+            assertTrue(index.body().contains("\"tokenRotation\":[\"current\"]"),
+                "no previous token means no rotation window: " + index.body());
             assertTrue(String.valueOf(FleetProtocol.PROTOCOL).equals(
                     index.headers().firstValue(FleetProtocol.PROTOCOL_HEADER).orElse("")),
                 "responses echo the protocol, got header "

@@ -11,8 +11,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * In-memory {@link LeaseStore} implementation for the Fleet Server. A durable
- * server store can replace it without changing the HTTP surface.
+ * In-memory {@link LeaseStore} for tests and embedding. The server's default
+ * embedded store is {@link H2LeaseStore}.
  */
 public final class MemLeaseStore implements LeaseStore {
 

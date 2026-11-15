@@ -56,7 +56,7 @@ class FleetServerModuleTest {
     @Test
     void register_then_query_discovers_the_same_store() throws Exception {
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
 
             // register via the wire
             HttpResponse<String> reg = http(app, HttpRequest.newBuilder(
@@ -93,7 +93,7 @@ class FleetServerModuleTest {
     @Test
     void unknown_instance_is_a_clean_answer_not_a_refresh() throws Exception {
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> renew = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances/ghost/renew"))
                 .POST(HttpRequest.BodyPublishers.ofString("")));
@@ -108,7 +108,7 @@ class FleetServerModuleTest {
         // failed while warming could not remove its own entry and it lingered
         // until eviction.
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             http(app, HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
                 .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
 
@@ -131,7 +131,7 @@ class FleetServerModuleTest {
         // as ready and being marked not-ready a moment later — a window in
         // which discovery could route traffic to it.
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances?ready=false"))
                 .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
@@ -155,7 +155,7 @@ class FleetServerModuleTest {
     void the_index_describes_the_protocol_before_any_credential() throws Exception {
         System.setProperty(FleetKeys.TOKEN, "s3cret");
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> index = http(app, HttpRequest.newBuilder(
                 uri(app, FleetProtocol.SELF_DESCRIPTION)).GET());
             assertTrue(index.statusCode() == 200,
@@ -184,7 +184,7 @@ class FleetServerModuleTest {
         // Equality made a proto-0 client a 426 — a version answer for a client
         // the node could have served.
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> older = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances"))
                 .header(FleetProtocol.PROTOCOL_HEADER, "0")
@@ -198,7 +198,7 @@ class FleetServerModuleTest {
     @Test
     void an_unsupported_protocol_is_refused_with_426_not_404() throws Exception {
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> newer = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances"))
                 .header(FleetProtocol.PROTOCOL_HEADER, "99")
@@ -215,7 +215,7 @@ class FleetServerModuleTest {
         System.setProperty(FleetKeys.TOKEN, "new-secret");
         System.setProperty(FleetKeys.TOKEN_PREVIOUS, "old-secret");
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> old = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances"))
                 .header(FleetProtocol.TOKEN_HEADER, "old-secret")
@@ -245,7 +245,7 @@ class FleetServerModuleTest {
     void a_set_token_rejects_writers_without_the_header() throws Exception {
         System.setProperty(FleetKeys.TOKEN, "s3cret");
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> bare = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances"))
                 .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
@@ -265,7 +265,7 @@ class FleetServerModuleTest {
     void the_matching_token_passes_and_a_wrong_one_does_not() throws Exception {
         System.setProperty(FleetKeys.TOKEN, "s3cret");
         try (AppRuntime app = FreewayApp.create(
-                new HttpModule(), new FleetServerModule()).start()) {
+                new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
             HttpResponse<String> wrong = http(app, HttpRequest.newBuilder(
                     uri(app, "/fleet/services/svc/instances"))
                 .header(FleetProtocol.TOKEN_HEADER, "nope")

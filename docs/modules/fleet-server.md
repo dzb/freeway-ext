@@ -7,8 +7,9 @@
 FreewayApp.run(new HttpModule(), new FleetServerModule());
 ```
 
-It is a control plane: it owns the registry surface and a `LeaseStore` (currently `MemLeaseStore`), and it
-does not register itself into the Fleet it serves. Applications depend on
+It is a control plane: it owns the registry surface and a `LeaseStore`
+(default `H2LeaseStore`, embedded H2; `MemLeaseStore` for tests), and it does
+not register itself into the Fleet it serves. Applications depend on
 `freeway-fleet` (client), never on this module.
 
 ## Surface
@@ -25,8 +26,9 @@ does not register itself into the Fleet it serves. Applications depend on
 | self-description | `GET /fleet` |
 
 The server reads `freeway.fleet.token` (writer credential) and
-`freeway.fleet.token-previous` (rotation window) from
-`FleetKeys`.
+`freeway.fleet.token-previous` (rotation window) from `FleetKeys`, and
+`freeway.fleet.db.url` / `.user` / `.password` from
+`FleetServerModule.ConfigKeys`.
 
 Requests may carry `X-Fleet-Proto`; a newer protocol is refused with `426`
 rather than a misleading `404`. The self-description is open so a client can
@@ -44,7 +46,10 @@ The module is a deployable starting point, not a production control plane yet:
 - no durable leases or HA coordination.
 
 Those are server responsibilities and belong here, not in `freeway-cloud`.
-The intended first production step is a PostgreSQL implementation of `LeaseStore`. Node
+H2 runs embedded with the process, so a single Fleet node is self-contained:
+the default URL is `jdbc:h2:file:./fleet;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE`.
+An embedded H2 file must not be shared by two Fleet processes; for HA the
+`LeaseStore` seam takes a PostgreSQL implementation. Node
 discovery for the Fleet itself must be independent of the Fleet (static seed
 list, an external load balancer, or the shared database) — never self-registration.
 

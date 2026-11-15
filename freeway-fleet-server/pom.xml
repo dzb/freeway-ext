@@ -46,6 +46,10 @@
             <artifactId>slf4j-api</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-boot</artifactId>
             <scope>test</scope>

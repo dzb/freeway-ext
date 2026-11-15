@@ -61,6 +61,7 @@ curl -s -X DELETE localhost:19090/fleet/services/order/instances/i7
 
 ## Note on the split with production
 
-The demo runs `FleetServerModule`; its in-memory `MemLeaseStore` makes it a
-development/lightweight control plane. Production deployments replace the
-store with a durable implementation and add auth/TLS/HA at the server layer.
+The demo runs `FleetServerModule`; its embedded H2 `H2LeaseStore` keeps it
+self-contained while persisting leases in `./fleet.mv.db`. Production
+deployments add auth/TLS/HA at the server layer, and move to a shared
+PostgreSQL store when more than one Fleet node must see the same leases.

@@ -9,13 +9,13 @@ import java.util.List;
  * The lease table behind a registry backend: who is registered, when they were
  * last seen, and whether they are ready.
  *
- * <p>One owner for the server's storage semantics. {@link MemLeaseStore} is
- * the current implementation; a durable PostgreSQL store can replace it without
- * changing the HTTP surface.</p>
+ * <p>One owner for the server's storage semantics. {@link H2LeaseStore} is the
+ * embedded default; {@link MemLeaseStore} serves tests, and a PostgreSQL store
+ * can replace either without changing the HTTP surface.</p>
  */
 public interface LeaseStore {
 
-    /** Staleness threshold for the in-memory implementation. */
+    /** Default staleness threshold for lease stores. */
     Duration DEFAULT_EVICTION = Duration.ofSeconds(30);
 
     void register(ServiceInstance instance);

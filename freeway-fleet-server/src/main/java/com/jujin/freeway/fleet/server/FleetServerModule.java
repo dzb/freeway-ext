@@ -1,5 +1,6 @@
 package com.jujin.freeway.fleet.server;
 
+import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.route.Route;
@@ -7,6 +8,8 @@ import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
 import com.jujin.freeway.ioc.symbol.KnownKeys;
+import com.jujin.freeway.ioc.symbol.SymbolSource;
+import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.util.List;
 
 /**
@@ -21,12 +24,38 @@ import java.util.List;
  * into).</p>
  *
  * <p><b>Current maturity.</b> The surface has an optional shared token but no
- * TLS and an in-memory store; it is a deployable starting point, not yet a
- * production control plane. Production hardening (durable leases, admin UI,
- * mTLS/RBAC, HA) belongs to this server module, not to
+ * TLS, and an embedded H2 lease store by default. It is a deployable
+ * single-node starting point; production hardening (shared durable leases,
+ * admin UI, mTLS/RBAC, HA) belongs to this server module, not to
  * {@code freeway-cloud}.</p>
  */
 public final class FleetServerModule implements ModuleEx {
+
+    /** Server-only storage keys. The client never reads these. */
+    public static final class ConfigKeys {
+        private ConfigKeys() {}
+
+        public static final String PREFIX = "freeway.fleet.db";
+
+        public static final String URL = "freeway.fleet.db.url";
+        public static final String URL_DEFAULT =
+            "jdbc:h2:file:./fleet;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE";
+        public static final String USER = "freeway.fleet.db.user";
+        public static final String USER_DEFAULT = "sa";
+        public static final String PASSWORD = "freeway.fleet.db.password";
+    }
+
+    private final LeaseStore suppliedStore;
+
+    /** Production shape: embedded H2 file store, configured by {@code freeway.fleet.db.*}. */
+    public FleetServerModule() {
+        this(null);
+    }
+
+    /** Test/embedding shape: bind a caller-owned store instead of H2. */
+    public FleetServerModule(LeaseStore store) {
+        this.suppliedStore = store;
+    }
 
     /** The surface as data: bind contributes routes, the index describes them. */
     static final List<Surface> SURFACE = List.of(
@@ -51,8 +80,19 @@ public final class FleetServerModule implements ModuleEx {
     @Override
     public void bind(Binder b) {
         b.contribute(KnownKeys.class)
-            .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX));
-        b.bind(LeaseStore.class).to(MemLeaseStore.class);
+            .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX))
+            .add(KnownKeys.of(ConfigKeys.class, ConfigKeys.PREFIX));
+        b.bind(LeaseStore.class).to(container -> {
+            if (suppliedStore != null) {
+                return suppliedStore;
+            }
+            SymbolSource symbols = container.get(SymbolSource.class);
+            return new H2LeaseStore(
+                symbols.resolve(SymbolSpec.of(ConfigKeys.URL, String.class, ConfigKeys.URL_DEFAULT)),
+                symbols.resolve(SymbolSpec.of(ConfigKeys.USER, String.class, ConfigKeys.USER_DEFAULT)),
+                symbols.resolve(SymbolSpec.of(ConfigKeys.PASSWORD, String.class, "")),
+                container.get(JsonCodec.class));
+        });
         for (Surface surface : SURFACE) {
             b.contribute(Route.class).add(surface.id(), route(surface));
         }

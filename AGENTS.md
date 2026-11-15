@@ -60,7 +60,7 @@ the signing key and Central credentials stay on the machine that runs it.
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
 | `freeway-fleet` | Fleet client/protocol (`FleetModule`, `FleetDiscovery`, `FleetRegistrar`) | core ioc + cloud + commons + http; **no third-party client** |
-| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, `LeaseStore`) | core ioc + cloud + commons + http + boot (test); freeway-fleet |
+| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, H2 `LeaseStore`) | core ioc + cloud + commons + http + boot (test); freeway-fleet; H2 |
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |

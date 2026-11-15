@@ -66,7 +66,7 @@ class FreewayFleetEndToEndTest {
         // The node: holds the table, requires the shared secret.
         System.setProperty(FleetKeys.TOKEN, "s3cret");
         node = FreewayApp.run(
-            new HttpModule(), new FleetServerModule());
+            new HttpModule(), new FleetServerModule(new MemLeaseStore()));
         int nodePort = port(node);
 
         // The clients: write through the wire, read through the wire, feed the mesh

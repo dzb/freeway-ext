@@ -7,7 +7,6 @@ import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.registration.RegistrationModule;
 import com.jujin.freeway.cloud.registration.RegistrationModule.ConfigKeys;
-import com.jujin.freeway.fleet.LocalModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
@@ -90,7 +89,7 @@ class ConsulIntegrationTest {
     System.setProperty(ConfigKeys.REGISTRY_SHUTDOWN_DRAIN, "PT0S");
 
     try (AppRuntime app =
-        FreewayApp.create(new HttpModule(), new RegistrationModule(), new LocalModule(), new ConsulModule()).start()) {
+        FreewayApp.create(new HttpModule(), new RegistrationModule(), new ConsulModule()).start()) {
 
       int port = app.get(HttpServer.class).port();
       ServiceDiscovery discovery = app.get(ServiceDiscovery.class);

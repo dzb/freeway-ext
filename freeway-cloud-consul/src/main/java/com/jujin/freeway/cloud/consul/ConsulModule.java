@@ -24,7 +24,7 @@ import java.time.Duration;
  *
  * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least {@code
  * LocalDiscoveryModule} and the HTTP module): the registration/renewal/deregistration lifecycle and
- * the {@code /health/ready} registry check live in {@code LocalDiscoveryModule}, and a primary
+ * the {@code /health/ready} registry check live in {@code RegistrationModule}, and a primary
  * registry binding without it is registered nowhere. It cannot declare that as a submodule because
  * the container holds one declaration per module class — a user placing both would be a duplicate,
  * not a bundle.

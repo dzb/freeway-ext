@@ -2,7 +2,7 @@ package com.jujin.freeway.fleet.server;
 
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.internal.ConstantTime;
+import com.jujin.freeway.commons.util.ConstantTime;
 
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonObject;

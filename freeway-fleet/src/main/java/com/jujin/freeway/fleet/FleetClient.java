@@ -1,7 +1,7 @@
 package com.jujin.freeway.fleet;
 
 
-import com.jujin.freeway.cloud.internal.CloudHttpClients;
+import com.jujin.freeway.cloud.http.HttpClients;
 import com.jujin.freeway.commons.json.JsonArray;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
@@ -51,7 +51,7 @@ final class FleetClient implements AutoCloseable {
 
     FleetClient(FleetNodes nodes) {
         this.nodes = Objects.requireNonNull(nodes, "nodes");
-        this.http = CloudHttpClients.builder(nodes.timeout(), null).build();
+        this.http = HttpClients.builder(nodes.timeout(), null).build();
     }
 
     /** Writes the instance to every node; every node failing fails loudly. */

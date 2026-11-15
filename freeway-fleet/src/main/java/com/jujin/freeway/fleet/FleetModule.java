@@ -1,6 +1,6 @@
 package com.jujin.freeway.fleet;
 
-import com.jujin.freeway.cloud.internal.OptionalBinding;
+import com.jujin.freeway.ioc.OptionalBinding;
 import com.jujin.freeway.cloud.discovery.CachingDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.LoadBalancer;

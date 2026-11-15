@@ -1,6 +1,5 @@
 package com.jujin.freeway.fleet;
 
-import com.jujin.freeway.cloud.CloudKeys;
 import com.jujin.freeway.cloud.internal.OptionalBinding;
 import com.jujin.freeway.cloud.discovery.CachingDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
@@ -36,8 +35,8 @@ import org.slf4j.LoggerFactory;
  *
  * <p>Place this module alongside {@code CloudModule} and {@code RegistrationModule},
  * and name the fleet with
- * {@code freeway.cloud.registry.nodes}; a token shared with the nodes
- * goes in {@code freeway.cloud.registry.token}. It is one of the
+ * {@code freeway.fleet.nodes}; a token shared with the nodes
+ * goes in {@code freeway.fleet.token}. It is one of the
  * alternatives for the same seam — the in-process store is the default, and
  * third-party backends (Consul and friends) ship as ext adapters; switching is
  * swapping the module and its keys, never application code.</p>
@@ -47,8 +46,8 @@ public final class FleetModule implements ModuleEx {
     private static final Logger LOG = LoggerFactory.getLogger(FleetModule.class);
 
     private static final SymbolSpec<Duration> CACHE_TTL = SymbolSpec.of(
-        ConfigKeys.REGISTRY_CACHE_TTL, Duration.class,
-        ConfigKeys.REGISTRY_CACHE_TTL_DEFAULT);
+        FleetKeys.CACHE_TTL, Duration.class,
+        FleetKeys.CACHE_TTL_DEFAULT);
 
     @Override
     public void bind(Binder b) {
@@ -75,11 +74,9 @@ public final class FleetModule implements ModuleEx {
         // TTL family is dynamic by design, so it is admitted as a prefix — the
         // same shape boot uses for its per-file log keys.
         b.contribute(KnownKeys.class)
-            // The Fleet keys are declared here; the namespace itself belongs to
-            // CloudModule, and the per-service TTL family is admitted as a prefix.
-            .add(KnownKeys.of(ConfigKeys.class,
-                CloudKeys.PREFIX, CloudKeys.APP_PREFIX))
-            .add(KnownKeys.admit(ConfigKeys.REGISTRY_CACHE_TTL_PREFIX));
+            // Static keys plus the dynamic per-service TTL family.
+            .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX))
+            .add(KnownKeys.admit(FleetKeys.CACHE_TTL_PREFIX));
     }
 
     /**
@@ -103,7 +100,7 @@ public final class FleetModule implements ModuleEx {
      *  global default — a typo must not take remote calls down. */
     private static Duration resolveOverride(SymbolSource symbols, String serviceId,
                                            Duration fallback) {
-        String key = ConfigKeys.REGISTRY_CACHE_TTL_PREFIX + serviceId;
+        String key = FleetKeys.CACHE_TTL_PREFIX + serviceId;
         try {
             Duration own = symbols.resolve(SymbolSpec.of(key, Duration.class, null));
             return own == null ? fallback : own;
@@ -118,19 +115,4 @@ public final class FleetModule implements ModuleEx {
         return FleetNodes.from(container.get(SymbolSource.class));
     }
 
-    /** Keys read by the Fleet client. */
-    public static final class ConfigKeys {
-        private ConfigKeys() {}
-
-        public static final String REGISTRY_NODES = "freeway.cloud.registry.nodes";
-        public static final String REGISTRY_TOKEN = "freeway.cloud.registry.token";
-        public static final String REGISTRY_TOKEN_PREVIOUS = "freeway.cloud.registry.token-previous";
-        public static final String REGISTRY_TIMEOUT_MS = "freeway.cloud.registry.timeout-ms";
-        public static final long REGISTRY_TIMEOUT_MS_DEFAULT = 3000;
-        public static final String REGISTRY_CACHE_TTL = "freeway.cloud.registry.cache-ttl";
-        public static final java.time.Duration REGISTRY_CACHE_TTL_DEFAULT =
-            java.time.Duration.ofSeconds(5);
-        public static final String REGISTRY_CACHE_TTL_PREFIX =
-            "freeway.cloud.registry.cache-ttl.";
-    }
 }

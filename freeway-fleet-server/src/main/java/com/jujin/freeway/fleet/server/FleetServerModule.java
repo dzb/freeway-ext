@@ -1,7 +1,6 @@
 package com.jujin.freeway.fleet.server;
 
-import com.jujin.freeway.cloud.CloudKeys;
-import com.jujin.freeway.fleet.FleetModule;
+import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.route.RouteHandler;
@@ -31,17 +30,17 @@ public final class FleetServerModule implements ModuleEx {
 
     /** The surface as data: bind contributes routes, the index describes them. */
     static final List<Surface> SURFACE = List.of(
-        new Surface("register", "freeway.cloud.registry.register", "POST",
+        new Surface("register", "freeway.fleet.register", "POST",
             FleetProtocol.REGISTER, FleetApi.class),
-        new Surface("renew", "freeway.cloud.registry.renew", "POST",
+        new Surface("renew", "freeway.fleet.renew", "POST",
             FleetProtocol.RENEW, FleetApi.class),
-        new Surface("unregister", "freeway.cloud.registry.unregister", "DELETE",
+        new Surface("unregister", "freeway.fleet.unregister", "DELETE",
             FleetProtocol.UNREGISTER, FleetApi.class),
-        new Surface("discover", "freeway.cloud.registry.discover", "GET",
+        new Surface("discover", "freeway.fleet.discover", "GET",
             FleetProtocol.DISCOVER, FleetApi.class),
-        new Surface("ready", "freeway.cloud.registry.ready", "POST",
+        new Surface("ready", "freeway.fleet.ready", "POST",
             FleetProtocol.READY, FleetApi.class),
-        new Surface("index", "freeway.cloud.registry.index", "GET",
+        new Surface("index", "freeway.fleet.index", "GET",
             FleetProtocol.SELF_DESCRIPTION, FleetIndexHandler.class)
     );
 
@@ -52,8 +51,7 @@ public final class FleetServerModule implements ModuleEx {
     @Override
     public void bind(Binder b) {
         b.contribute(KnownKeys.class)
-            .add(KnownKeys.of(FleetModule.ConfigKeys.class,
-                CloudKeys.PREFIX, CloudKeys.APP_PREFIX));
+            .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX));
         b.bind(LeaseStore.class).to(MemLeaseStore.class);
         for (Surface surface : SURFACE) {
             b.contribute(Route.class).add(surface.id(), route(surface));

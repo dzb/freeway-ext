@@ -17,21 +17,21 @@ does not register itself into the Fleet it serves. Applications depend on
 
 | Operation | Route |
 |---|---|
-| register | `POST /registry/services/{serviceId}/instances` |
-| renew | `POST /registry/services/{serviceId}/instances/{instanceId}/renew` |
-| unregister | `DELETE /registry/services/{serviceId}/instances/{instanceId}` |
-| discover | `GET /registry/services/{serviceId}/instances` |
-| readiness | `POST /registry/services/{serviceId}/instances/{instanceId}/ready` |
-| self-description | `GET /registry` |
+| register | `POST /fleet/services/{serviceId}/instances` |
+| renew | `POST /fleet/services/{serviceId}/instances/{instanceId}/renew` |
+| unregister | `DELETE /fleet/services/{serviceId}/instances/{instanceId}` |
+| discover | `GET /fleet/services/{serviceId}/instances` |
+| readiness | `POST /fleet/services/{serviceId}/instances/{instanceId}/ready` |
+| self-description | `GET /fleet` |
 
-The server reads `freeway.cloud.registry.token` (writer credential) and
-`freeway.cloud.registry.token-previous` (rotation window) from
-`FleetModule.ConfigKeys`.
+The server reads `freeway.fleet.token` (writer credential) and
+`freeway.fleet.token-previous` (rotation window) from
+`FleetKeys`.
 
-Requests may carry `X-Registry-Proto`; a newer protocol is refused with `426`
+Requests may carry `X-Fleet-Proto`; a newer protocol is refused with `426`
 rather than a misleading `404`. The self-description is open so a client can
-learn the protocol before presenting credentials. `X-Registry-Token` is checked
-when `freeway.cloud.registry.token` is set; `freeway.cloud.registry.token-previous`
+learn the protocol before presenting credentials. `X-Fleet-Token` is checked
+when `freeway.fleet.token` is set; `freeway.fleet.token-previous`
 supports a rotation window.
 
 ## Current maturity

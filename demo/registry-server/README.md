@@ -10,7 +10,7 @@ auth, no TLS.
 
 | Capability | Where it shows |
 |---|---|
-| One `LeaseStore` behind both protocols | POST `/registry/.../instances` then GET that same name lists it |
+| One `LeaseStore` behind both protocols | POST `/fleet/.../instances` then GET that same name lists it |
 | Dev registry usable from any freeway app | any instance can POST its `ServiceInstance` and get discovered |
 | Same sync semantics as the server | renew POST keeps `alive` true, DELETE removes, renew of a ghost is 404 |
 | The process itself is also a registry client | on start it registers `serviceId=freeway-app` into the same store |
@@ -18,10 +18,10 @@ auth, no TLS.
 ## Endpoints
 
 ```text
-POST   /registry/services/{serviceId}/instances              register a ServiceInstance (JSON body)
-GET    /registry/services/{serviceId}/instances               discover live instances
-POST   /registry/services/{serviceId}/instances/{instanceId}/renew   renew (returns {"alive":true})
-DELETE /registry/services/{serviceId}/instances/{instanceId}  unregister
+POST   /fleet/services/{serviceId}/instances              register a ServiceInstance (JSON body)
+GET    /fleet/services/{serviceId}/instances               discover live instances
+POST   /fleet/services/{serviceId}/instances/{instanceId}/renew   renew (returns {"alive":true})
+DELETE /fleet/services/{serviceId}/instances/{instanceId}  unregister
 ```
 
 ## Prerequisites
@@ -36,7 +36,7 @@ DELETE /registry/services/{serviceId}/instances/{instanceId}  unregister
 ## Run
 
 ```bash
-cd demo/registry-server
+cd demo/fleet-server
 ./run.sh            # builds the shaded jar and starts the server
 ```
 
@@ -51,12 +51,12 @@ Expected startup:
 Then, from another terminal:
 
 ```bash
-curl -s -X POST localhost:19090/registry/services/order/instances \
+curl -s -X POST localhost:19090/fleet/services/order/instances \
   -H 'Content-Type: application/json' \
   -d '{"serviceId":"order","instanceId":"i7","endpoint":{"scheme":"http","host":"127.0.0.1","port":18090,"basePath":""},"metadata":{}}'
-curl -s localhost:19090/registry/services/order/instances
-curl -s -X POST localhost:19090/registry/services/order/instances/i7/renew
-curl -s -X DELETE localhost:19090/registry/services/order/instances/i7
+curl -s localhost:19090/fleet/services/order/instances
+curl -s -X POST localhost:19090/fleet/services/order/instances/i7/renew
+curl -s -X DELETE localhost:19090/fleet/services/order/instances/i7
 ```
 
 ## Note on the split with production

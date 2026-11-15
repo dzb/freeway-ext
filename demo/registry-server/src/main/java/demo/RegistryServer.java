@@ -23,11 +23,11 @@ public final class RegistryServer {
             new FleetServerModule());
 
         System.out.println("Registry server listening on http://127.0.0.1:19090");
-        System.out.println("  register : curl -X POST localhost:19090/registry/services/svc/instances \\");
+        System.out.println("  register : curl -X POST localhost:19090/fleet/services/svc/instances \\");
         System.out.println("      -d '<service-instance-json>'");
-        System.out.println("  discover : curl localhost:19090/registry/services/svc/instances");
-        System.out.println("  renew    : curl -X POST localhost:19090/registry/services/svc/instances/i1/renew");
-        System.out.println("  delete   : curl -X DELETE localhost:19090/registry/services/svc/instances/i1");
+        System.out.println("  discover : curl localhost:19090/fleet/services/svc/instances");
+        System.out.println("  renew    : curl -X POST localhost:19090/fleet/services/svc/instances/i1/renew");
+        System.out.println("  delete   : curl -X DELETE localhost:19090/fleet/services/svc/instances/i1");
         System.out.println("[registry-server] ready — listening until killed");
         new CountDownLatch(1).await(); // resident registry server
     }

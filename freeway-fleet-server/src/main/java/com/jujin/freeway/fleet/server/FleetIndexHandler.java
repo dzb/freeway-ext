@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * The registry surface describes itself: protocol version, the routes it
- * serves and whether it expects a token. {@code GET /registry}, deliberately
+ * serves and whether it expects a token. {@code GET /fleet}, deliberately
  * open — a client must be able to learn what it is talking to <em>before</em>
  * it has credentials, and a mismatch answered here is a readable failure
  * instead of a 404 on whichever route happened to move.

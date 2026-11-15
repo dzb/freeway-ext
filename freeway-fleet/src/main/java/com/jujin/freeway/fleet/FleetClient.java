@@ -73,7 +73,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 HttpResponse<String> response = exchange(node,
-                    "POST", "/registry/services/" + segment(instance.serviceId()) + "/instances"
+                    "POST", "/fleet/services/" + segment(instance.serviceId()) + "/instances"
                         + "?ready=" + health.ready(),
                     codec.toJson(instance));
                 if (response.statusCode() / 100 != 2) {
@@ -108,7 +108,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 exchange(node, "POST",
-                    "/registry/services/" + segment(instance.serviceId())
+                    "/fleet/services/" + segment(instance.serviceId())
                         + "/instances/" + segment(instance.instanceId()) + "/ready",
                     "{\"ready\":" + ready + "}");
             } catch (Exception e) {
@@ -125,7 +125,7 @@ final class FleetClient implements AutoCloseable {
             try {
                 HttpResponse<String> response = exchange(node,
                     "POST",
-                    "/registry/services/" + segment(serviceId)
+                    "/fleet/services/" + segment(serviceId)
                         + "/instances/" + segment(instanceId) + "/renew",
                     "{\"ready\":" + ready + "}");
                 if (response.statusCode() == 200) {
@@ -153,7 +153,7 @@ final class FleetClient implements AutoCloseable {
             try {
                 exchange(node,
                     "DELETE",
-                    "/registry/services/" + segment(instance.serviceId())
+                    "/fleet/services/" + segment(instance.serviceId())
                         + "/instances/" + segment(instance.instanceId()),
                     "");
             } catch (Exception e) {
@@ -173,7 +173,7 @@ final class FleetClient implements AutoCloseable {
         for (URI node : nodes.addresses()) {
             try {
                 HttpResponse<String> response = exchange(node,
-                    "GET", "/registry/services/" + segment(serviceId) + "/instances", "");
+                    "GET", "/fleet/services/" + segment(serviceId) + "/instances", "");
                 if (response.statusCode() / 100 != 2) {
                     failures++;
                     LOG.warn("Registry node {} answered {} to a discovery", node, response.statusCode());

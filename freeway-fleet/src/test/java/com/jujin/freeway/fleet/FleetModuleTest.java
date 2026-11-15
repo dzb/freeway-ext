@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.CloudModule;
-import com.jujin.freeway.fleet.FleetModule.ConfigKeys;
+import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.cloud.registration.RegistrationModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
@@ -30,8 +30,8 @@ class FleetModuleTest {
     @AfterEach
     void clearProperties() {
         System.clearProperty(HttpModule.ConfigKeys.SERVER_PORT);
-        System.clearProperty(FleetModule.ConfigKeys.REGISTRY_NODES);
-        System.clearProperty(FleetModule.ConfigKeys.REGISTRY_TOKEN);
+        System.clearProperty(FleetKeys.NODES);
+        System.clearProperty(FleetKeys.TOKEN);
     }
 
     @Test
@@ -39,7 +39,7 @@ class FleetModuleTest {
         System.setProperty(HttpModule.ConfigKeys.SERVER_PORT, "0");
         // No registration lifecycle here: no node is listening in this test. The
         // assertion is about the bindings, not the lifecycle.
-        System.setProperty(FleetModule.ConfigKeys.REGISTRY_NODES, "127.0.0.1:1");
+        System.setProperty(FleetKeys.NODES, "127.0.0.1:1");
         try (AppRuntime app = FreewayApp.create(new FleetModule()).start()) {
             // The container proxies the service behind its interface, so the shape
             // is asserted through the resolved fleet, and the behavior (an
@@ -57,7 +57,7 @@ class FleetModuleTest {
         IllegalStateException failure = org.junit.jupiter.api.Assertions.assertThrows(
             IllegalStateException.class,
             () -> FreewayApp.create(new FleetModule(), new RegistrationModule()).start());
-        assertTrue(causeChain(failure).contains(FleetModule.ConfigKeys.REGISTRY_NODES),
+        assertTrue(causeChain(failure).contains(FleetKeys.NODES),
             "the failure must name the key: " + causeChain(failure));
     }
 
@@ -66,7 +66,7 @@ class FleetModuleTest {
     @Test
     void a_bound_app_registers_through_the_fleet() {
         System.setProperty(HttpModule.ConfigKeys.SERVER_PORT, "0");
-        System.setProperty(FleetModule.ConfigKeys.REGISTRY_NODES, "127.0.0.1:1"); // unreachable: writes fail loudly at startup
+        System.setProperty(FleetKeys.NODES, "127.0.0.1:1"); // unreachable: writes fail loudly at startup
         IllegalStateException failure = org.junit.jupiter.api.Assertions.assertThrows(
             IllegalStateException.class,
             () -> FreewayApp.create(

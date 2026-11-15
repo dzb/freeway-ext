@@ -11,7 +11,7 @@ import com.jujin.freeway.http.HttpExchange;
 import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
-import com.jujin.freeway.fleet.FleetModule.ConfigKeys;
+import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.HttpStatus;
 import java.io.IOException;
@@ -30,10 +30,10 @@ final class FleetApi implements RouteHandler {
 
     /** The shared secret; the same key a client presents. */
     private static final SymbolSpec<String> TOKEN =
-        SymbolSpec.of(ConfigKeys.REGISTRY_TOKEN, String.class, "");
+        SymbolSpec.of(FleetKeys.TOKEN, String.class, "");
     /** Accepted in addition during a rotation window — this side only. */
     private static final SymbolSpec<String> TOKEN_PREVIOUS =
-        SymbolSpec.of(ConfigKeys.REGISTRY_TOKEN_PREVIOUS, String.class, "");
+        SymbolSpec.of(FleetKeys.TOKEN_PREVIOUS, String.class, "");
 
     private final LeaseStore store;
     private final JsonCodec codec;

@@ -25,20 +25,20 @@ never carries it. Static discovery (`StaticModule`) does not need registration;
 it has no write side.
 
 `freeway-fleet` is inert until installed: a dependency alone does not require a
-Fleet process. Once `FleetModule` is placed, `freeway.cloud.registry.nodes` must
+Fleet process. Once `FleetModule` is placed, `freeway.fleet.nodes` must
 name at least one node, or startup fails with the key in the message.
 
 ## Configuration
 
-`FleetModule.ConfigKeys` owns the client keys:
+`FleetKeys` owns the shared client/server keys:
 
 | Key | Meaning |
 |---|---|
-| `freeway.cloud.registry.nodes` | Comma-separated Fleet addresses (`host:port` or `http(s)://...`). Required when the module is active. |
-| `freeway.cloud.registry.token` | Optional shared token sent as `X-Registry-Token`. |
-| `freeway.cloud.registry.cache-ttl` | Discovery cache TTL; per-service overrides use the family prefix. |
-| `freeway.cloud.registry.timeout-ms` | Per-node connect/request timeout (default `3000`). |
-| `freeway.cloud.registry.token-previous` | Retired token accepted by a server during rotation. |
+| `freeway.fleet.nodes` | Comma-separated Fleet addresses (`host:port` or `http(s)://...`). Required when the module is active. |
+| `freeway.fleet.token` | Optional shared token sent as `X-Fleet-Token`. |
+| `freeway.fleet.cache-ttl` | Discovery cache TTL; per-service overrides use the family prefix. |
+| `freeway.fleet.timeout-ms` | Per-node connect/request timeout (default `3000`). |
+| `freeway.fleet.token-previous` | Retired token accepted by a server during rotation. |
 
 `RegistrationModule.ConfigKeys` owns the endpoint identity and drain keys
 (`service-id`, `service-host`, `service-scheme`, `service-port`,
@@ -51,9 +51,8 @@ fails startup loudly.
 
 ## Protocol
 
-`FleetProtocol` is the single owner of routes, the `X-Registry-Proto` version
-and the token header. The client and the server share that class; the wire path
-remains under `/registry` because the resource is a registry.
+`FleetProtocol` is the single owner of routes, the `X-Fleet-Proto` version
+and the token header. The client and the server share that class; the wire path is `/fleet`.
 Writes fan out to every configured node; reads union their answers and
 deduplicate by instance id. A node that answers a heartbeat with 404 makes the
 client report the lost lease so `RegistrationHook` can re-register.

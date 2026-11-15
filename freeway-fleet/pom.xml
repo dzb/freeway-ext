@@ -34,6 +34,10 @@
         </dependency>
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet-protocol</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-cloud</artifactId>
         </dependency>
         <dependency>

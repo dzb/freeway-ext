@@ -1,28 +1,43 @@
-# Freeway Ext
+## Freeway Ext
+
+[![Core](https://img.shields.io/badge/core-2.0.0-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 Adapters and integrations for the [Freeway](https://github.com/dzb/freeway)
 framework, aligned with Freeway 2.0.0.
+
+[Documentation](docs/README.md) · [Modules](#modules) · [HTTP adapters](#http-adapters) · [Kafka adapter](#kafka-adapter) · [Build](#build)
+
+---
 
 Freeway core already ships a zero-dependency built-in engine: raw sockets on
 virtual threads, HTTP/1.1 keep-alive, HTTP/2 h2c/h2, WebSocket and HTTPS. The
 modules here are opt-in: use one only when an application needs a particular HTTP
 runtime, broker, registry or database pool.
 
-## Modules
+### Modules
 
-| Module | Use when | External dependency |
-|---|---|---|
-| freeway-http-jetty | Jetty 12 deployments, Servlet-style processing or existing Jetty tooling | [Jetty](https://jetty.org) 12.1.13 |
-| freeway-http-undertow | Undertow-specific handler/listener configuration or existing Undertow tooling | [Undertow](https://undertow.io) 2.4.3.Final |
-| freeway-mq-kafka | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
-| freeway-fleet-protocol | Fleet wire contract, headers and shared keys | none |
-| freeway-fleet | Fleet client, discovery and registrar | none — JDK `HttpClient` only |
-| freeway-fleet-server | Standalone Fleet registry server with an H2 `LeaseStore` | [H2](https://h2database.com) 2.5.250 |
-| freeway-cloud-consul | Service discovery/registration backed by Consul (non-Kubernetes deployments) | none — JDK `HttpClient` only |
-| freeway-db-hikari | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
-| freeway-benchmark | JMH comparison suite and the `bench` CLI (not published) | [JMH](https://github.com/openjdk/jmh) 1.37; [robaho](https://github.com/robaho/httpserver) 1.0.29 (runtime) |
-| freeway-http-adapter-testkit | Shared fixtures and contracts every engine must pass (test scope only) | JUnit 6.1.3 |
-| freeway-logging-testkit | Cross-JVM proof of Logback takeover, JUL isolation and default exclusion (test scope only, not published) | [Logback](https://logback.qos.ch) 1.5.38 |
+<table>
+  <thead>
+    <tr>
+      <th align="left" width="260" nowrap>Module</th>
+      <th align="left" nowrap>Use when</th>
+      <th align="left" nowrap>Dependency</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td nowrap>freeway-http-jetty</td><td>Jetty 12 deployments, Servlet-style processing or existing Jetty tooling</td><td><a href="https://jetty.org">Jetty</a> 12.1.13</td></tr>
+    <tr><td nowrap>freeway-http-undertow</td><td>Undertow-specific handler/listener configuration or existing Undertow tooling</td><td><a href="https://undertow.io">Undertow</a> 2.4.3.Final</td></tr>
+    <tr><td nowrap>freeway-mq-kafka</td><td>Distributed event streaming across services</td><td><a href="https://kafka.apache.org">Kafka Clients</a> 4.3.1</td></tr>
+    <tr><td nowrap>freeway-fleet-protocol</td><td>Fleet wire contract, headers and shared keys</td><td>none</td></tr>
+    <tr><td nowrap>freeway-fleet</td><td>Fleet client, discovery and registrar</td><td>none — JDK HttpClient only</td></tr>
+    <tr><td nowrap>freeway-fleet-server</td><td>Standalone Fleet registry server with an H2 LeaseStore</td><td><a href="https://h2database.com">H2</a> 2.5.250</td></tr>
+    <tr><td nowrap>freeway-cloud-consul</td><td>Service discovery/registration backed by Consul (non-Kubernetes deployments)</td><td>none — JDK HttpClient only</td></tr>
+    <tr><td nowrap>freeway-db-hikari</td><td>Connection pooling tuned for high-concurrency OLTP</td><td><a href="https://github.com/brettwooldridge/HikariCP">HikariCP</a> 7.1.0</td></tr>
+    <tr><td nowrap>freeway-benchmark</td><td>JMH comparison suite and the bench CLI (not published)</td><td><a href="https://github.com/openjdk/jmh">JMH</a> 1.37; <a href="https://github.com/robaho/httpserver">robaho</a> 1.0.29 (runtime)</td></tr>
+    <tr><td nowrap>freeway-http-adapter-testkit</td><td>Shared fixtures and contracts every engine must pass (test scope only)</td><td>JUnit 6.1.3</td></tr>
+    <tr><td nowrap>freeway-logging-testkit</td><td>Cross-JVM proof of Logback takeover, JUL isolation and default exclusion (test scope only, not published)</td><td><a href="https://logback.qos.ch">Logback</a> 1.5.38</td></tr>
+  </tbody>
+</table>
 
 HTTP/DB adapters are leaf nodes. Fleet is a first-party client/server pair
 (`server -> protocol`, with the client in server tests only); `freeway-benchmark`
@@ -31,7 +46,7 @@ robaho dependency is runtime-only: it supplies the `robaho-native` comparison
 engine through the JDK `HttpServer` SPI and is absent from the benchmark compile
 classpath.
 
-## HTTP Adapters
+### HTTP Adapters
 
 Both adapters receive the same `HttpServerConfig` as the built-in engine and honor
 the shared `freeway.http.server.*` keys where the underlying server supports
@@ -43,7 +58,7 @@ All keys resolve through the full config cascade (CLI, JVM properties, env and
 files). A malformed `max-frame-size` fails startup naming the key instead of
 silently falling back.
 
-### Configuration
+#### Configuration
 
 | Property | Default | Applies to | Meaning |
 |---|---|---|---|
@@ -74,7 +89,7 @@ Example for Jetty with TLS and HTTP/2:
 -Dfreeway.http.ssl.http2=true
 ```
 
-### Shared Server Settings
+#### Shared Server Settings
 
 | Key | Adapters | Notes |
 |---|---|---|
@@ -85,7 +100,7 @@ Example for Jetty with TLS and HTTP/2:
 | `freeway.http.server.receive-buffer-size` / `send-buffer-size` | Jetty, Undertow | Desired socket buffer sizes (0 = OS default). |
 | `freeway.http.compression.enabled` / `min-size` | Jetty, Undertow | gzip response compression with the built-in engine's semantics. |
 
-### WebSocket Notes
+#### WebSocket Notes
 
 Both adapters' WebSocket transports send frames asynchronously, so application
 code can safely call `sendText` / `sendBinary` / `ping` from the server's receive
@@ -114,7 +129,7 @@ engine; `0` disables). Connections with no traffic are dropped. Long-lived SSE
 streams should emit periodic heartbeat comments, and WebSocket peers should stay
 within the idle window.
 
-### Engine Selection
+#### Engine Selection
 
 `freeway-http-undertow` and `freeway-http-jetty` are independent adapters: an
 application depends on exactly one of them, so the other's `HttpEngine` binding
@@ -127,9 +142,9 @@ when both artifacts end up on the same classpath, for example in
 (`FreewayApp.create(...).autoDiscovery(false)`) and install the desired module
 explicitly, or resolve the engine by id.
 
-## Kafka Adapter
+### Kafka Adapter
 
-### Security Model
+#### Security Model
 
 The receiving plane deserializes a record only into the payload type a
 `KafkaEvents.subscribe(prefix, type, handler)` declared. The subscription table is
@@ -157,7 +172,7 @@ key is the natural one. Transports without a natural business key can use
 `freeway.kafka.dedup-capacity` (default `0`, off), which remembers the last N
 dispatch ids and drops second copies before dispatch.
 
-### Delivery Settings
+#### Delivery Settings
 
 | Property | Default | Meaning |
 |---|---|---|
@@ -167,7 +182,7 @@ dispatch ids and drops second copies before dispatch.
 | `freeway.kafka.concurrency` | `1` | Poll/processing workers. When greater than 1, messages are fanned out by key so per-key ordering is preserved. |
 | `freeway.kafka.dedup-capacity` | `0` off | Bounds remembered dispatch ids for redelivery suppression. Second copies are dropped before dispatch. |
 
-### Plane Topology
+#### Plane Topology
 
 `KafkaEvents.send(topic, payload)` writes to the named topic itself: the routing
 topic and the wire topic are one. `freeway.kafka.topics` is the subscriber's poll
@@ -200,7 +215,7 @@ processing continues (`skip`) or stops (`fail`). If the DLQ write fails, the
 subscriber stops without committing so the message is redelivered until the DLQ
 accepts it.
 
-## Install
+### Install
 
 All extension modules track the Freeway core version. Use `2.0.0` for the current
 release:
@@ -213,7 +228,7 @@ release:
 </dependency>
 ```
 
-## Build
+### Build
 
 Requires JDK 25+. Build Freeway core first, then this repository:
 
@@ -233,7 +248,7 @@ mvn spotless:check
 
 CI runs `mvn -B -ntp verify -Dgpg.skip=true`.
 
-## Documentation
+### Documentation
 
 - [Core documentation](https://github.com/dzb/freeway/tree/main/docs)
 - [Extension documentation index](docs/README.md)
@@ -241,6 +256,6 @@ CI runs `mvn -B -ntp verify -Dgpg.skip=true`.
 - [Consul adapter design](docs/design/consul-adapter.md)
 - [Release notes](docs/releases/) and [changelog](CHANGELOG.md)
 
-## License
+### License
 
 [Apache 2.0](LICENSE)

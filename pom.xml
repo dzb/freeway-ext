@@ -7,7 +7,7 @@
     <parent>
         <groupId>com.jujin8.freeway</groupId>
         <artifactId>freeway-parent</artifactId>
-        <version>1.5.8-SNAPSHOT</version>
+        <version>2.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>freeway-ext</artifactId>
@@ -28,7 +28,7 @@
     </scm>
 
     <properties>
-        <freeway.version>1.5.8-SNAPSHOT</freeway.version>
+        <freeway.version>2.0.0-SNAPSHOT</freeway.version>
 
         <!-- Third-party dependency versions, centralized here so all modules
              stay in sync. Latest stable versions as of 2026-09. -->
@@ -76,6 +76,21 @@
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-cloud</artifactId>
+            <version>${freeway.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet-protocol</artifactId>
+            <version>${freeway.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet</artifactId>
+            <version>${freeway.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.jujin8.freeway</groupId>
+            <artifactId>freeway-fleet-server</artifactId>
             <version>${freeway.version}</version>
         </dependency>
 
@@ -151,12 +166,17 @@
 
     <modules>
         <module>freeway-http-adapter-testkit</module>
+        <module>freeway-logging-testkit</module>
         <module>freeway-http-jetty</module>
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>
+        <module>freeway-fleet-protocol</module>
+        <module>freeway-fleet</module>
+        <module>freeway-fleet-server</module>
         <module>freeway-cloud-consul</module>
         <module>freeway-db-hikari</module>
         <module>freeway-benchmark</module>
+        <module>demo/registry-server</module>
     </modules>
 
     <build>

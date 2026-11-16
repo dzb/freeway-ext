@@ -17,12 +17,13 @@
 package com.jujin.freeway.http.undertow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.ErrorResponse;
 import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.HttpStatus;
 import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.testkit.Pipelines;
@@ -35,7 +36,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -46,24 +47,23 @@ class UndertowHttpContractTest {
   private static Pipelines pipeline() {
     var routes =
         List.of(
-            Route.get("/ping", ctx -> ctx.send(200, "pong")),
+            Route.get("/ping", ctx -> ctx.sendText(200, "pong")),
             Route.post(
                 "/echo",
                 ctx -> {
                   ctx.setStatus(200);
-                  ctx.output(ctx.body());
+                  ctx.body(ctx.body());
                 }));
     return Pipelines.of(
         routes,
         List.of(),
         List.of(
-            (ctx, ex) -> {
-              if (ex instanceof BodyTooLargeException) {
-                ctx.sendJson(413, Map.of("error", "Payload Too Large"));
-                return true;
-              }
-              return false;
-            }));
+            ex ->
+                ex instanceof BodyTooLargeException
+                    ? Optional.of(
+                        ErrorResponse.of(
+                            HttpStatus.PAYLOAD_TOO_LARGE, "payload_too_large", "Payload Too Large"))
+                    : Optional.empty()));
   }
 
   @Test
@@ -127,15 +127,6 @@ class UndertowHttpContractTest {
   }
 
   @Test
-  void sanitizesCorrelationIdForResponseHeaders() {
-    assertEquals("abc-123", UndertowHttpEngine.safeCorrelationId("abc-123"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId("a\r\nInjected: yes").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId("a\nb").matches("[0-9a-f]{32}"));
-    assertTrue(UndertowHttpEngine.safeCorrelationId(null).matches("[0-9a-f]{32}"));
-    assertFalse(UndertowHttpEngine.safeCorrelationId("a\r\nb").contains("\r"));
-  }
-
-  @Test
   void rejectsCrlfInResponseHeaderName() throws Exception {
     var engine = new UndertowHttpEngine(new JsonCodecDefault(), new CoercerDefault());
     var config =
@@ -151,9 +142,9 @@ class UndertowHttpContractTest {
             routes,
             List.of(),
             List.of(
-                (ctx, ex) -> {
+                ex -> {
                   captured.set(ex);
-                  return false;
+                  return Optional.empty();
                 }));
 
     try (var server = TestServers.start(engine, config, pipeline)) {
@@ -233,7 +224,7 @@ class UndertowHttpContractTest {
             .withShutdownGrace(Duration.ofSeconds(5))
             .withMaxBodySize(1024);
     var client = httpClient();
-    var routes = List.of(Route.post("/echo", ctx -> ctx.output(ctx.body())));
+    var routes = List.of(Route.post("/echo", ctx -> ctx.body(ctx.body())));
     var pipeline = Pipelines.of(routes);
 
     try (var server = TestServers.start(engine, config, pipeline)) {

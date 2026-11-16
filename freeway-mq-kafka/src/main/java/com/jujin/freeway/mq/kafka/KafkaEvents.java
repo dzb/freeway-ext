@@ -172,7 +172,7 @@ public final class KafkaEvents implements AutoCloseable {
     KafkaHeaders.put(record.headers(), KafkaHeaders.CE_ORIGIN, origin);
     // The ambient trace, when the sending thread holds one — same extensions
     // the mesh stamps, here as ce- headers per the Kafka binding.
-    for (var entry : EventTrace.injectCurrent().entrySet()) {
+    for (var entry : EventTrace.encodeCurrent().entrySet()) {
       KafkaHeaders.putExtension(record.headers(), entry.getKey(), entry.getValue());
     }
     try {

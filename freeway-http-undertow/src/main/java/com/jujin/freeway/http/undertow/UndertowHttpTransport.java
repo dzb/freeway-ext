@@ -16,25 +16,25 @@
 
 package com.jujin.freeway.http.undertow;
 
+import com.jujin.freeway.http.Compression;
 import com.jujin.freeway.http.HttpTransport;
+import com.jujin.freeway.http.ResponseBody;
 import com.jujin.freeway.http.ResponseHead;
+import com.jujin.freeway.http.ResponsePlan;
 import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.sse.SseEmitter;
 import io.undertow.io.IoCallback;
 import io.undertow.io.Sender;
 import io.undertow.server.HttpServerExchange;
 import io.undertow.server.RequestTooBigException;
-import io.undertow.util.HeaderMap;
 import io.undertow.util.Headers;
 import io.undertow.util.HttpString;
-import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,46 +46,55 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Undertow-backed {@link HttpTransport}: one per request, wrapping the exchange it serves. Every
- * response policy decision (status, headers, Content-Length, gzip, Date) lives in the composed
- * {@code HttpContextSupport}; this class only moves the bytes onto Undertow's exchange.
- *
- * <p>Streaming and file responses inherit the SPI's buffering defaults — Undertow has no sendfile
- * fast path through this adapter, which matches the pre-refactor behaviour.
+ * Undertow's half of one exchange: it reads the native request facts and writes the planned
+ * response. Everything shared — status and header validation, {@code Date}, {@code Content-Length},
+ * the gzip decision, {@code Vary}, the body limit — lives in the {@code HttpExchangeSupport}
+ * composed over this object. One transport per exchange; nothing is pooled and there is no reset.
  */
 final class UndertowHttpTransport implements HttpTransport {
-  private static final Logger LOG = LoggerFactory.getLogger(UndertowHttpTransport.class);
 
   private final HttpServerExchange exchange;
+  private final long maxBodySize;
 
-  /** Undertow's own ceiling (MAX_ENTITY_SIZE, fixed at start); translated to the Freeway 413. */
-  private final long nativeBodyLimit;
-
+  private String method;
+  private String path;
   private Map<String, List<String>> queryParams;
   private Map<String, List<String>> requestHeaders;
+  private volatile boolean committed;
 
-  UndertowHttpTransport(HttpServerExchange exchange, long nativeBodyLimit) {
+  /**
+   * @param exchange the native exchange this transport wraps
+   * @param maxBodySize the body ceiling Undertow was configured with, reported when the native
+   *     limit trips before the framework's limiter sees the bytes
+   */
+  UndertowHttpTransport(HttpServerExchange exchange, long maxBodySize) {
     this.exchange = Objects.requireNonNull(exchange, "exchange");
-    this.nativeBodyLimit = nativeBodyLimit;
+    this.maxBodySize = maxBodySize;
   }
 
   // -- request side --
 
   @Override
   public String method() {
-    return exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
+    if (method == null) {
+      method = exchange.getRequestMethod() != null ? exchange.getRequestMethod().toString() : "";
+    }
+    return method;
   }
 
   @Override
   public String path() {
-    String relative = exchange.getRelativePath();
-    return relative != null ? relative : "/";
+    if (path == null) {
+      String relative = exchange.getRelativePath();
+      path = relative != null ? relative : "/";
+    }
+    return path;
   }
 
   @Override
   public Map<String, List<String>> queryParams() {
     if (queryParams == null) {
-      queryParams = snapshotQuery(exchange.getQueryParameters());
+      queryParams = snapshotQueryParams(exchange);
     }
     return queryParams;
   }
@@ -93,23 +102,46 @@ final class UndertowHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> headers() {
     if (requestHeaders == null) {
-      var headerMap = new LinkedHashMap<String, List<String>>();
-      for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
-        headerMap.put(
-            name.toString().toLowerCase(Locale.ROOT),
-            List.copyOf(exchange.getRequestHeaders().get(name)));
-      }
-      requestHeaders = Map.copyOf(headerMap);
+      requestHeaders = snapshotHeaders(exchange);
     }
     return requestHeaders;
   }
 
+  /**
+   * The framed request body. Undertow's own {@code MAX_ENTITY_SIZE} (wired from {@code maxBodySize}
+   * at server start) can reject the body before the framework's limiter ever reads a byte; that
+   * refusal is translated here so the shared 413 mapping answers it instead of an unhandled 500.
+   */
   @Override
-  public InputStream bodyStream() throws IOException {
+  public InputStream framedBodyStream() throws IOException {
     if (!exchange.isBlocking()) {
       exchange.startBlocking();
     }
-    return new BodyStream(exchange.getInputStream());
+    InputStream in = exchange.getInputStream();
+    return new InputStream() {
+      @Override
+      public int read() throws IOException {
+        try {
+          return in.read();
+        } catch (RequestTooBigException ex) {
+          throw new BodyTooLargeException(maxBodySize);
+        }
+      }
+
+      @Override
+      public int read(byte[] b, int off, int len) throws IOException {
+        try {
+          return in.read(b, off, len);
+        } catch (RequestTooBigException ex) {
+          throw new BodyTooLargeException(maxBodySize);
+        }
+      }
+
+      @Override
+      public void close() throws IOException {
+        in.close();
+      }
+    };
   }
 
   @Override
@@ -128,115 +160,134 @@ final class UndertowHttpTransport implements HttpTransport {
     return source != null ? source.getHostString() : "";
   }
 
+  /**
+   * The commit fact is Undertow's: {@code isResponseStarted()} turns true when the status line
+   * begins going out, which is exactly the moment a prepared head can no longer be replaced.
+   */
+  @Override
+  public boolean isCommitted() {
+    return committed || exchange.isResponseStarted();
+  }
+
   // -- response side --
 
+  /**
+   * Writes one planned response. Undertow's sender is asynchronous, so this adapter buffers the
+   * body it was given — a materialized body is what the minimal adapter can hand over, and the
+   * short-circuit in {@link #writeResponse} keeps the {@code Content-Length} the support object
+   * declared.
+   */
   @Override
-  public void writeResponse(ResponseHead head, byte[] body) throws IOException {
+  public void writeResponse(ResponsePlan plan) throws IOException {
+    ResponseHead head = plan.head();
     applyHead(head);
-    if (head.sendsBodyBytes() && body.length > 0) {
-      exchange.getResponseSender().send(ByteBuffer.wrap(body));
+    if (!head.sendsBodyBytes()) {
+      closeBody(plan.body());
+      committed = true;
+      exchange.endExchange();
+      return;
+    }
+    switch (plan.body()) {
+      case ResponseBody.Empty ignored -> {
+        committed = true;
+        exchange.endExchange();
+      }
+      case ResponseBody.Bytes bytes -> writeBody(head, bytes.data(), plan.gzip());
+      case ResponseBody.Stream stream ->
+          writeBody(head, stream.stream().readAllBytes(), plan.gzip());
+      case ResponseBody.File file -> writeBody(head, fileBytes(file), plan.gzip());
+      case ResponseBody.Channel channel -> {
+        try {
+          writeBody(head, channelBytes(channel), plan.gzip());
+        } finally {
+          channel.channel().close();
+        }
+      }
+    }
+  }
+
+  private static byte[] fileBytes(ResponseBody.File file) throws IOException {
+    try (var channel =
+        java.nio.channels.FileChannel.open(
+            file.path(),
+            java.nio.file.StandardOpenOption.READ,
+            java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+      return channelBytes(file.offset(), file.length(), channel);
+    }
+  }
+
+  private static byte[] channelBytes(ResponseBody.Channel channel) throws IOException {
+    return channelBytes(channel.offset(), channel.length(), channel.channel());
+  }
+
+  private static byte[] channelBytes(long offset, long length, java.nio.channels.FileChannel ch)
+      throws IOException {
+    long available = Math.max(0, ch.size() - offset);
+    int count = (int) Math.min(length < 0 ? available : length, available);
+    ByteBuffer buffer = ByteBuffer.allocate(count);
+    ch.position(offset);
+    while (buffer.hasRemaining()) {
+      if (ch.read(buffer) < 0) {
+        break;
+      }
+    }
+    return buffer.array();
+  }
+
+  private void writeBody(ResponseHead head, byte[] body, boolean gzip) throws IOException {
+    byte[] data = gzip ? Compression.gzip(body) : body;
+    // The head already carries the source length; a gzipped body is the
+    // transport's own encoding, so its encoded length is a transport fact.
+    if (gzip) {
+      applyHeader("Content-Length", Integer.toString(data.length));
+    }
+    committed = true;
+    if (data.length > 0) {
+      exchange.getResponseSender().send(ByteBuffer.wrap(data));
     } else {
       exchange.endExchange();
+    }
+  }
+
+  /**
+   * Replays the final head onto Undertow's own header map: validate nothing (the support object
+   * already did), clear what a failed attempt left behind, then add every field. {@code
+   * Content-Length} is written through Undertow's dedicated setter so its framing state agrees.
+   */
+  private void applyHead(ResponseHead head) {
+    exchange.setStatusCode(head.status());
+    var responseHeaders = exchange.getResponseHeaders();
+    responseHeaders.clear();
+    String contentLength = null;
+    for (ResponseHead.Header header : head.headers()) {
+      if ("Content-Length".equalsIgnoreCase(header.name())) {
+        contentLength = header.value();
+        continue;
+      }
+      responseHeaders.add(HttpString.tryFromString(header.name()), header.value());
+    }
+    if (contentLength != null) {
+      exchange.setResponseContentLength(Long.parseLong(contentLength.trim()));
+    } else {
+      responseHeaders.remove(Headers.CONTENT_LENGTH);
+    }
+  }
+
+  private void applyHeader(String name, String value) {
+    exchange.getResponseHeaders().put(HttpString.tryFromString(name), value);
+  }
+
+  private static void closeBody(ResponseBody body) throws IOException {
+    if (body instanceof ResponseBody.Channel channel) {
+      channel.channel().close();
     }
   }
 
   @Override
   public SseEmitter openSse(ResponseHead head) throws IOException {
     applyHead(head);
+    committed = true;
     return new SseEmitter(new SseOutputStream(exchange.getResponseSender()));
-  }
-
-  /**
-   * Writes the committed head onto the exchange: status, every header in wire order (the head is
-   * already the final state — the support object applied set/replace/add semantics), and {@code
-   * Content-Length} separately so the container never sees it twice.
-   */
-  private void applyHead(ResponseHead head) {
-    exchange.setStatusCode(head.status());
-    HeaderMap responseHeaders = exchange.getResponseHeaders();
-    Map<String, List<String>> byName = new LinkedHashMap<>();
-    for (ResponseHead.Header header : head.headers()) {
-      if ("Content-Length".equalsIgnoreCase(header.name())) {
-        continue;
-      }
-      byName
-          .computeIfAbsent(header.name().toLowerCase(Locale.ROOT), k -> new ArrayList<>(2))
-          .add(header.value());
-    }
-    for (Map.Entry<String, List<String>> entry : byName.entrySet()) {
-      HttpString name = HttpString.tryFromString(entry.getKey());
-      if (name == null) {
-        // tryFromString rejects characters above 255; the support object
-        // already validated the name as an RFC 7230 token, so this is
-        // unreachable — fail loud rather than silently dropping a header.
-        throw new IllegalArgumentException("Invalid header name: " + entry.getKey());
-      }
-      responseHeaders.remove(name);
-      for (String value : entry.getValue()) {
-        responseHeaders.add(name, value);
-      }
-    }
-    if (head.hasHeader("Content-Length")) {
-      exchange.setResponseContentLength(Long.parseLong(head.header("Content-Length").trim()));
-    } else {
-      responseHeaders.remove(Headers.CONTENT_LENGTH);
-    }
-  }
-
-  private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {
-    if (source.isEmpty()) {
-      return Map.of();
-    }
-    var params = new LinkedHashMap<String, List<String>>(source.size());
-    for (var entry : source.entrySet()) {
-      params.put(entry.getKey(), List.copyOf(entry.getValue()));
-    }
-    return Map.copyOf(params);
-  }
-
-  /**
-   * Translates Undertow's parser-level {@link RequestTooBigException} (propagated from {@code
-   * MAX_ENTITY_SIZE}, fixed at server start) into the Freeway {@link BodyTooLargeException}, so the
-   * core {@code ErrorHandler} answers 413 instead of an unhandled 500. The support object's own
-   * limiter runs on top of this stream; whichever ceiling the body crosses first wins, and both
-   * report the same contract type.
-   */
-  private final class BodyStream extends FilterInputStream {
-    BodyStream(InputStream in) {
-      super(in);
-    }
-
-    @Override
-    public int read() throws IOException {
-      try {
-        return in.read();
-      } catch (RequestTooBigException ex) {
-        throw tooLarge();
-      }
-    }
-
-    @Override
-    public int read(byte[] b, int off, int len) throws IOException {
-      try {
-        return in.read(b, off, len);
-      } catch (RequestTooBigException ex) {
-        throw tooLarge();
-      }
-    }
-
-    @Override
-    public long skip(long n) throws IOException {
-      try {
-        return in.skip(n);
-      } catch (RequestTooBigException ex) {
-        throw tooLarge();
-      }
-    }
-
-    private BodyTooLargeException tooLarge() {
-      LOG.debug("Undertow rejected the request body at {} bytes", nativeBodyLimit);
-      return new BodyTooLargeException(nativeBodyLimit);
-    }
   }
 
   /**
@@ -329,5 +380,35 @@ final class UndertowHttpTransport implements HttpTransport {
             }
           });
     }
+  }
+
+  /**
+   * Request-header snapshot keyed by lowercase name. The single conversion from Undertow's native
+   * header map: {@link #headers()} and the WebSocket upgrade path both call it, so the HTTP and
+   * upgrade views of one request cannot disagree about header casing.
+   */
+  static Map<String, List<String>> snapshotHeaders(HttpServerExchange exchange) {
+    var headerMap = new LinkedHashMap<String, List<String>>();
+    for (HttpString name : exchange.getRequestHeaders().getHeaderNames()) {
+      Deque<String> values = exchange.getRequestHeaders().get(name);
+      headerMap.put(name.toString().toLowerCase(Locale.ROOT), List.copyOf(values));
+    }
+    return Map.copyOf(headerMap);
+  }
+
+  /** Query-parameter snapshot; the same single conversion {@link #queryParams()} uses. */
+  static Map<String, List<String>> snapshotQueryParams(HttpServerExchange exchange) {
+    return snapshotQuery(exchange.getQueryParameters());
+  }
+
+  private static Map<String, List<String>> snapshotQuery(Map<String, Deque<String>> source) {
+    if (source.isEmpty()) {
+      return Map.of();
+    }
+    var params = new LinkedHashMap<String, List<String>>(source.size());
+    for (var entry : source.entrySet()) {
+      params.put(entry.getKey(), List.copyOf(entry.getValue()));
+    }
+    return Map.copyOf(params);
   }
 }

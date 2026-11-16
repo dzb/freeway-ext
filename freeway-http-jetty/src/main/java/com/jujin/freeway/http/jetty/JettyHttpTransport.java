@@ -16,14 +16,19 @@
 
 package com.jujin.freeway.http.jetty;
 
+import com.jujin.freeway.http.Compression;
 import com.jujin.freeway.http.HttpTransport;
+import com.jujin.freeway.http.ResponseBody;
 import com.jujin.freeway.http.ResponseHead;
+import com.jujin.freeway.http.ResponsePlan;
 import com.jujin.freeway.http.sse.SseEmitter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
+import java.nio.channels.FileChannel;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -40,13 +45,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Jetty-backed {@link HttpTransport}: one per request, wrapping the request/response/callback
- * triple it serves. Every response policy decision (status, headers, Content-Length, gzip, Date)
- * lives in the composed {@code HttpContextSupport}; this class only moves the bytes onto Jetty's
- * response.
- *
- * <p>Streaming and file responses inherit the SPI's buffering defaults — the pre-refactor adapter
- * buffered them too.
+ * Jetty's half of one exchange: it reads the native request facts and writes the planned response.
+ * Everything shared — status and header validation, {@code Date}, {@code Content-Length}, the gzip
+ * decision, {@code Vary}, the body limit — lives in the {@code HttpExchangeSupport} composed over
+ * this object. One transport per exchange; nothing is pooled and there is no reset.
  */
 final class JettyHttpTransport implements HttpTransport {
   private static final Logger LOG = LoggerFactory.getLogger(JettyHttpTransport.class);
@@ -57,6 +59,7 @@ final class JettyHttpTransport implements HttpTransport {
 
   private Map<String, List<String>> queryParams;
   private Map<String, List<String>> requestHeaders;
+  private volatile boolean committed;
 
   JettyHttpTransport(Request request, Response response, Callback callback) {
     this.request = Objects.requireNonNull(request, "request");
@@ -80,7 +83,7 @@ final class JettyHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> queryParams() {
     if (queryParams == null) {
-      queryParams = parseQueryParams(request);
+      queryParams = snapshotQueryParams(request);
     }
     return queryParams;
   }
@@ -88,18 +91,13 @@ final class JettyHttpTransport implements HttpTransport {
   @Override
   public Map<String, List<String>> headers() {
     if (requestHeaders == null) {
-      LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
-      for (String name : request.getHeaders().getFieldNamesCollection()) {
-        List<String> values = request.getHeaders().getValuesList(name);
-        map.put(name.toLowerCase(Locale.ROOT), values != null ? List.copyOf(values) : List.of());
-      }
-      requestHeaders = Map.copyOf(map);
+      requestHeaders = snapshotHeaders(request);
     }
     return requestHeaders;
   }
 
   @Override
-  public InputStream bodyStream() {
+  public InputStream framedBodyStream() throws IOException {
     return Request.asInputStream(request);
   }
 
@@ -122,102 +120,165 @@ final class JettyHttpTransport implements HttpTransport {
     return remote != null ? remote : "";
   }
 
+  /** Jetty's own commit fact: true once the response head has begun to go out. */
+  @Override
+  public boolean isCommitted() {
+    return committed || response.isCommitted();
+  }
+
   // -- response side --
 
   @Override
-  public void writeResponse(ResponseHead head, byte[] body) throws IOException {
+  public void writeResponse(ResponsePlan plan) throws IOException {
+    ResponseHead head = plan.head();
     applyHead(head);
-    if (head.sendsBodyBytes() && body.length > 0) {
-      response.write(true, ByteBuffer.wrap(body), callback);
-    } else {
+    if (!head.sendsBodyBytes()) {
+      closeBody(plan.body());
+      committed = true;
       callback.succeeded();
+      return;
+    }
+    switch (plan.body()) {
+      case ResponseBody.Empty ignored -> {
+        committed = true;
+        callback.succeeded();
+      }
+      case ResponseBody.Bytes bytes -> writeBody(head, bytes.data(), plan.gzip());
+      case ResponseBody.Stream stream ->
+          writeBody(head, stream.stream().readAllBytes(), plan.gzip());
+      case ResponseBody.File file -> writeBody(head, fileBytes(file), plan.gzip());
+      case ResponseBody.Channel channel -> {
+        try {
+          writeBody(head, channelBytes(channel), plan.gzip());
+        } finally {
+          channel.channel().close();
+        }
+      }
+    }
+  }
+
+  private static byte[] fileBytes(ResponseBody.File file) throws IOException {
+    try (FileChannel channel =
+        FileChannel.open(file.path(), StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+      return channelBytes(file.offset(), file.length(), channel);
+    }
+  }
+
+  private static byte[] channelBytes(ResponseBody.Channel channel) throws IOException {
+    return channelBytes(channel.offset(), channel.length(), channel.channel());
+  }
+
+  private static byte[] channelBytes(long offset, long length, FileChannel channel)
+      throws IOException {
+    long available = Math.max(0, channel.size() - offset);
+    int count = (int) Math.min(length < 0 ? available : length, available);
+    ByteBuffer buffer = ByteBuffer.allocate(count);
+    channel.position(offset);
+    while (buffer.hasRemaining()) {
+      if (channel.read(buffer) < 0) {
+        break;
+      }
+    }
+    return buffer.array();
+  }
+
+  private void writeBody(ResponseHead head, byte[] body, boolean gzip) throws IOException {
+    byte[] data = gzip ? Compression.gzip(body) : body;
+    if (gzip) {
+      // The encoded length is the transport's own fact; the support object
+      // dropped Content-Length when it decided to compress.
+      response.getHeaders().put(HttpHeader.CONTENT_LENGTH, String.valueOf(data.length));
+    }
+    committed = true;
+    if (data.length == 0) {
+      callback.succeeded();
+      return;
+    }
+    response.write(true, ByteBuffer.wrap(data), callback);
+  }
+
+  /**
+   * Replays the final head onto Jetty's own header map: clear what a failed attempt left behind,
+   * then add every field. {@code Content-Length} is written through the dedicated header so Jetty's
+   * framing state agrees.
+   */
+  private void applyHead(ResponseHead head) {
+    response.setStatus(head.status());
+    var responseHeaders = response.getHeaders();
+    responseHeaders.clear();
+    for (ResponseHead.Header header : head.headers()) {
+      responseHeaders.add(header.name(), header.value());
+    }
+  }
+
+  private static void closeBody(ResponseBody body) throws IOException {
+    if (body instanceof ResponseBody.Channel channel) {
+      channel.channel().close();
     }
   }
 
   @Override
   public SseEmitter openSse(ResponseHead head) throws IOException {
     applyHead(head);
-    return new SseEmitter(new SseOutputStream(response, callback));
+    committed = true;
+    return new SseEmitter(
+        new OutputStream() {
+          private final Callback writeCallback =
+              Callback.from(
+                  () -> {
+                    // Write handed to the Jetty channel; nothing to do.
+                  },
+                  ex -> LOG.warn("SSE write failed", ex));
+
+          @Override
+          public void write(int b) throws IOException {
+            write(new byte[] {(byte) b}, 0, 1);
+          }
+
+          @Override
+          public void write(byte[] b, int off, int len) throws IOException {
+            if (len == 0) return;
+            // last=false keeps the response stream open so further events can
+            // be written; the response completes on close().
+            response.write(false, ByteBuffer.wrap(b, off, len), writeCallback);
+          }
+
+          @Override
+          public void flush() {
+            // Jetty hands each write to the channel immediately.
+          }
+
+          @Override
+          public void close() {
+            // last=true ends the content stream; completing the request
+            // callback releases the request so graceful shutdown can proceed
+            // (same pattern as the one-shot writeResponse path).
+            response.write(true, ByteBuffer.allocate(0), callback);
+          }
+        });
   }
 
   /**
-   * Writes the committed head onto the response: status, every header in wire order (the head is
-   * already the final state — the support object applied set/replace/add semantics), and {@code
-   * Content-Length} separately so the container never sees it twice.
+   * Request-header snapshot keyed by lowercase name. The single conversion from Jetty's native
+   * header map: {@link #headers()} and the WebSocket upgrade path both call it, so the HTTP and
+   * upgrade views of one request cannot disagree about header casing.
    */
-  private void applyHead(ResponseHead head) {
-    response.setStatus(head.status());
-    var headers = response.getHeaders();
-    Map<String, List<String>> byName = new LinkedHashMap<>();
-    for (ResponseHead.Header header : head.headers()) {
-      if ("Content-Length".equalsIgnoreCase(header.name())) {
-        continue;
-      }
-      byName
-          .computeIfAbsent(header.name().toLowerCase(Locale.ROOT), k -> new ArrayList<>(2))
-          .add(header.value());
+  static Map<String, List<String>> snapshotHeaders(Request request) {
+    LinkedHashMap<String, List<String>> map = new LinkedHashMap<>();
+    for (String name : request.getHeaders().getFieldNamesCollection()) {
+      List<String> values = request.getHeaders().getValuesList(name);
+      map.put(name.toLowerCase(Locale.ROOT), values != null ? List.copyOf(values) : List.of());
     }
-    for (Map.Entry<String, List<String>> entry : byName.entrySet()) {
-      headers.remove(entry.getKey());
-      for (String value : entry.getValue()) {
-        headers.add(entry.getKey(), value);
-      }
-    }
-    if (head.hasHeader("Content-Length")) {
-      headers.put(HttpHeader.CONTENT_LENGTH, head.header("Content-Length").trim());
-    } else {
-      headers.remove(HttpHeader.CONTENT_LENGTH);
-    }
+    return Map.copyOf(map);
   }
 
-  private static Map<String, List<String>> parseQueryParams(Request request) {
+  /** Query-parameter snapshot; the same single conversion {@link #queryParams()} uses. */
+  static Map<String, List<String>> snapshotQueryParams(Request request) {
     Fields fields = Request.extractQueryParameters(request);
     LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
     for (Fields.Field field : fields) {
       params.put(field.getName(), List.copyOf(field.getValues()));
     }
     return Map.copyOf(params);
-  }
-
-  /** Non-blocking SSE writes: {@code last=false} keeps the content stream open until close(). */
-  private static final class SseOutputStream extends OutputStream {
-    private static final Logger LOG = LoggerFactory.getLogger(SseOutputStream.class);
-
-    private final Response response;
-    private final Callback callback;
-    private final Callback writeCallback =
-        Callback.from(
-            () -> {
-              // Write handed to the Jetty channel; nothing to do.
-            },
-            ex -> LOG.warn("SSE write failed", ex));
-
-    SseOutputStream(Response response, Callback callback) {
-      this.response = Objects.requireNonNull(response, "response");
-      this.callback = Objects.requireNonNull(callback, "callback");
-    }
-
-    @Override
-    public void write(int b) throws IOException {
-      write(new byte[] {(byte) b}, 0, 1);
-    }
-
-    @Override
-    public void write(byte[] b, int off, int len) throws IOException {
-      if (len == 0) return;
-      response.write(false, ByteBuffer.wrap(b, off, len), writeCallback);
-    }
-
-    @Override
-    public void flush() {
-      // Jetty hands each write to the channel immediately.
-    }
-
-    @Override
-    public void close() {
-      // last=true ends the content stream; completing the request callback
-      // releases the request so graceful shutdown can proceed.
-      response.write(true, ByteBuffer.allocate(0), callback);
-    }
   }
 }

@@ -1,10 +1,8 @@
 package com.jujin.freeway.cloud.consul;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-import com.jujin.freeway.cloud.annotation.Local;
-import com.jujin.freeway.cloud.discovery.CloudDiscoveryModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
 import com.jujin.freeway.ioc.Container;
@@ -28,33 +26,13 @@ import org.junit.jupiter.api.Test;
 class ConsulModuleTest {
 
   @Test
-  void placingTheModuleReplacesTheLocalDefaults() {
-    try (Container container = Freeway.create(new CloudDiscoveryModule(), new ConsulModule())) {
-      assertFalse(
-          container.isActiveBinding(ServiceRegistry.class, Local.class),
-          "the @Local in-process registry must no longer be the active binding");
-      assertFalse(
-          container.isActiveBinding(ServiceDiscovery.class, Local.class),
-          "the @Local in-process discovery must no longer be the active binding");
-
-      // The active registry answers the Consul window, not the local ZERO.
+  void placingTheModuleBindsTheConsulBackend() {
+    try (Container container = Freeway.create(new ConsulModule())) {
+      // The adapter is primary; its configured window identifies it.
       assertEquals(
           ConsulWiring.defaults().drainWindow(),
-          container.get(ServiceRegistry.class).drainWindow(),
-          "the active registry must be the Consul adapter, not the in-process default");
-    }
-  }
-
-  @Test
-  void theLocalDefaultIsStillReachableUnderItsMarker() {
-    try (Container container = Freeway.create(new CloudDiscoveryModule(), new ConsulModule())) {
-      // The marker stays meaningful: a caller may still ask for the
-      // built-in explicitly even while the adapter is primary — and it is
-      // the built-in by behavior (zero drain), not the adapter.
-      assertEquals(
-          Duration.ZERO,
-          container.get(ServiceRegistry.class, Local.class).drainWindow(),
-          "the @Local binding must still resolve to the in-process registry");
+          container.get(ServiceRegistry.class).drainWindow());
+      assertNotNull(container.get(ServiceDiscovery.class));
     }
   }
 }

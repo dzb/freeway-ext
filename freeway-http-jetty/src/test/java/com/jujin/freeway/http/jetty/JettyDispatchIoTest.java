@@ -102,8 +102,8 @@ class JettyDispatchIoTest {
     var engine = engine(Map.of("freeway.http.jetty.dispatch-io", "false"));
     var routes =
         List.of(
-            Route.get("/ping", ctx -> ctx.send(200, "pong")),
-            Route.post("/echo", ctx -> ctx.output(ctx.body())));
+            Route.get("/ping", ctx -> ctx.sendText(200, "pong")),
+            Route.post("/echo", ctx -> ctx.body(ctx.body())));
     var client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     try (var server = TestServers.start(engine, CONFIG, Pipelines.of(routes))) {
       server.start();

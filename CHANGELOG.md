@@ -1,55 +1,136 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 - unreleased
+
+### Added
+
+- **`freeway-logging-testkit`** (not published): cross-JVM logging-backend integration tests. Real
+  Logback takes over the SLF4J binding under `-Dfreeway.log.system=logback` / `auto`; the default
+  stays Freeway's JUL backend and reports the unselected Logback on the classpath. The probe also
+  pins that Freeway leaves JUL untouched in external mode (no JUL handlers, no forwarding). A single
+  JVM cannot verify the one-time SLF4J binding, so the probe runs in its own process.
 
 ### Changed
 
-- **HTTP 适配器迁移到 core 的组合式 SPI**（`freeway-http-undertow`、`freeway-http-jetty`）：
-  `UndertowHttpContext` / `JettyHttpContext`（继承 `AbstractHttpContext`）删除，改为
-  `UndertowHttpTransport` / `JettyHttpTransport` 实现 `HttpTransport`；WebSocket 会话改为
-  `UndertowWebSocketTransport` / `JettyWebSocketTransport` 实现 `WebSocketTransport`，并组合
-  `WebSocketSessionSupport`（close reason 由 support 统一截断到 123 字节）。状态码/头校验、
-  `Date`、`Content-Length`、gzip 决策、`Vary`、body 上限与 JSON/强转现在全部来自 core 的
-  `HttpContextSupport`，两个引擎与内建引擎同一份实现。
-  - **每请求 exchange**：删除 `ThreadLocal` context 池与 `reset`/`setCompression`；每次请求
-    `new HttpTransport + new HttpContextSupport`，跨请求状态串扰在形状上不可能发生。
-  - **`Content-Length` 框架权威**：适配器不再各自决定长度；HEAD 不读响应源（SPI 契约：
-    `sendsBodyBytes()==false` 时只写 head），Undertow 的 `RequestTooBigException` 在
-    `bodyStream()` 内翻译为 `BodyTooLargeException`（413 语义不变）。
-  - **SSE 的 `Connection`**：共享层不再写 `Connection: keep-alive`，交给容器决定；
-    `X-Request-Id` 回显改从 `support.correlationId()` 取值（非法值跳过，保留引擎预置的消毒值）。
-  - handler 异常改用 `ctx.isResponded()` 判断能否再写 500，而不是容器的 wire 状态。
-- **benchmark 同步**（`freeway-benchmark`）：`FilterChainBenchmark` /
-  `HttpContextLookupBenchmark` / `HttpContextOutputBenchmark` 从包私有 `HttpContextImpl.reset`
-  改为每 op 构造 `HttpTransportImpl + HttpContextSupport`（lookup 基准在 setup 构造一次，
-  只测读取），与生产路径一致。
+- **Documentation reorganised and translated to English**: the docs tree now
+  follows the core conventions (`audits/`, `benchmarks/`, `design/`, `releases/`,
+  lower-case kebab-case names, `docs/README.md` index); every remaining Chinese
+  document and all historical CHANGELOG sections were translated.
+- **Both HTTP adapters now compose `HttpTransport` / `HttpExchangeSupport`**: core 2.0 deleted
+  `AbstractHttpContext` / `AbstractWebSocketSession`, so the extension points are two SPIs plus
+  two final policy objects. `UndertowHttpContext` / `JettyHttpContext` are therefore gone,
+  replaced by `UndertowHttpTransport` / `JettyHttpTransport` (implementing `HttpTransport`):
+  they keep only the engine's request reading and response writing, while status/header
+  validation, `Date`, `Content-Length`, the gzip decision, `Vary` and the body limit are all
+  handled by the support. Engine dispatch builds a transport + support per request; the two
+  `ThreadLocal` pools, `reset` and `setCompression` are gone — per-request objects remove the
+  reset obligation and cross-request state bleed.
+- **WebSocket sessions now compose `WebSocketTransport` / `WebSocketSessionSupport`**:
+  `UndertowWebSocketSession` / `JettyWebSocketSession` are gone, replaced by
+  `UndertowWebSocketTransport` / `JettyWebSocketTransport`. The 123-byte close-reason
+  truncation now has exactly one implementation (in the support), instead of one per adapter.
+- **Core API renames for 2.0**: `SslSettings` → `SslConfig`, `HttpEngine.secure()` →
+  `isSecure()`, `ExchangeHandler.websocket()` → `matchWebSocket()`,
+  `HttpResponse.output(byte[])` → `body(byte[])`, `send(int, String)` →
+  `sendText(int, String)`; `ErrorHandler` → `ErrorMapper` (returns
+  `Optional<ErrorResponse>` instead of writing the response and returning a boolean:
+  `HttpServer` is the only write point).
+- **Cloud surface renames for 2.0**: `Endpoint` → `ServiceEndpoint`, `Health` →
+  `ServiceHealth`, `CloudException` → `RpcException`, `CloudHttpClientDefault` →
+  `RpcHttpClientDefault`, `CloudDiscoveryModule` → `DiscoveryModule`,
+  `Container.isActiveBinding` → `isActiveBindingMarked`, `JsonUtils.stringify` →
+  `toJson`, `DatabaseStats` → `PoolStats`.
+- **The testkit's contract shape follows core**: `Pipelines`' error-handler list now uses
+  `ErrorMapper`; `ContextContract`'s shared-accounting assertion comments point at
+  `HttpExchangeSupport` + `LimitedInputStream` and require "a fresh exchange per request"
+  instead of "resetting a pooled context".
+
+### Removed
+
+- **`freeway-benchmark`'s dependency on a pooled `HttpContextImpl`**: the three HTTP
+  benchmarks now build an `HttpExchangeSupport` + a new `BenchTransport` per op. Reusing one
+  support would be blocked on the second write by the `committed` guard, which is not the
+  production path.
+
+### Redundancy cleanup under the 2.0 convergence principle
+
+The criterion is core `TASTE.md`'s "one owner per fact", not "merge what looks duplicated".
+
+- **Request-snapshot conversion exists once**: both adapters used to write
+  `snapshotQueryParameters` / `snapshotHeaders` separately (one copy in the engine for
+  WebSocket upgrades, one in the transport for the HTTP path), keeping two views of the same
+  request consistent with two pieces of code. Conversion now belongs to the transport
+  (`UndertowHttpTransport.snapshotHeaders/snapshotQueryParams`, the same names in
+  `JettyHttpTransport`); the engine's WebSocket path calls them directly and its three private
+  helpers are deleted. Path variables are snapshotted by `WebSocketMatch`'s compact constructor
+  (it already used `List.copyOf`), so the adapters no longer copy them again.
+- **Undertow no longer re-parses TLS protocols/cipher suites**: `SslConfig` already parses
+  `freeway.http.ssl.protocols` / `ciphers` into `List<String>`, yet the adapter read the raw
+  strings again through `prop(...)` and re-split them with a private `splitCommaSeparated` —
+  two owners of one rule. It now reads `tls.protocols()` / `tls.ciphers()` directly, and the
+  private `splitCommaSeparated`, the unused `keyStoreType` and the `prop(key, default)`
+  overload are deleted. A new
+  `UndertowTlsTest.restrictedProtocolsActuallyNarrowTheHandshake` pins that the parsed list
+  actually reaches XNIO (deleting the `setSocketOption` turns it red).
+- **Jetty's three `HttpConfiguration` sites converge on one factory**: the cleartext, TLS and
+  h2c branches each reset `setSendDateHeader(false)` and
+  `setRequestHeaderSize(maxHeaderBytes)`, so one missed change makes the Date or the header
+  limit apply on only one branch. `httpConfiguration(config, secure)` is now the only
+  construction point; `secure` only decides whether to add `SecureRequestCustomizer`.
+- **`safeCorrelationId` is deleted from Undertow**: the support's header validation
+  (`HttpHeaders.requireValidValue` rejects CTL) is already the only line of defence, and the
+  adapter's UUID-replacement helper has no callers after the refactor. Jetty's method of the
+  same name still has a caller (the WebSocket upgrade response), so it stays.
+- **Kafka list parsing delegates to `SymbolSpec.splitList`**: `KafkaConfig.parseList`'s
+  hand-written "trim, drop empty segments" was word-for-word the cascade's rule; it now
+  delegates to the shared implementation, which remains the only owner of the rule.
+- **Benchmark class names and README follow the 2.0 vocabulary**:
+  `HttpContextLookupBenchmark` / `HttpContextOutputBenchmark` →
+  `HttpExchangeLookupBenchmark` / `HttpExchangeOutputBenchmark` (the underlying type was
+  already renamed to `HttpExchange`), with `repro.sh` updated; the README claim that "these
+  types are package-private" is corrected — `HttpExchangeSupport` is public, and the genuine
+  white-box packages are `Http1xParser` / `WebSocketFrame`.
+
+### Fixed
+
+- **The Kafka adapter test bound a second `JsonCodec`**: since 2.0 `JsonCodec` is a built-in
+  IoC capability, and the explicit binding in `KafkaModuleContainerTest` coexisted with the
+  built-in default, so `container.get(JsonCodec.class)` threw `AmbiguousBindingException`.
+  The three bindings are deleted; the container's built-in provides it.
 
 ## 1.5.7 - 2026-11-02
 
 ### Fixed
 
-- **发布包不再被 Central 拒绝**：`central-publishing-maven-plugin` 0.11.0 会把
-  `maven-metadata-local.xml` / `_remote.repositories` 一并打进 bundle，Central 看到
-  没有 POM 的目录即拒绝整批（"Bundle has content that does NOT have a .pom file"）。
-  升级到 core 已使用的 0.12.0，插件在打包前清理这些元数据。
+- **Release bundles are no longer rejected by Central**: `central-publishing-maven-plugin`
+  0.11.0 packed `maven-metadata-local.xml` / `_remote.repositories` into the bundle, and
+  Central rejected the whole bundle on sight of a directory without a POM ("Bundle has
+  content that does NOT have a .pom file"). Upgraded to 0.12.0 (already used by core); the
+  plugin now removes that metadata before packaging.
 
-- **入站头上限 `maxHeaderBytes` 之前是两个引擎各自的常量**：Undertow 硬编码
-  `MAX_HEADER_SIZE=8192`；Jetty 的明文分支用裸 `ServerConnector`，连共享 `HttpConfiguration` 都
-  没建，所以这个新字段（默认 16 KiB）在两个适配器上都不生效、也不报告。现在 Undertow 接
-  `MAX_HEADER_SIZE` 并同值映射 h2 的 `HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE`；Jetty 三个分支
-  共用一份 `HttpConfiguration.setRequestHeaderSize`（明文分支也走 `HttpConnectionFactory`，不再
-  让 Jetty 默认值顶替共享配置）。testkit 新增 `HeaderBudgetContract`：1 KiB 预算拒绝 4 KiB 头、
-  16 KiB 预算接受 4 KiB 头，两个引擎各自继承。
-- **Consul 没有实现 readiness 接缝**：`register(instance, Health)` 走接口默认实现，
-  `ConsulClient.register` 把 TTL check 写成 `passing` —— 未就绪实例注册即可被发现；
-  `markReady` 是默认 no-op，core 的就绪门对 Consul 完全失效。现在按 `Health.ready()` 写
-  `passing`/`critical`，`markReady` 调 `/v1/agent/check/pass|fail`（404 回答 false，让心跳
-  重新注册；其它非 2xx 抛出让 core 记为 unhealthy），并补了 starting→passing 的测试。
-- **`freeway.kafka.properties` 不能覆盖适配器自有的客户端键**：`enable.auto.commit=true` 会让
-  Kafka 在订阅方的显式 commit 之外推进 offset，把 handler 失败重试的 at-least-once 静默降成
-  at-most-once；group/cluster/(de)serializer 同理。启动期拒绝并点名 key。
-- **Consul 模块的装配依赖写清楚**：`ConsulModule` 需与 `CloudModule`（或至少
-  `CloudDiscoveryModule`）一起放置；容器一个模块类只声明一次，所以不能作为 `@SubModule` 自带。
+- **The inbound header limit `maxHeaderBytes` used to be a per-engine constant**: Undertow
+  hard-coded `MAX_HEADER_SIZE=8192`; Jetty's cleartext branch used a bare `ServerConnector`
+  and did not even build the shared `HttpConfiguration`, so the new field (default 16 KiB)
+  applied on neither adapter and was never reported. Undertow now reads `MAX_HEADER_SIZE` and
+  maps it to HTTP/2's `HTTP2_SETTINGS_MAX_HEADER_LIST_SIZE`; Jetty's three branches share one
+  `HttpConfiguration.setRequestHeaderSize` (the cleartext branch goes through
+  `HttpConnectionFactory` too, so a Jetty default no longer overrides the shared config). The
+  testkit gains `HeaderBudgetContract`: a 1 KiB budget rejects 4 KiB headers, a 16 KiB budget
+  accepts them; both engines inherit it.
+- **Consul did not implement the readiness seam**: `register(instance, Health)` used the
+  interface default, so `ConsulClient.register` wrote the TTL check as `passing` — an
+  unready instance became discoverable as soon as it registered; `markReady` was a default
+  no-op, so core's readiness gate had no effect on Consul. It now writes `passing`/`critical`
+  from `Health.ready()`, and `markReady` calls `/v1/agent/check/pass|fail` (404 answers false
+  so the heartbeat re-registers; other non-2xx throw so core records unhealthy), with a test
+  covering starting→passing.
+- **`freeway.kafka.properties` may not override adapter-owned client keys**:
+  `enable.auto.commit=true` would make Kafka advance offsets outside the subscriber's
+  explicit commit, silently degrading handler-retry at-least-once into at-most-once;
+  group/cluster/(de)serializer keys are the same. Startup rejects them and names the key.
+- **The Consul module's assembly dependency is documented**: `ConsulModule` must be placed
+  together with `CloudModule` (or at least `CloudDiscoveryModule`); the container declares a
+  module class only once, so it cannot bring it in as a `@SubModule`.
 
 ## 1.5.6
 
@@ -98,7 +179,7 @@
   registers/deregisters through Consul. **Run against a live agent** (Consul 2.0.4 dev agent):
   13/13 green; skipped without the variable, red against a dead address. Four behaviors the
   stub could not catch were found and fixed this way (see the design doc's §3.1). Design:
-  `docs/consul-adapter-design.md`.
+  `docs/design/consul-adapter.md`.
 
 - **every ext module now contributes its config vocabulary to the unknown-key check** — undertow,
   jetty, hikari and kafka spell their keys in a nested `ConfigKeys` table (full literals, the core
@@ -969,7 +1050,7 @@
   Dependabot keep the build green and dependencies current; Apache-2.0 license
   headers added to all sources; Spotless (google-java-format) enforces a
   consistent style at `verify`.
-- **Docs**: `docs/RELEASE.md` documents the snapshot release flow (verify →
+- **Docs**: `docs/release.md` documents the snapshot release flow (verify →
   changelog → tag → deploy → benchmark archive).
 - **Benchmark**: `compare`/`list`/`history` render local time and tolerate null
   `created_at` rows.

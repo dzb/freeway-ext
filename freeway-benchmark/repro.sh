@@ -33,8 +33,8 @@ for bench in \
   com.jujin.freeway.bench.jmh.MultipartFormBenchmark \
   com.jujin.freeway.http.engine.FilterChainBenchmark \
   com.jujin.freeway.http.engine.Http1xParserBenchmark \
-  com.jujin.freeway.http.engine.HttpContextLookupBenchmark \
-  com.jujin.freeway.http.engine.HttpContextOutputBenchmark \
+  com.jujin.freeway.http.engine.HttpExchangeLookupBenchmark \
+  com.jujin.freeway.http.engine.HttpExchangeOutputBenchmark \
   com.jujin.freeway.http.engine.ws.WebSocketFrameBenchmark; do
   simple="${bench##*.}"
   $DRY java -cp "$CP" org.openjdk.jmh.Main \

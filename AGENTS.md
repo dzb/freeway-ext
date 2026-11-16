@@ -1,15 +1,16 @@
 # Repository Guidelines
 
-`freeway-ext` is the JDK 25+ Maven repository holding Freeway's third-party
-integrations: the HTTP engine adapters, the message-queue and connection-pool
-adapters, the shared adapter testkit, and the benchmark suite. It consumes Freeway
+`freeway-ext` is the JDK 25+ Maven repository holding Freeway's optional
+extensions: the HTTP engine adapters, the message-queue and connection-pool
+adapters, the Fleet registry client/server, the shared adapter testkit and the
+benchmark suite. It consumes Freeway
 core as a dependency — core never depends on it. Keep changes scoped, explicit, and
 convention over configuration.
 
 This file is the single home for ext-repo conventions: build, module layout, naming,
 design rules, testing, commit rules. Framework-wide conventions live in the core
 repository — [AGENTS.md](https://github.com/dzb/freeway/blob/main/AGENTS.md) and
-[docs/ARCHITECTURE.md](https://github.com/dzb/freeway/blob/main/docs/ARCHITECTURE.md)
+[docs/ARCHITECTURE.md](https://github.com/dzb/freeway/blob/main/docs/architecture.md)
 — and apply here unchanged.
 
 ## Build
@@ -28,6 +29,13 @@ mvn -pl freeway-http-undertow -am test       # one adapter + its upstream module
 mvn -pl freeway-http-adapter-testkit,freeway-http-jetty test   # the testkit is not installed
 mvn spotless:check                           # format gate — not part of `mvn test`
 ```
+
+CI (GitHub Actions) does exactly what the local loop does, plus the part that
+cannot be done locally by accident: it clones core `main`, installs that
+snapshot, then runs `verify` here, so an adapter left behind by a core change
+fails against the core it will actually consume. CI is verification-only: it
+never signs or deploys. Release is manual ([docs/release.md](docs/release.md));
+the signing key and Central credentials stay on the machine that runs it.
 
 - **The format gate is not in the test lifecycle**: `spotless:check` is bound to
   `verify` (google-java-format, which also removes unused imports), so run it explicitly
@@ -51,16 +59,19 @@ mvn spotless:check                           # format gate — not part of `mvn 
 | `freeway-http-jetty` | Jetty 12 engine adapter (`HttpEngine`) | core ioc + http + commons; jetty-server, jetty-websocket-jetty-server, jetty-http2-server, jetty-alpn-*-server |
 | `freeway-http-undertow` | Undertow engine adapter (`HttpEngine`) | core ioc + http + commons; undertow-core |
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
+| `freeway-fleet-protocol` | Fleet wire contract: routes, headers, version and shared `freeway.fleet.*` keys | no runtime dependency |
+| `freeway-fleet` | Fleet client/discovery/registrar (`FleetModule`, `FleetClient`, `FleetDiscovery`, `FleetRegistrar`) | core ioc + cloud + commons + http; freeway-fleet-protocol; **no third-party client** |
+| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, H2 `LeaseStore`) | core ioc + cloud + commons + http; freeway-fleet-protocol; H2; freeway-fleet (test) |
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | core http + boot + db; both engine adapters; JMH, robaho-httpserver, sqlite-jdbc |
+| `freeway-logging-testkit` | Cross-JVM logging-backend integration tests (not published): Logback takeover, `auto`, the default staying Freeway's JUL provider, and JUL staying untouched in external mode | core commons; logback-classic at test scope |
 
-The adapter modules are leaf nodes: no cross-dependencies between them, and each depends
-only on core modules plus its own third-party library — `freeway-cloud-consul` being the
-one with no third-party library at all (Consul's agent is reached over its HTTP API with
-the JDK `HttpClient`). `freeway-benchmark` is the one
-exception — comparing engines requires both of them — and it is excluded from deployment
-(`skipPublishing`, plus `maven.deploy.skip` for the plain deploy lifecycle).
+HTTP/DB adapter modules are leaf nodes: each depends on core plus its own third-party
+library. `freeway-cloud-consul` has no third-party client (the agent is reached with the
+JDK `HttpClient`). Fleet is a first-party client/server pair (`server -> protocol`, with
+the client only in server tests), and `freeway-benchmark` intentionally depends on both
+engines; both are distinct from the leaf-adapter rule.
 
 ## Naming
 
@@ -86,7 +97,7 @@ exception — comparing engines requires both of them — and it is excluded fro
 - **Engine adapters stay self-contained**: the two engines share the testkit contracts and
   the core SPI, not an internal abstraction layer. Duplication between them is deliberate
   — a shared abstraction that then needs per-engine fixes misrepresents the engines (see
-  `docs/audit-structure-consistency-1.5.2.md` §6).
+  `docs/audits/structure-consistency-1.5.2.md` §6).
 - The parent POM inherits its build plugins from `freeway-parent` (compiler 25, surefire,
   source, javadoc, GPG signing, Central publishing) and pins core versions through
   `<freeway.version>` in `dependencyManagement`.
@@ -111,13 +122,12 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 
 ## Regressions to Watch
 
-- **Kafka bridge contract** — all three keys must agree across nodes:
-  `freeway.kafka.topics` is the bridge topic the sink writes and the subscriber polls,
-  while the *local* topic travels in the `ce-fwtopic` header;
-  `freeway.kafka.allowed-event-types` must list every bridged type (including
-  `java.lang.String` for string topics — an empty list accepts nothing and warns at
-  startup); `freeway.kafka.client-id` must be unique per node, or suppress-own swallows
-  the peer's events.
+- **Kafka plane contract** — `freeway.kafka.topics` is the topic the plane sends to and
+  its subscriber polls; the topic *is* the routing key (the 1.5 bridge header
+  `ce-fwtopic` and `freeway.kafka.allowed-event-types` no longer exist).
+  `freeway.kafka.client-id` must be unique per node, or `suppress-own` swallows the
+  peer's events. `freeway.kafka.properties` may not override the adapter-owned client
+  keys (`enable.auto.commit`, `auto.offset.reset`, group/servers, (de)serializers).
 - **WebSocket sends are asynchronous**: the Jetty/Undertow sessions never block the
   calling (often receive/I/O) thread — send failures are logged rather than thrown, and
   `close()` returns immediately after starting the close handshake.
@@ -137,6 +147,7 @@ JUnit 6.1.3; tests live beside the module they cover and use the `*Test` suffix.
 - Core [AGENTS.md](https://github.com/dzb/freeway/blob/main/AGENTS.md) — the repo-wide
   conventions this repository follows unchanged.
 - [README.md](README.md) — which module to use, per use case.
-- [docs/RELEASE.md](docs/RELEASE.md) — release and publishing steps.
-- [docs/audit-structure-consistency-1.5.2.md](docs/audit-structure-consistency-1.5.2.md)
+- [docs/README.md](docs/README.md) — documentation index (audits, design, benchmarks, releases).
+- [docs/release.md](docs/release.md) — release and publishing steps.
+- [docs/audits/structure-consistency-1.5.2.md](docs/audits/structure-consistency-1.5.2.md)
   — the current structure audit and status record.

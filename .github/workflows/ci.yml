@@ -4,10 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build:
+    name: adapters (JDK 25)
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
@@ -17,5 +27,66 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+      # The adapters pin 2.0.0-SNAPSHOT. Building core main first (instead of
+      # resolving whatever snapshot Central holds) makes this job fail on the
+      # ABI break it is meant to catch, and keeps the two repositories moving
+      # together.
+      - name: Check out core
+        run: git clone --depth 1 https://github.com/dzb/freeway.git freeway-core
+      - name: Install core snapshot
+        run: mvn -B -ntp -f freeway-core/pom.xml -DskipTests -Dgpg.skip=true install
       - name: Build and test
         run: mvn -B -ntp verify -Dgpg.skip=true
+
+  docs:
+    name: docs consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # English-only docs and resolving relative links: the same drift the core
+      # repository guards with DocsLayoutConsistencyTest, without a Java test
+      # module here (the ext test suite is adapter-focused).
+      - name: Documentation checks
+        run: |
+          python3 - <<'PY'
+          import pathlib, re, sys
+          root = pathlib.Path('.')
+          han = re.compile(r'[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]')
+          link = re.compile(r'\]\(([^)\s]+)\)')
+          docs = list((root / 'docs').rglob('*'))
+          docs += [root / 'README.md', root / 'AGENTS.md', root / 'CHANGELOG.md']
+          cjk = [str(p) for p in docs
+                 if p.is_file() and p.suffix in {'.md', '.sample', '.reference'}
+                 and han.search(p.read_text(encoding='utf-8'))]
+          broken = []
+          for p in docs:
+              if not p.is_file() or p.suffix != '.md':
+                  continue
+              for m in link.finditer(p.read_text(encoding='utf-8')):
+                  target = m.group(1).split('#', 1)[0]
+                  if not target or target.startswith(('http://', 'https://', 'mailto:', '#')):
+                      continue
+                  if not (p.parent / target).exists():
+                      broken.append(f'{p} -> {m.group(1)}')
+          if cjk or broken:
+              print('CJK documentation:', cjk)
+              print('broken links:', broken)
+              sys.exit(1)
+          print('documentation checks passed')
+          PY
+
+  dependency-review:
+    name: dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
+        with:
+          fail-on-severity: high

@@ -33,11 +33,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * What an engine adapter tells the application about the transport, and what it must forget between
- * two requests: the exchange is built per request (a transport plus the composed {@code
- * HttpContextSupport}), so it has to report TLS honestly and must never carry one request's state
- * into the next — a shape the lifecycle now guarantees rather than a reset that has to be
- * remembered.
+ * What an engine adapter tells the application about the transport, and what it must not inherit
+ * between two requests: an exchange has to report TLS honestly and must never carry one request's
+ * state into the next.
  */
 public abstract class ContextContract extends EngineFixture {
 
@@ -114,10 +112,9 @@ public abstract class ContextContract extends EngineFixture {
 
   @Test
   void contextStateIsFreshWhenTheRequestDoesNotSendACorrelationId() throws Exception {
-    // Each request gets its own exchange (transport + HttpContextSupport), so
-    // an absent X-Request-Id must produce a freshly generated id rather than
-    // the previous request's one: there is no reused context that could carry
-    // it over, and the test pins that against a regression to pooling.
+    // The exchange is created per request, so it cannot inherit a previous
+    // request's metadata: an absent X-Request-Id must still yield a fresh id,
+    // and no two requests may report the same one.
     try (var server = start(Pipelines.of(routes()))) {
       var client = HttpClients.plain();
       String base = uri(server, "/id").toString();
@@ -178,7 +175,7 @@ public abstract class ContextContract extends EngineFixture {
                         "/nobody",
                         ctx -> {
                           ctx.setHeader("Content-Length", "5");
-                          ctx.send(204, "");
+                          ctx.sendText(204, "");
                         }))))) {
       var response =
           HttpClients.plain()
@@ -198,10 +195,10 @@ public abstract class ContextContract extends EngineFixture {
   @Test
   void oversizedBodyIsRejectedByTheSharedAccounting() throws Exception {
     // maxBodySize must answer the same 413 whatever layer trips first: the
-    // shared HttpContextSupport accounting (LimitedInputStream wrapped around
-    // transport.bodyStream()), or Undertow's native MAX_ENTITY_SIZE mapped
-    // from the same config (surfaced as the shared BodyTooLargeException).
-    // Never a dropped connection, never a body truncated to look complete.
+    // shared HttpExchangeSupport body accounting (one limiter,
+    // LimitedInputStream), or Undertow's native MAX_ENTITY_SIZE mapped from
+    // the same config (surfaced as the shared BodyTooLargeException). Never a
+    // dropped connection, never a body truncated to look complete.
     var config = defaultConfig().withMaxBodySize(16);
     try (var server = start(Pipelines.of(routes()), config)) {
       var resp =
@@ -224,13 +221,14 @@ public abstract class ContextContract extends EngineFixture {
 
   private static List<Route> routes() {
     return List.of(
-        Route.get("/ping", ctx -> ctx.send(200, "pong")),
-        Route.get("/header-names", ctx -> ctx.send(200, String.join(",", ctx.headers().keySet()))),
-        Route.get("/id", ctx -> ctx.send(200, ctx.correlationId())),
+        Route.get("/ping", ctx -> ctx.sendText(200, "pong")),
+        Route.get(
+            "/header-names", ctx -> ctx.sendText(200, String.join(",", ctx.headers().keySet()))),
+        Route.get("/id", ctx -> ctx.sendText(200, ctx.correlationId())),
         Route.get(
             "/facts",
             ctx ->
-                ctx.send(
+                ctx.sendText(
                     200,
                     ctx.isSecure()
                         + "|"
@@ -241,7 +239,7 @@ public abstract class ContextContract extends EngineFixture {
             "/echo",
             ctx -> {
               ctx.body();
-              ctx.send(200, "ok");
+              ctx.sendText(200, "ok");
             }));
   }
 }

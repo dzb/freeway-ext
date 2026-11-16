@@ -31,12 +31,11 @@ import java.nio.ByteBuffer;
 import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.xnio.IoUtils;
 
 /**
- * Undertow-backed {@link WebSocketTransport} with asynchronous frame sends. The session view
- * (metadata, request snapshot) is the composed {@code WebSocketSessionSupport} this transport is
- * handed to in {@link #open}.
+ * Undertow's half of one WebSocket connection: frame sends and the receive listener that forwards
+ * frames to the application. The session identity, metadata and close-reason truncation live in the
+ * composed {@code WebSocketSessionSupport}; this class never sees them.
  */
 final class UndertowWebSocketTransport implements WebSocketTransport {
   private static final Logger LOG = LoggerFactory.getLogger(UndertowWebSocketTransport.class);
@@ -64,7 +63,7 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
     this.maxMessageSize = maxMessageSize;
   }
 
-  /** Starts the receive listener and hands the composed session to the application listener. */
+  /** Starts the receive listener and notifies the application that the session opened. */
   void open(WebSocketListener listener, WebSocketSession session) throws Exception {
     this.listener = listener != null ? listener : WebSocketListener.NOOP;
     this.listener.onOpen(session);
@@ -107,12 +106,7 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
                 var pooled = message.getData();
                 byte[] data;
                 try {
-                  ByteBuffer[] buffers = pooled.getResource();
-                  long total = 0;
-                  for (ByteBuffer buffer : buffers) {
-                    total += buffer.remaining();
-                  }
-                  ByteBuffer merged = WebSockets.mergeBuffers(buffers);
+                  ByteBuffer merged = WebSockets.mergeBuffers(pooled.getResource());
                   data = new byte[merged.remaining()];
                   merged.get(data);
                 } finally {
@@ -155,7 +149,7 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
                 // Undertow's default onError closes the channel; without it a
                 // read-level error leaves the connection hanging with onClose
                 // never delivered to the application.
-                IoUtils.safeClose(channel);
+                org.xnio.IoUtils.safeClose(channel);
               }
             });
     channel.resumeReceives();
@@ -170,9 +164,9 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
   public void sendText(String text) throws IOException {
     synchronized (sendLock) {
       requireOpen();
-      // Async send: receive callbacks run on XNIO I/O threads, where
-      // blocking sends must never be used. Frames are queued per channel;
-      // failures are logged via SEND_CALLBACK (never thrown to the caller).
+      // Async send: receive callbacks run on XNIO I/O threads, where blocking
+      // sends must never be used. Frames are queued per channel; failures are
+      // logged via SEND_CALLBACK (never thrown to the caller).
       WebSockets.sendText(Objects.requireNonNull(text, "text"), channel, SEND_CALLBACK);
     }
   }
@@ -195,11 +189,14 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
     }
   }
 
+  /**
+   * {@code reason} arrives already truncated to the 123-byte close-frame payload by {@code
+   * WebSocketSessionSupport.close}; this method does not touch it again.
+   */
   @Override
   public void close(int code, String reason) throws IOException {
     localCloseRequested = true;
     // "Initiates a graceful close" per the interface contract — no blocking.
-    // The reason arrives already truncated to 123 bytes by the support object.
     WebSockets.sendClose(code, reason, channel, SEND_CALLBACK);
   }
 
@@ -218,7 +215,7 @@ final class UndertowWebSocketTransport implements WebSocketTransport {
           1011,
           cause != null && cause.getMessage() != null ? cause.getMessage() : "websocket error");
     } catch (IOException ex) {
-      IoUtils.safeClose(channel);
+      org.xnio.IoUtils.safeClose(channel);
       throw ex;
     }
   }

@@ -16,17 +16,14 @@
 
 package com.jujin.freeway.http.engine;
 
-import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.coercion.CoercerDefault;
-import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
-import com.jujin.freeway.http.HttpContextSupport;
+import com.jujin.freeway.http.HttpExchangeSupport;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.filter.CorsFilter;
 import com.jujin.freeway.http.filter.HealthFilter;
 import com.jujin.freeway.http.route.RouteHandler;
 import java.io.InputStream;
-import java.io.OutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -45,13 +42,13 @@ import org.openjdk.jmh.annotations.Warmup;
  * JMH benchmark for the real Freeway HTTP filter chain.
  *
  * <p>Builds the same filter chain used in production: {@link CorsFilter} &rarr; {@link
- * HealthFilter} &rarr; no-op route handler. Request timing is measured by {@code HttpServer} itself
- * rather than a filter.
+ * HealthFilter} &rarr; no-op route handler, running against a real {@link HttpExchangeSupport} over
+ * {@link BenchTransport} so the measured cost includes real header/body/status work without a
+ * socket.
  *
- * <p>Uses a real {@link HttpContextSupport} over a real {@link HttpTransportImpl} (not a stub), so
- * that filter overhead includes real header/body/status operations plus the per-request exchange
- * construction production pays — there is no pooled context to reuse since the composition refactor
- * made the exchange per-request.
+ * <p>One exchange is created per operation, as an engine does: the support object is per request
+ * and is discarded with it, so a benchmark that reused one would measure a state machine nothing in
+ * production has.
  *
  * <p>Three request shapes exercise different filter code paths:
  *
@@ -69,8 +66,8 @@ import org.openjdk.jmh.annotations.Warmup;
 @State(Scope.Benchmark)
 public class FilterChainBenchmark {
 
-  private static final JsonCodec JSON = new JsonCodecDefault();
-  private static final Coercer COERCER = new CoercerDefault();
+  private static final JsonCodecDefault JSON = new JsonCodecDefault();
+  private static final CoercerDefault COERCER = new CoercerDefault();
 
   private RouteHandler chain;
 
@@ -84,25 +81,10 @@ public class FilterChainBenchmark {
     chain = ctx -> cors.doFilter(ctx, h);
   }
 
-  /** A fresh exchange, the shape every request takes in production. */
-  private HttpContextSupport exchange(
+  private static HttpExchangeSupport exchange(
       String method, String path, Map<String, List<String>> headers) {
-    var transport =
-        new HttpTransportImpl(
-            method,
-            path,
-            null,
-            headers,
-            InputStream.nullInputStream(),
-            -1,
-            false,
-            OutputStream.nullOutputStream(),
-            true,
-            false,
-            null,
-            "");
-    return new HttpContextSupport(
-        transport,
+    return new HttpExchangeSupport(
+        new BenchTransport(method, path, null, headers, InputStream.nullInputStream()),
         JSON,
         COERCER,
         HttpServerConfig.DEFAULT_MAX_BODY_SIZE,

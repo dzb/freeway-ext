@@ -19,13 +19,13 @@ package com.jujin.freeway.http.jetty;
 import com.jujin.freeway.commons.coercion.Coercer;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.http.ExchangeHandler;
-import com.jujin.freeway.http.HttpContextSupport;
 import com.jujin.freeway.http.HttpEngine;
+import com.jujin.freeway.http.HttpExchangeSupport;
 import com.jujin.freeway.http.HttpModule.ConfigKeys;
 import com.jujin.freeway.http.HttpServerConfig;
 import com.jujin.freeway.http.HttpServerHandle;
 import com.jujin.freeway.http.MediaTypes;
-import com.jujin.freeway.http.SslSettings;
+import com.jujin.freeway.http.SslConfig;
 import com.jujin.freeway.http.websocket.WebSocketMatch;
 import com.jujin.freeway.ioc.symbol.SymbolProvider;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
@@ -33,12 +33,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -48,7 +43,6 @@ import org.eclipse.jetty.http2.server.HTTP2ServerConnectionFactory;
 import org.eclipse.jetty.server.*;
 import org.eclipse.jetty.server.handler.GracefulHandler;
 import org.eclipse.jetty.util.Callback;
-import org.eclipse.jetty.util.Fields;
 import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.Invocable;
 import org.eclipse.jetty.websocket.server.ServerWebSocketContainer;
@@ -93,8 +87,8 @@ public final class JettyHttpEngine implements HttpEngine {
    * reports are the same answer from the same rule.
    */
   @Override
-  public boolean secure() {
-    return SslSettings.from(symbols).enabled();
+  public boolean isSecure() {
+    return SslConfig.from(symbols).enabled();
   }
 
   @Override
@@ -160,53 +154,46 @@ public final class JettyHttpEngine implements HttpEngine {
           public boolean handle(Request request, Response response, Callback callback)
               throws Exception {
             String correlationId = request.getHeaders().get("X-Request-Id");
-            response.getHeaders().put("X-Request-Id", safeCorrelationId(correlationId));
             if (isWebSocketRequest(request)) {
               return handleWebSocket(
                   request, response, callback, handler, correlationId, webSocketContainer);
             }
-            // One transport + one support object per request: no pool, no reset, and no
-            // per-request state that can survive into the next exchange on this connection.
-            JettyHttpTransport transport = new JettyHttpTransport(request, response, callback);
-            HttpContextSupport ctx =
-                new HttpContextSupport(
+            // One transport + one support object per exchange: nothing is
+            // pooled, so no request can inherit the previous one's metadata,
+            // status or headers.
+            var transport = new JettyHttpTransport(request, response, callback);
+            var ctx =
+                new HttpExchangeSupport(
                     transport,
                     jsonCodec,
                     coercer,
                     config.maxBodySize(),
                     config.compression(),
                     correlationId);
-            // Echo for tracing only — a hostile value (CR/LF) fails validation and is skipped,
-            // leaving the sanitized header the engine put above in place.
+            // The correlation id is echoed for tracing; the shared header
+            // validation rejects a hostile value instead of writing it.
             try {
               ctx.setHeader("X-Request-Id", ctx.correlationId());
             } catch (IllegalArgumentException ignored) {
-              // defense in depth: never let a hostile id break the response head
             }
             try {
               handler.handle(ctx);
             } catch (Exception ex) {
-              LOG.error("Jetty request failed for {} {}", ctx.method(), ctx.path(), ex);
-              // The support object knows whether the response was committed; once it has been,
-              // the response path owns the callback (completed by writeResponse, or still open
-              // for SSE) and nothing more may be written here.
-              if (!ctx.isResponded()) {
-                if (!response.isCommitted()) {
-                  try {
-                    ctx.setStatus(500)
-                        .setHeader("Content-Type", MediaTypes.TEXT_PLAIN_UTF8)
-                        .output(INTERNAL_ERROR_BODY);
-                  } catch (Exception writeFailure) {
-                    callback.succeeded();
-                  }
-                } else {
-                  // The container committed without a Freeway response; release the request.
-                  callback.succeeded();
-                }
+              LOG.error("Jetty request failed for {} {}", method(request), path(request), ex);
+              if (!ctx.isCommitted()) {
+                response.setStatus(500);
+                response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
+                response.write(true, ByteBuffer.wrap(INTERNAL_ERROR_BODY), callback);
+              } else {
+                // Response was already committed by the handler before it
+                // failed; writing a 500 now would throw. Just end the exchange.
+                callback.succeeded();
               }
               return true;
             }
-            if (!ctx.isResponded()) {
+            if (!ctx.isCommitted()) {
+              // A handler that wrote nothing: complete the exchange so Jetty
+              // releases the request and graceful shutdown can proceed.
               callback.succeeded();
             }
             return true;
@@ -248,7 +235,7 @@ public final class JettyHttpEngine implements HttpEngine {
     // The shared TLS section, resolved once by core: the same keys, defaults
     // and three-state activation the built-in engine and Undertow use, so the
     // HttpServer's secure() verdict and this adapter cannot disagree.
-    SslSettings tls = SslSettings.from(symbols);
+    SslConfig tls = SslConfig.from(symbols);
     boolean sslEnabled = tls.enabled();
     boolean alpnHttp2 = sslEnabled && tls.http2();
     boolean h2c =
@@ -257,9 +244,8 @@ public final class JettyHttpEngine implements HttpEngine {
       // The plaintext branch still needs the shared configuration: a bare
       // ServerConnector would run on Jetty's own defaults and silently ignore
       // maxHeaderBytes (and every other knob set on an HttpConfiguration).
-      HttpConfiguration plain = new HttpConfiguration();
-      plain.setRequestHeaderSize(config.maxHeaderBytes());
-      return new ServerConnector(server, new HttpConnectionFactory(plain));
+      return new ServerConnector(
+          server, new HttpConnectionFactory(httpConfiguration(config, false)));
     }
     if (sslEnabled) {
       SslContextFactory.Server ssl = new SslContextFactory.Server();
@@ -290,12 +276,7 @@ public final class JettyHttpEngine implements HttpEngine {
       if (alias != null) {
         ssl.setCertAlias(alias);
       }
-      HttpConfiguration https = new HttpConfiguration();
-      // The shared inbound header budget (HttpServerConfig.maxHeaderBytes). The
-      // same configuration feeds the HTTP/1.1 and HTTP/2 factories, so one line
-      // covers both protocols and both ALPN branches.
-      https.setRequestHeaderSize(config.maxHeaderBytes());
-      https.addCustomizer(new SecureRequestCustomizer());
+      HttpConfiguration https = httpConfiguration(config, true);
       HttpConnectionFactory http11 = new HttpConnectionFactory(https);
       if (alpnHttp2) {
         HTTP2ServerConnectionFactory h2 = new HTTP2ServerConnectionFactory(https);
@@ -311,18 +292,28 @@ public final class JettyHttpEngine implements HttpEngine {
           server, new SslConnectionFactory(ssl, http11.getProtocol()), http11);
     }
     // h2c: HTTP/2 over cleartext, on a shared configuration like the TLS branch.
-    HttpConfiguration cleartext = new HttpConfiguration();
-    cleartext.setRequestHeaderSize(config.maxHeaderBytes());
+    HttpConfiguration cleartext = httpConfiguration(config, false);
     return new ServerConnector(
         server, new HttpConnectionFactory(cleartext), new HTTP2CServerConnectionFactory(cleartext));
   }
 
-  /** Splits a comma-separated property value into trimmed, non-empty tokens. */
-  private static String[] splitCommaSeparated(String value) {
-    return Arrays.stream(value.split(","))
-        .map(String::trim)
-        .filter(s -> !s.isEmpty())
-        .toArray(String[]::new);
+  /**
+   * The one {@link HttpConfiguration} every branch builds: the shared header budget, and Date
+   * pinned off because {@code HttpExchangeSupport} is its only source (Jetty's automatic header
+   * would emit a second one on every response). {@code secure} adds the {@code
+   * SecureRequestCustomizer} the TLS branches need and plaintext must not carry.
+   */
+  private static HttpConfiguration httpConfiguration(HttpServerConfig config, boolean secure) {
+    HttpConfiguration http = new HttpConfiguration();
+    http.setSendDateHeader(false);
+    // The shared inbound header budget (HttpServerConfig.maxHeaderBytes). One
+    // configuration feeds the HTTP/1.1 and HTTP/2 factories, so this covers
+    // both protocols on every branch.
+    http.setRequestHeaderSize(config.maxHeaderBytes());
+    if (secure) {
+      http.addCustomizer(new SecureRequestCustomizer());
+    }
+    return http;
   }
 
   /**
@@ -348,7 +339,7 @@ public final class JettyHttpEngine implements HttpEngine {
     String method = method(request);
     String path = path(request);
     String origin = request.getHeaders().get("Origin");
-    WebSocketMatch match = handler.websocket(method, path, origin);
+    WebSocketMatch match = handler.matchWebSocket(method, path, origin);
     if (match == null) {
       response.setStatus(404);
       response.getHeaders().put("Content-Type", MediaTypes.TEXT_PLAIN_UTF8);
@@ -363,9 +354,9 @@ public final class JettyHttpEngine implements HttpEngine {
               correlationId,
               method,
               path,
-              snapshotPathVariables(match.pathVariables()),
-              snapshotQueryParameters(upgradeRequest),
-              snapshotHeaders(upgradeRequest));
+              match.pathVariables(),
+              JettyHttpTransport.snapshotQueryParams(request),
+              JettyHttpTransport.snapshotHeaders(request));
         };
     try {
       if (!webSocketContainer.upgrade(creator, request, response, callback)) {
@@ -416,28 +407,6 @@ public final class JettyHttpEngine implements HttpEngine {
   private static String path(Request request) {
     String path = request.getHttpURI() != null ? request.getHttpURI().getPath() : null;
     return path != null ? path : "/";
-  }
-
-  private static Map<String, String> snapshotPathVariables(Map<String, String> vars) {
-    return vars == null ? Map.of() : Map.copyOf(vars);
-  }
-
-  private static Map<String, List<String>> snapshotQueryParameters(Request request) {
-    Fields fields = Request.extractQueryParameters(request);
-    LinkedHashMap<String, List<String>> params = new LinkedHashMap<>();
-    for (Fields.Field field : fields) {
-      params.put(field.getName(), List.copyOf(field.getValues()));
-    }
-    return Map.copyOf(params);
-  }
-
-  private static Map<String, List<String>> snapshotHeaders(Request request) {
-    LinkedHashMap<String, List<String>> headers = new LinkedHashMap<>();
-    for (String name : request.getHeaders().getFieldNamesCollection()) {
-      List<String> values = new ArrayList<>(request.getHeaders().getValuesList(name));
-      headers.put(name.toLowerCase(Locale.ROOT), List.copyOf(values));
-    }
-    return Map.copyOf(headers);
   }
 
   private static int currentPort(Server server) {

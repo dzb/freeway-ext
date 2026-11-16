@@ -154,7 +154,7 @@ public abstract class CompressionContract extends EngineFixture {
 
   private static List<Route> routes() {
     return List.of(
-        Route.get("/big", ctx -> ctx.send(200, BIG_BODY)),
-        Route.get("/small", ctx -> ctx.send(200, "pong")));
+        Route.get("/big", ctx -> ctx.sendText(200, BIG_BODY)),
+        Route.get("/small", ctx -> ctx.sendText(200, "pong")));
   }
 }

@@ -24,7 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.json.JsonCodec;
-import com.jujin.freeway.commons.json.JsonCodecDefault;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.Freeway;
 import com.jujin.freeway.ioc.RuntimeHook;
@@ -61,16 +60,14 @@ class KafkaModuleContainerTest {
     System.setProperty(
         "freeway.kafka.properties", "security.protocol=SASL_SSL;sasl.mechanism=PLAIN");
 
-    // JsonCodec is a builtin of the app runtime, not of a bare container — and
-    // the plane binding resolves it at composition, so it must be bound even
-    // for config-only assertions. The plane binding is overridden with a
-    // mock-backed one: the SASL properties under test would fail real producer
-    // construction.
+    // JsonCodec is a container builtin (ioc), so binding a second one here
+    // would leave two live builders for the role. The plane binding is
+    // overridden with a mock-backed one: the SASL properties under test would
+    // fail real producer construction.
     try (Container container =
         Freeway.create(
             new KafkaModule(),
             binder -> {
-              binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
               binder
                   .bind(KafkaEvents.class)
                   .to(
@@ -122,10 +119,7 @@ class KafkaModuleContainerTest {
   void suppressOwnIsReadStrictly() {
     // The coercer vocabulary ("no", "off", "0") is accepted…
     System.setProperty("freeway.kafka.suppress-own", "no");
-    try (Container container =
-        Freeway.create(
-            new KafkaModule(),
-            binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
+    try (Container container = Freeway.create(new KafkaModule())) {
       assertFalse(container.get(KafkaConfig.class).suppressOwn());
     } finally {
       System.clearProperty("freeway.kafka.suppress-own");
@@ -138,10 +132,7 @@ class KafkaModuleContainerTest {
           assertThrows(
               IllegalArgumentException.class,
               () -> {
-                try (Container container =
-                    Freeway.create(
-                        new KafkaModule(),
-                        binder -> binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault()))) {
+                try (Container container = Freeway.create(new KafkaModule())) {
                   container.get(KafkaConfig.class);
                 }
               });
@@ -160,12 +151,12 @@ class KafkaModuleContainerTest {
     System.setProperty("freeway.kafka.bootstrap-servers", "127.0.0.1:1");
     System.setProperty("freeway.kafka.group-id", "container-test");
 
-    // JsonCodec is a builtin of the app runtime, not of a bare container.
+    // JsonCodec is a container builtin (ioc), so this test must not bind a
+    // second one: two live builders for one role is an ambiguous binding.
     try (Container container =
         Freeway.create(
             new KafkaModule(),
             binder -> {
-              binder.bind(JsonCodec.class).to(c -> new JsonCodecDefault());
               binder
                   .bind(KafkaEvents.class)
                   .to(

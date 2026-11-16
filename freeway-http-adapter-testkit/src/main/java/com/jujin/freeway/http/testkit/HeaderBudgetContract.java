@@ -76,6 +76,6 @@ public abstract class HeaderBudgetContract extends EngineFixture {
   }
 
   private static List<Route> ping() {
-    return List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    return List.of(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
   }
 }

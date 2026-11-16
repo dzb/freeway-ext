@@ -46,12 +46,10 @@ public class RouteIndexBenchmark {
 
   @Setup
   public void setup() {
-    exactIndex = new RouteIndex(routes("/ping", "/health", "/metrics"), List.of());
-    paramIndex =
-        new RouteIndex(routes("/users/{id}", "/users/{id}/posts", "/orders/{orderId}"), List.of());
+    exactIndex = new RouteIndex(routes("/ping", "/health", "/metrics"));
+    paramIndex = new RouteIndex(routes("/users/{id}", "/users/{id}/posts", "/orders/{orderId}"));
     wildcardIndex =
-        new RouteIndex(
-            routes("/assets/{path:.*}", "/static/{path:.*}", "/downloads/{path:.*}"), List.of());
+        new RouteIndex(routes("/assets/{path:.*}", "/static/{path:.*}", "/downloads/{path:.*}"));
   }
 
   @Benchmark

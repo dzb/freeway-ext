@@ -1,6 +1,6 @@
 # freeway-ext
 
-Optional third-party integrations for the [Freeway](https://github.com/dzb/freeway) framework.
+Optional extensions and integrations for the [Freeway](https://github.com/dzb/freeway) framework.
 
 ## Built-in engine
 
@@ -26,13 +26,18 @@ For the vast majority of applications, this is all you need.
 | `freeway-http-jetty` | Jetty 12 deployments, Servlet-style processing, or existing Jetty operational tooling | [Jetty](https://jetty.org) 12.1.13 |
 | `freeway-http-undertow` | Undertow-specific handler/listener config, or existing Undertow operational tooling | [Undertow](https://undertow.io) 2.4.3.Final |
 | `freeway-mq-kafka` | Distributed event streaming across services | [Kafka Clients](https://kafka.apache.org) 4.3.1 |
+| `freeway-fleet-protocol` | Fleet wire contract, headers and shared keys | **none** |
+| `freeway-fleet` | Fleet client, discovery and registrar | **none** — JDK `HttpClient` only |
+| `freeway-fleet-server` | Standalone Fleet registry server + H2 `LeaseStore` | [H2](https://h2database.com) 2.5.250 |
 | `freeway-cloud-consul` | Service discovery/registration backed by Consul (non-Kubernetes deployments) | **none** — JDK `HttpClient` only |
 | `freeway-db-hikari` | Connection pooling tuned for high-concurrency OLTP | [HikariCP](https://github.com/brettwooldridge/HikariCP) 7.1.0 |
 | `freeway-benchmark` | JMH comparison suite and the `bench` CLI (not published) | [JMH](https://github.com/openjdk/jmh) 1.37, [robaho](https://github.com/robaho/httpserver) 1.0.29 |
 | `freeway-http-adapter-testkit` | Shared fixtures and contracts every engine must pass (test scope only) | JUnit 6.1.3 |
+| `freeway-logging-testkit` | Cross-JVM proof that Logback takes over when selected, leaves JUL alone, and stays out of the default (test scope only, not published) | [Logback](https://logback.qos.ch) 1.5.38 |
 
-Adapter modules are leaf nodes: no cross-dependencies between them. `freeway-benchmark` is the
-one exception — comparing engines requires both of them — and is excluded from deployment.
+HTTP/DB adapters are leaf nodes. Fleet is a first-party client/server pair
+(`server -> protocol`, with the client in server tests only); `freeway-benchmark`
+intentionally depends on both engines and is excluded from deployment.
 
 ## Kafka security note
 

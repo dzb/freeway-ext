@@ -33,9 +33,6 @@ import org.slf4j.LoggerFactory;
  * <p>Public on purpose: Jetty's {@code JettyWebSocketFrameHandlerFactory} resolves the listener's
  * lifecycle methods reflectively and fails with {@code IllegalAccessException} when the listener
  * class is not public, so a package-private bridge would break every upgrade at runtime.
- *
- * <p>The bridge composes a {@link WebSocketSessionSupport} (the session view the application sees)
- * over a {@link JettyWebSocketTransport} (the frame operations); neither is subclassed.
  */
 public final class JettyWebSocketBridge implements Session.Listener.AutoDemanding {
   private static final Logger LOG = LoggerFactory.getLogger(JettyWebSocketBridge.class);
@@ -48,7 +45,6 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
   private final Map<String, List<String>> headers;
   private volatile WebSocketListener appListener = WebSocketListener.NOOP;
   private volatile JettyWebSocketTransport transport;
-  private volatile WebSocketSessionSupport session;
 
   JettyWebSocketBridge(
       WebSocketMatch match,
@@ -71,11 +67,10 @@ public final class JettyWebSocketBridge implements Session.Listener.AutoDemandin
   @Override
   public void onWebSocketOpen(Session session) {
     JettyWebSocketTransport wsTransport = new JettyWebSocketTransport(session);
-    WebSocketSessionSupport wsSession =
+    this.transport = wsTransport;
+    var wsSession =
         new WebSocketSessionSupport(
             wsTransport, correlationId, method, path, pathVariables, queryParams, headers);
-    this.transport = wsTransport;
-    this.session = wsSession;
     try {
       appListener = match.endpoint().open(wsSession);
       if (appListener == null) {

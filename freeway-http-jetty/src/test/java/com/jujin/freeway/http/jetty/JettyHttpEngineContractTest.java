@@ -22,7 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.commons.coercion.CoercerDefault;
 import com.jujin.freeway.commons.json.JsonCodecDefault;
+import com.jujin.freeway.http.ErrorResponse;
 import com.jujin.freeway.http.HttpServerConfig;
+import com.jujin.freeway.http.HttpStatus;
 import com.jujin.freeway.http.body.BodyTooLargeException;
 import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.testkit.Pipelines;
@@ -35,13 +37,43 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 class JettyHttpEngineContractTest {
+
+  @Test
+  void responseCarriesExactlyOneDateHeader() throws Exception {
+    // HttpExchangeSupport is the only source of Date. Jetty's own automatic
+    // header would add a second one, so every HttpConfiguration must have it
+    // switched off — this asserts the wire, not the flag.
+    var engine = new JettyHttpEngine(new JsonCodecDefault(), new CoercerDefault());
+    var config =
+        HttpServerConfig.defaults()
+            .withPort(0)
+            .withBacklog(64)
+            .withShutdownGrace(Duration.ofSeconds(5));
+    var routes = List.of(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
+
+    try (var server = TestServers.start(engine, config, Pipelines.of(routes))) {
+      server.start();
+      var response =
+          httpClient()
+              .send(
+                  HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/ping"))
+                      .GET()
+                      .timeout(Duration.ofSeconds(10))
+                      .build(),
+                  HttpResponse.BodyHandlers.ofString());
+      assertEquals(
+          1,
+          response.headers().allValues("date").size(),
+          "expected one Date header, got: " + response.headers().map());
+    }
+  }
 
   @Test
   void servesGetWithContentLength() throws Exception {
@@ -52,7 +84,7 @@ class JettyHttpEngineContractTest {
             .withBacklog(64)
             .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
-    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    var routes = List.of(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
     var pipeline = Pipelines.of(routes);
 
     try (var server = TestServers.start(engine, config, pipeline)) {
@@ -79,7 +111,7 @@ class JettyHttpEngineContractTest {
             .withBacklog(64)
             .withShutdownGrace(Duration.ofSeconds(5));
     var client = httpClient();
-    var routes = List.of(Route.get("/ping", ctx -> ctx.send(200, "pong")));
+    var routes = List.of(Route.get("/ping", ctx -> ctx.sendText(200, "pong")));
     var pipeline = Pipelines.of(routes);
 
     try (var server = TestServers.start(engine, config, pipeline)) {
@@ -175,9 +207,9 @@ class JettyHttpEngineContractTest {
             routes,
             List.of(),
             List.of(
-                (ctx, ex) -> {
+                ex -> {
                   captured.set(ex);
-                  return false;
+                  return Optional.empty();
                 }));
 
     try (var server = TestServers.start(engine, config, pipeline)) {
@@ -204,19 +236,20 @@ class JettyHttpEngineContractTest {
             .withShutdownGrace(Duration.ofSeconds(5))
             .withMaxBodySize(1024);
     var client = httpClient();
-    var routes = List.of(Route.post("/echo", ctx -> ctx.output(ctx.body())));
+    var routes = List.of(Route.post("/echo", ctx -> ctx.body(ctx.body())));
     var pipeline =
         Pipelines.of(
             routes,
             List.of(),
             List.of(
-                (ctx, ex) -> {
-                  if (ex instanceof BodyTooLargeException) {
-                    ctx.sendJson(413, Map.of("error", "Payload Too Large"));
-                    return true;
-                  }
-                  return false;
-                }));
+                ex ->
+                    ex instanceof BodyTooLargeException
+                        ? Optional.of(
+                            ErrorResponse.of(
+                                HttpStatus.PAYLOAD_TOO_LARGE,
+                                "payload_too_large",
+                                "Payload Too Large"))
+                        : Optional.empty()));
 
     try (var server = TestServers.start(engine, config, pipeline)) {
       server.start();

@@ -2,7 +2,7 @@ package com.jujin.freeway.fleet;
 
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.discovery.ServiceRegistry;
+import com.jujin.freeway.cloud.discovery.ReadinessAwareRegistry;
 import java.util.Objects;
 
 /**
@@ -11,7 +11,7 @@ import java.util.Objects;
  * unregister on stop, re-register on a lost lease — is the discovery module's
  * {@code RegistrationHook}, driven through this interface, never copied.
  */
-final class FleetRegistrar implements ServiceRegistry {
+final class FleetRegistrar implements ReadinessAwareRegistry {
 
     private final FleetClient client;
 
@@ -33,9 +33,6 @@ final class FleetRegistrar implements ServiceRegistry {
     public boolean renew(String serviceId, String instanceId) {
         return client.renew(serviceId, instanceId);
     }
-
-    @Override
-    public boolean supportsReadiness() { return true; }
 
     @Override
     public void markReady(ServiceInstance instance, boolean ready) {

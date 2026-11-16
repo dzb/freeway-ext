@@ -80,7 +80,7 @@ final class BenchCell {
       String modeLabel) {
     var run = BenchmarkRun.create(engine, scenario, concurrency, requests, warmup, runs);
     long runId = repository.insertRun(run);
-    eventBus.publish(new BenchEvent.RunStarted(run));
+    eventBus.publishEvent(new BenchEvent.RunStarted(run));
     return new BenchCell(repository, eventBus, runId, engine + "/" + scenario, modeLabel, runs);
   }
 
@@ -106,7 +106,7 @@ final class BenchCell {
             round.p99us(),
             round.errors());
     resultIds[index] = repository.insertResult(result);
-    eventBus.publish(new BenchEvent.ResultCollected(result));
+    eventBus.publishEvent(new BenchEvent.ResultCollected(result));
   }
 
   /** The rounds in order, as measured. */

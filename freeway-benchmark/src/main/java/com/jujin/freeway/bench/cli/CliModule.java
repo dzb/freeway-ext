@@ -47,7 +47,7 @@ public final class CliModule implements ModuleEx {
     // ordering anchor an embedder would use to add its own).
     binder
         .contribute(EventSubscriber.class)
-        .add("bench-progress", EventSubscriber.of(BenchEvent.class, BenchEventListener::onEvent));
+        .add("bench-progress", EventSubscriber.ofEvent(BenchEvent.class, BenchEventListener::onEvent));
 
     // AppRuntime no longer exposes the container; capture it at startup
     // so the CLI dispatcher can reach extension points.

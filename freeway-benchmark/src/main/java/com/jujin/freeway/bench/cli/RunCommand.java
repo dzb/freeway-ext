@@ -130,7 +130,7 @@ public final class RunCommand implements Command {
     double avgRps = cell.averageRps();
     double error = cell.dispersion();
 
-    eventBus.publish(new BenchEvent.RunCompleted(cell.runId()));
+    eventBus.publishEvent(new BenchEvent.RunCompleted(cell.runId()));
     System.out.printf(
         "Done. Run #%d saved. avg=%s ± %s req/s%n",
         cell.runId(), BenchFormat.rps(avgRps), BenchFormat.rps(error));

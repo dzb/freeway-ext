@@ -2,7 +2,7 @@ package com.jujin.freeway.cloud.consul;
 
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.discovery.ServiceRegistry;
+import com.jujin.freeway.cloud.discovery.ReadinessAwareRegistry;
 import java.time.Duration;
 import java.util.Objects;
 
@@ -11,7 +11,7 @@ import java.util.Objects;
  * ordering stay in the core's {@code RegistryLifecycleHook} — this type only answers the seam's
  * operations (registration, readiness, renewal, removal and the drain window).
  */
-final class ConsulServiceRegistry implements ServiceRegistry {
+final class ConsulServiceRegistry implements ReadinessAwareRegistry {
 
   private final ConsulClient client;
   private final Duration drainWindow;
@@ -37,11 +37,6 @@ final class ConsulServiceRegistry implements ServiceRegistry {
   }
 
   /** Flips the TTL check; the core's readiness gate reaches Consul through this. */
-  @Override
-  public boolean supportsReadiness() {
-    return true;
-  }
-
   @Override
   public void markReady(ServiceInstance instance, boolean ready) {
     client.markReady(instance, ready);

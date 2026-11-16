@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 - unreleased
+## 2.0.0 - 2026-11-16
 
 ### Added
 
@@ -12,6 +12,12 @@
 
 ### Changed
 
+- **Readiness follows the explicit core capability**: `FleetRegistrar` and
+  `ConsulServiceRegistry` implement `ReadinessAwareRegistry`; the removed
+  `ServiceRegistry.supportsReadiness()` flag and default no-op methods are no
+  longer claimed by adapters.
+- **Benchmark follows EventBus channel vocabulary**: the bench CLI and listener
+  tests use `publishEvent` / `EventSubscriber.ofEvent`, matching core 2.0.
 - **Documentation reorganised and translated to English**: the docs tree now
   follows the core conventions (`audits/`, `benchmarks/`, `design/`, `releases/`,
   lower-case kebab-case names, `docs/README.md` index); every remaining Chinese

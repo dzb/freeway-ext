@@ -48,7 +48,7 @@ class BenchEventListenerTest {
     public void bind(com.jujin.freeway.ioc.Binder binder) {
       binder
           .contribute(EventSubscriber.class)
-          .add(EventSubscriber.of(BenchEvent.class, RECEIVED::add));
+          .add(EventSubscriber.ofEvent(BenchEvent.class, RECEIVED::add));
     }
   }
 
@@ -85,9 +85,9 @@ class BenchEventListenerTest {
       var result =
           BenchmarkResult.forHttpIteration(1, "freeway/ping", "keepalive", 1000, 1, 2, 3, 0);
 
-      bus.publish(new BenchEvent.RunStarted(run));
-      bus.publish(new BenchEvent.ResultCollected(result));
-      bus.publish(new BenchEvent.RunCompleted(7));
+      bus.publishEvent(new BenchEvent.RunStarted(run));
+      bus.publishEvent(new BenchEvent.ResultCollected(result));
+      bus.publishEvent(new BenchEvent.RunCompleted(7));
 
       assertEquals(3, RECEIVED.size(), "all three event types are delivered: " + RECEIVED);
       assertTrue(RECEIVED.get(0) instanceof BenchEvent.RunStarted);

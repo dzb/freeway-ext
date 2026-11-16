@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The adapter against a stubbed Consul agent (JDK {@code HttpServer}): what it puts on the wire,
  * how it reads a health response back, and the two behaviors the core depends on — {@code renew}
- * answering "not held" with {@code false}, and {@code drainWindow} coming from the wiring.
+ * answering "not held" with {@code false}, and {@code drainWindow} coming from the options.
  *
  * <p>No real Consul here on purpose: the request shape and the {@code Meta} round-trip are what
  * this adapter owns, and both are observable against a stub with no external process. A real-agent
@@ -90,8 +90,8 @@ class ConsulClientTest {
     server.stop(0);
   }
 
-  private ConsulWiring wiring() {
-    return ConsulWiring.defaults().withAgentPort(port);
+  private ConsulOptions options() {
+    return ConsulOptions.defaults().withAgentPort(port);
   }
 
   @Test
@@ -99,7 +99,7 @@ class ConsulClientTest {
     ServiceInstance instance =
         ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
 
-    new ConsulClient(wiring()).register(instance, false);
+    new ConsulClient(options()).register(instance, false);
 
     String sent = body.get();
     assertTrue(sent.contains("\"Status\":\"critical\""), sent);
@@ -110,7 +110,7 @@ class ConsulClientTest {
   void markReadyFlipsTheCheckBothWays() {
     ServiceInstance instance =
         ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
-    ConsulClient client = new ConsulClient(wiring());
+    ConsulClient client = new ConsulClient(options());
 
     assertTrue(client.markReady(instance, true));
     assertEquals("PUT", method.get());
@@ -128,7 +128,7 @@ class ConsulClientTest {
     ServiceInstance instance =
         ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
 
-    assertFalse(new ConsulClient(wiring()).markReady(instance, true));
+    assertFalse(new ConsulClient(options()).markReady(instance, true));
   }
 
   @Test
@@ -136,7 +136,7 @@ class ConsulClientTest {
     ServiceInstance instance =
         ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080));
     ConsulServiceRegistry registry =
-        new ConsulServiceRegistry(new ConsulClient(wiring()), wiring());
+        new ConsulServiceRegistry(new ConsulClient(options()), options());
 
     registry.register(instance, ServiceHealth.starting());
     assertTrue(body.get().contains("\"Status\":\"critical\""), body.get());
@@ -154,7 +154,7 @@ class ConsulClientTest {
             ServiceEndpoint.of("https", "10.0.0.5", 8443, "/api"),
             Map.of("zone", "a"));
 
-    new ConsulClient(wiring()).register(instance);
+    new ConsulClient(options()).register(instance);
 
     assertEquals("PUT", method.get());
     assertTrue(path.get().startsWith("/v1/agent/service/register"), path.get());
@@ -177,7 +177,7 @@ class ConsulClientTest {
 
   @Test
   void renewIsTrueOn2xxAndFalseWhenTheAgentNoLongerHoldsIt() {
-    ConsulClient client = new ConsulClient(wiring());
+    ConsulClient client = new ConsulClient(options());
 
     renewStatus = 200;
     assertTrue(client.renew("order", "i1"));
@@ -189,7 +189,7 @@ class ConsulClientTest {
 
   @Test
   void unregisterHitsTheDeregisterEndpoint() {
-    new ConsulClient(wiring())
+    new ConsulClient(options())
         .unregister(
             ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
 
@@ -204,7 +204,7 @@ class ConsulClientTest {
             + "\"zone\":\"a\",\"freeway-instance-id\":\"i1\","
             + "\"freeway-scheme\":\"https\",\"freeway-base-path\":\"/api\"}}}]";
 
-    List<ServiceInstance> found = new ConsulClient(wiring()).instances("order");
+    List<ServiceInstance> found = new ConsulClient(options()).instances("order");
 
     assertEquals(1, found.size());
     ServiceInstance instance = found.get(0);
@@ -225,7 +225,7 @@ class ConsulClientTest {
         "[{\"Service\":{\"ID\":\"order:i9\",\"Name\":\"order\","
             + "\"Address\":\"10.0.0.9\",\"Port\":8080}}]";
 
-    ServiceInstance instance = new ConsulClient(wiring()).instances("order").get(0);
+    ServiceInstance instance = new ConsulClient(options()).instances("order").get(0);
 
     assertEquals("i9", instance.instanceId(), "recovered from the ID when Meta is absent");
     assertEquals("http", instance.endpoint().scheme());
@@ -234,18 +234,18 @@ class ConsulClientTest {
 
   @Test
   void tokenHeaderIsSentOnlyWhenConfigured() {
-    new ConsulClient(wiring().withToken("secret"))
+    new ConsulClient(options().withToken("secret"))
         .register(ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
     assertEquals("secret", token.get());
 
-    new ConsulClient(wiring())
+    new ConsulClient(options())
         .register(ServiceInstance.of("order", "i1", ServiceEndpoint.of("http", "10.0.0.5", 8080)));
     assertNull(token.get());
   }
 
   @Test
   void renewThrowsOnAnUnexpectedStatusRatherThanClaimingNotHeld() {
-    ConsulClient client = new ConsulClient(wiring());
+    ConsulClient client = new ConsulClient(options());
     renewStatus = 500;
     // 403/5xx is "could not determine", not "not held" — the core marks the
     // node unhealthy on the throw instead of looping a failing re-register.
@@ -260,7 +260,7 @@ class ConsulClientTest {
             + "{\"Service\":{\"ID\":\"order:i2\",\"Name\":\"order\","
             + "\"Address\":\"10.0.0.2\",\"Port\":8080}}]";
 
-    List<ServiceInstance> found = new ConsulClient(wiring()).instances("order");
+    List<ServiceInstance> found = new ConsulClient(options()).instances("order");
 
     // One unroutable entry must not abort discovery for the whole service.
     assertEquals(1, found.size());
@@ -271,7 +271,7 @@ class ConsulClientTest {
   void drainWindowComesFromTheWiring() {
     ConsulServiceRegistry registry =
         new ConsulServiceRegistry(
-            new ConsulClient(wiring()), wiring().withDrainWindow(Duration.ofSeconds(7)));
+            new ConsulClient(options()), options().withDrainWindow(Duration.ofSeconds(7)));
     assertEquals(Duration.ofSeconds(7), registry.drainWindow());
   }
 }

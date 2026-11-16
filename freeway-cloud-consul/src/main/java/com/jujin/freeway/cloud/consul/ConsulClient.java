@@ -57,11 +57,11 @@ final class ConsulClient {
   private static final String META_SCHEME = "freeway-scheme";
   private static final String META_BASE_PATH = "freeway-base-path";
 
-  private final ConsulWiring wiring;
+  private final ConsulOptions options;
   private final HttpClient http;
 
-  public ConsulClient(ConsulWiring wiring) {
-    this.wiring = Objects.requireNonNull(wiring, "wiring");
+  public ConsulClient(ConsulOptions options) {
+    this.options = Objects.requireNonNull(options, "options");
     this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
   }
 
@@ -83,7 +83,7 @@ final class ConsulClient {
             // Explicit, or Consul derives the check id as "service:{serviceID}"
             // and renew (which passes the service id) would miss it.
             .put("CheckID", consulId(instance))
-            .put("TTL", wiring.ttl().toSeconds() + "s")
+            .put("TTL", options.ttl().toSeconds() + "s")
             // A TTL check starts critical, so a ready instance registers passing
             // and is discoverable immediately (without it: up to a full renew
             // interval of blackout on every restart). A warming one stays
@@ -296,9 +296,9 @@ final class ConsulClient {
 
   private HttpResponse<String> exchange(String method, String path, String body) {
     HttpRequest.Builder builder =
-        HttpRequest.newBuilder().uri(URI.create(wiring.baseUri() + path)).timeout(TIMEOUT);
-    if (wiring.hasToken()) {
-      builder.header(TOKEN_HEADER, wiring.token());
+        HttpRequest.newBuilder().uri(URI.create(options.baseUri() + path)).timeout(TIMEOUT);
+    if (options.hasToken()) {
+      builder.header(TOKEN_HEADER, options.token());
     }
     if (body == null) {
       builder.method(method, HttpRequest.BodyPublishers.noBody());

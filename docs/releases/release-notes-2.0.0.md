@@ -47,6 +47,10 @@ keys cannot be overridden through properties.
 - HTTP/WebSocket adapter subclasses of deleted core base classes are replaced
   by transport/support composition.
 - The benchmark CLI follows `publishEvent` / `EventSubscriber.ofEvent`.
+- The Consul input bundle is `ConsulOptions`; it contains caller-selectable
+  values, not collaborator wiring.
+- The built-in engine is assembled as `FreewayHttpEngine.Deps` +
+  `FreewayHttpEngine.Options`; the benchmark harness follows that split.
 
 ## Verification
 

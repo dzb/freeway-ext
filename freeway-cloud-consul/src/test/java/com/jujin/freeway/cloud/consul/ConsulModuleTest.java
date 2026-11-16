@@ -30,7 +30,7 @@ class ConsulModuleTest {
     try (Container container = Freeway.create(new ConsulModule())) {
       // The adapter is primary; its configured window identifies it.
       assertEquals(
-          ConsulWiring.defaults().drainWindow(),
+          ConsulOptions.defaults().drainWindow(),
           container.get(ServiceRegistry.class).drainWindow());
       assertNotNull(container.get(ServiceDiscovery.class));
     }

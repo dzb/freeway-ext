@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
  * one JVM: one registry node, two services that have never heard of each other,
  * no static peers —
  * they register through the wire, discover each other through the wire, the
- * feeder hands the answers to the mesh, and the mesh connects. When this test
+ * source hands the answers to the mesh, and the mesh connects. When this test
  * is green, the freeway-native backend stands in for Consul end to end.
  */
 class FreewayFleetEndToEndTest {
@@ -97,7 +97,7 @@ class FreewayFleetEndToEndTest {
         }, 8000), "both clients must be registered on the node");
 
         // Each client discovers both through the wire (itself included here; the
-        // feeder excludes it on the mesh side).
+        // source excludes it on the mesh side).
         assertTrue(await(
             () -> clientA.get(ServiceDiscovery.class).instances("freeway-app").size() >= 2,
             8000), "client A must discover both through the wire");

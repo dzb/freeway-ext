@@ -115,7 +115,7 @@ freeway-cloud-consul/
 ├─ ConsulModule            ModuleEx: bind(ServiceRegistry/Discovery).primary()
 │                                    + contributes KnownKeys.of(ConfigKeys.class, PREFIX)
 │                                    + fail-loud at startup on invalid config
-├─ ConsulWiring            record: agentHost/agentPort/scheme/token/ttl/drainWindow/timeout
+├─ ConsulOptions            record: agentHost/agentPort/scheme/token/ttl/drainWindow/timeout
 │                                    defaults() + per-field withX()
 ├─ ConsulClient            thin HTTP client: JDK HttpClient only
 │                                    register / renew / unregister / instances
@@ -124,7 +124,7 @@ freeway-cloud-consul/
 └─ ConfigKeys              nested class, all-literal keys
 ```
 
-- **`ConsulWiring`**: 3+ optional inputs → a parameter record + `defaults()` + per-field withers (matching the core's shape rules), with no overload ladder.
+- **`ConsulOptions`**: 3+ optional inputs → a parameter record + `defaults()` + per-field withers (matching the core optional-input rules), with no overload ladder.
 - **`ConsulClient`**: plain `java.net.http.HttpClient`, zero third-party dependencies; integration tests can use a local consul or a JDK `HttpServer` stub.
 - **`ConsulModule`**: does exactly three things — `.primary()` binding, vocabulary contribution, and startup fail-loud.
 - **No duplication** of the core's lifecycle/health/drain — they read the interfaces and take effect automatically once the adapter is primary.
@@ -164,7 +164,7 @@ The enablement switch follows the core's established `freeway.cloud.registry.typ
 
 ## 9. Implementation Phases
 
-1. `ConsulWiring` + `ConsulClient` (thin HTTP wrapper) + unit tests (stub)
+1. `ConsulOptions` + `ConsulClient` (thin HTTP wrapper) + unit tests (stub)
 2. `ConsulServiceRegistry` / `ConsulServiceDiscovery` + mapping unit tests
 3. `ConsulModule` (primary binding + key table + fail-loud)
 4. End-to-end (gated on a real consul) + behavioral tests for `/health/ready` and `drainWindow`

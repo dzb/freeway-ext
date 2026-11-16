@@ -38,13 +38,13 @@ public final class ConsulModule implements ModuleEx {
 
   @Override
   public void bind(Binder b) {
-    b.bind(ConsulWiring.class).to(ConsulModule::wiring);
-    b.bind(ConsulClient.class).to(container -> new ConsulClient(container.get(ConsulWiring.class)));
+    b.bind(ConsulOptions.class).to(ConsulModule::options);
+    b.bind(ConsulClient.class).to(container -> new ConsulClient(container.get(ConsulOptions.class)));
     b.bind(ServiceRegistry.class)
         .to(
             container ->
                 new ConsulServiceRegistry(
-                    container.get(ConsulClient.class), container.get(ConsulWiring.class)))
+                    container.get(ConsulClient.class), container.get(ConsulOptions.class)))
         .primary();
     b.bind(ServiceDiscovery.class)
         .to(container -> new ConsulServiceDiscovery(container.get(ConsulClient.class)))
@@ -55,9 +55,9 @@ public final class ConsulModule implements ModuleEx {
     b.contribute(KnownKeys.class).add(KnownKeys.of(ConfigKeys.class, ConfigKeys.PREFIX));
   }
 
-  private static ConsulWiring wiring(Container container) {
+  private static ConsulOptions options(Container container) {
     SymbolSource symbols = container.get(SymbolSource.class);
-    return new ConsulWiring(
+    return new ConsulOptions(
         symbols.resolve(AGENT_HOST),
         symbols.resolve(AGENT_PORT),
         symbols.resolve(SCHEME),

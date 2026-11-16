@@ -18,6 +18,11 @@
   longer claimed by adapters.
 - **Benchmark follows EventBus channel vocabulary**: the bench CLI and listener
   tests use `publishEvent` / `EventSubscriber.ofEvent`, matching core 2.0.
+- **Consul input bundle is named by role**: `ConsulWiring` → `ConsulOptions`,
+  because every field is a caller-selectable value, not an object collaborator.
+- **Adapters follow the core's input split**: the benchmark harness constructs
+  `FreewayHttpEngine.Deps` + `Options`, and the adapter testkit constructs
+  `RpcHttpClientDefault.Deps` + `Options`.
 - **Documentation reorganised and translated to English**: the docs tree now
   follows the core conventions (`audits/`, `benchmarks/`, `design/`, `releases/`,
   lower-case kebab-case names, `docs/README.md` index); every remaining Chinese

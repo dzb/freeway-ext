@@ -199,7 +199,8 @@ public final class ServerHarness implements AutoCloseable {
   private static ServerHarness freeway(Scenario scenario) throws Exception {
     return freewayWith(
         new FreewayHttpEngine(
-            FreewayHttpEngine.Wiring.defaults(new JsonCodecDefault(), new CoercerDefault())),
+            FreewayHttpEngine.Deps.defaults(new JsonCodecDefault(), new CoercerDefault()),
+            FreewayHttpEngine.Options.defaults()),
         scenario);
   }
 
@@ -208,7 +209,8 @@ public final class ServerHarness implements AutoCloseable {
     ScenarioSpec spec = ScenarioSpec.of(scenario);
     var engine =
         new FreewayHttpEngine(
-            FreewayHttpEngine.Wiring.defaults(new JsonCodecDefault(), new CoercerDefault()));
+            FreewayHttpEngine.Deps.defaults(new JsonCodecDefault(), new CoercerDefault()),
+            FreewayHttpEngine.Options.defaults());
     byte[] body = spec.responseBody();
     String contentType = spec.contentType();
     var handle =

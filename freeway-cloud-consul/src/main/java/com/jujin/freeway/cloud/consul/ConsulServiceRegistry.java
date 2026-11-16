@@ -16,9 +16,9 @@ final class ConsulServiceRegistry implements ReadinessAwareRegistry {
   private final ConsulClient client;
   private final Duration drainWindow;
 
-  public ConsulServiceRegistry(ConsulClient client, ConsulWiring wiring) {
+  public ConsulServiceRegistry(ConsulClient client, ConsulOptions options) {
     this.client = Objects.requireNonNull(client, "client");
-    this.drainWindow = Objects.requireNonNull(wiring, "wiring").drainWindow();
+    this.drainWindow = Objects.requireNonNull(options, "options").drainWindow();
   }
 
   @Override

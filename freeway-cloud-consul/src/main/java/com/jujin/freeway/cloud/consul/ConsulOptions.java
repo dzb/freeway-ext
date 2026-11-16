@@ -4,7 +4,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * The adapter's inputs as one value with named knobs, mirroring the core's {@code Wiring} shape:
+ * The adapter's inputs as one value with named knobs, with the core optional-input shape:
  * {@link #defaults()} plus per-field {@code withX} withers, so a call site states only what it
  * changes and no second copy of the defaults exists.
  *
@@ -18,7 +18,7 @@ import java.util.Objects;
  * @param drainWindow how long Consul needs after a deregister for consumers to stop routing here —
  *     answered to {@code freeway.cloud.registry.shutdown-drain=auto}
  */
-record ConsulWiring(
+record ConsulOptions(
     String agentHost,
     int agentPort,
     String scheme,
@@ -26,7 +26,7 @@ record ConsulWiring(
     Duration ttl,
     Duration drainWindow) {
 
-  public ConsulWiring {
+  public ConsulOptions {
     if (agentHost == null || agentHost.isBlank()) {
       throw new IllegalArgumentException("agentHost must not be blank");
     }
@@ -48,33 +48,33 @@ record ConsulWiring(
   }
 
   /** The values every {@code freeway.cloud.consul.*} key defaults to. */
-  public static ConsulWiring defaults() {
-    return new ConsulWiring(
+  public static ConsulOptions defaults() {
+    return new ConsulOptions(
         "127.0.0.1", 8500, "http", "", Duration.ofSeconds(15), Duration.ofSeconds(5));
   }
 
-  public ConsulWiring withAgentHost(String value) {
-    return new ConsulWiring(value, agentPort, scheme, token, ttl, drainWindow);
+  public ConsulOptions withAgentHost(String value) {
+    return new ConsulOptions(value, agentPort, scheme, token, ttl, drainWindow);
   }
 
-  public ConsulWiring withAgentPort(int value) {
-    return new ConsulWiring(agentHost, value, scheme, token, ttl, drainWindow);
+  public ConsulOptions withAgentPort(int value) {
+    return new ConsulOptions(agentHost, value, scheme, token, ttl, drainWindow);
   }
 
-  public ConsulWiring withScheme(String value) {
-    return new ConsulWiring(agentHost, agentPort, value, token, ttl, drainWindow);
+  public ConsulOptions withScheme(String value) {
+    return new ConsulOptions(agentHost, agentPort, value, token, ttl, drainWindow);
   }
 
-  public ConsulWiring withToken(String value) {
-    return new ConsulWiring(agentHost, agentPort, scheme, value, ttl, drainWindow);
+  public ConsulOptions withToken(String value) {
+    return new ConsulOptions(agentHost, agentPort, scheme, value, ttl, drainWindow);
   }
 
-  public ConsulWiring withTtl(Duration value) {
-    return new ConsulWiring(agentHost, agentPort, scheme, token, value, drainWindow);
+  public ConsulOptions withTtl(Duration value) {
+    return new ConsulOptions(agentHost, agentPort, scheme, token, value, drainWindow);
   }
 
-  public ConsulWiring withDrainWindow(Duration value) {
-    return new ConsulWiring(agentHost, agentPort, scheme, token, ttl, value);
+  public ConsulOptions withDrainWindow(Duration value) {
+    return new ConsulOptions(agentHost, agentPort, scheme, token, ttl, value);
   }
 
   /** True when an ACL token is configured (the header is then sent). */

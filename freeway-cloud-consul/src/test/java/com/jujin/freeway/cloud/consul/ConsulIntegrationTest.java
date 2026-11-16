@@ -35,10 +35,10 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_CONSUL", matches = ".*")
 class ConsulIntegrationTest {
 
-  private static ConsulWiring wiring() {
+  private static ConsulOptions options() {
     String address = System.getenv().getOrDefault("FREEWAY_TEST_CONSUL", "127.0.0.1:8500");
     String[] hostPort = address.split(":", 2);
-    return ConsulWiring.defaults()
+    return ConsulOptions.defaults()
         .withAgentHost(hostPort[0])
         .withAgentPort(hostPort.length > 1 ? Integer.parseInt(hostPort[1]) : 8500)
         .withTtl(Duration.ofSeconds(30));
@@ -52,7 +52,7 @@ class ConsulIntegrationTest {
 
   @Test
   void adapterRoundTripAgainstALiveAgent() {
-    ConsulClient client = new ConsulClient(wiring());
+    ConsulClient client = new ConsulClient(options());
     String serviceId = "freeway-it-" + UUID.randomUUID();
     ServiceInstance instance =
         ServiceInstance.of(
@@ -103,7 +103,7 @@ class ConsulIntegrationTest {
           "the registered endpoint is the process's own HTTP port");
     }
     // close() ran the hook's unregister; the service is gone from Consul.
-    ServiceDiscovery afterClose = new ConsulServiceDiscovery(new ConsulClient(wiring()));
+    ServiceDiscovery afterClose = new ConsulServiceDiscovery(new ConsulClient(options()));
     assertTrue(
         awaitInstances(afterClose, serviceId, 0).isEmpty(), "close must deregister the instance");
   }

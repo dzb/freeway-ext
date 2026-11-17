@@ -1,8 +1,8 @@
 package com.jujin.freeway.cloud.consul;
 
+import com.jujin.freeway.cloud.discovery.ReadinessAwareRegistry;
 import com.jujin.freeway.cloud.discovery.ServiceHealth;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.discovery.ReadinessAwareRegistry;
 import java.time.Duration;
 import java.util.Objects;
 

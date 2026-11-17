@@ -39,7 +39,8 @@ public final class ConsulModule implements ModuleEx {
   @Override
   public void bind(Binder b) {
     b.bind(ConsulOptions.class).to(ConsulModule::options);
-    b.bind(ConsulClient.class).to(container -> new ConsulClient(container.get(ConsulOptions.class)));
+    b.bind(ConsulClient.class)
+        .to(container -> new ConsulClient(container.get(ConsulOptions.class)));
     b.bind(ServiceRegistry.class)
         .to(
             container ->

@@ -7,7 +7,6 @@ import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
 import com.jujin.freeway.ioc.Container;
 import com.jujin.freeway.ioc.Freeway;
-import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**

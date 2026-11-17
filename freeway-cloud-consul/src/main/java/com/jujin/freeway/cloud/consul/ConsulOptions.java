@@ -4,9 +4,9 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * The adapter's inputs as one value with named knobs, with the core optional-input shape:
- * {@link #defaults()} plus per-field {@code withX} withers, so a call site states only what it
- * changes and no second copy of the defaults exists.
+ * The adapter's inputs as one value with named knobs, with the core optional-input shape: {@link
+ * #defaults()} plus per-field {@code withX} withers, so a call site states only what it changes and
+ * no second copy of the defaults exists.
  *
  * @param agentHost Consul agent host
  * @param agentPort Consul agent HTTP port

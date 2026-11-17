@@ -5,11 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
-import com.jujin.freeway.cloud.registration.RegistrationModule;
-import com.jujin.freeway.cloud.registration.RegistrationModule.ConfigKeys;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
+import com.jujin.freeway.cloud.registration.RegistrationModule;
+import com.jujin.freeway.cloud.registration.RegistrationModule.ConfigKeys;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServer;
 import java.time.Duration;

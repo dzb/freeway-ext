@@ -19,7 +19,7 @@
         <!-- Test-only module: never published. -->
         <skipPublishing>true</skipPublishing>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <logback.version>1.5.38</logback.version>
+        <logback.version>1.6.7</logback.version>
     </properties>
 
     <dependencies>

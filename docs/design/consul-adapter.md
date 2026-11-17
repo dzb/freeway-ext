@@ -40,12 +40,12 @@ This document describes only the minimum viable design for this version and expl
 | `ServiceDiscovery` | `cloud.discovery` | `List<ServiceInstance> instances(serviceId)` |
 | `ServiceInstance` | `cloud.discovery` | `record(serviceId, instanceId, Endpoint endpoint, Map<String,String> metadata)` |
 | `Endpoint` | `cloud.discovery` | `record(scheme, host, port, basePath)`; `uri()` renders `scheme://host:port+basePath` |
-| Backend selection key | `CloudModule.ConfigKeys` | `freeway.cloud.registry.type` / `freeway.cloud.discovery.type`; `local` = built-in |
-| Replacement method | `@Local` + `.primary()` | The built-in default carries `.marker(Local.class)`; an adapter overrides it with `.primary()` |
-| Ineffective-setting warning | `BackendTypeGuard.warnIfExternal` | An external type is configured but the local one is still active → startup WARN; silent automatically once the adapter is primary |
-| Lifecycle | `RegistryLifecycleHook` | Registers `ServiceDeclaration` after startup; `renew` every 10s; `unregister` on stop; **re-registers** when `renew==false` |
-| Health | `RegistryRenewal` | `renew` fails 3 times in a row → `/health/ready` turns unhealthy |
-| Drain | `drainWindow()` | With `freeway.cloud.registry.shutdown-drain=auto`, asks the adapter for the propagation window |
+| Backend declaration | `MemberModule.ConfigKeys` | `freeway.cloud.registry.type` / `freeway.cloud.discovery.type`; blank means no backend selected |
+| Replacement method | `.primary()` | The adapter binds the role primary; there is no in-process discovery/registry backend to replace |
+| Missing-backend warning | `BackendTypeGuard.warnIfMissing` | A non-blank type declaration with no binding warns at startup; installing this adapter satisfies it |
+| Lifecycle | `MemberHook` | Registers `ServiceDeclaration` after startup; `renew` every 10s; `unregister` on stop; **re-registers** when `renew==false` |
+| Health | `MemberReadiness` | `renew` fails 3 times in a row → `/health/ready` turns unhealthy |
+| Drain | `drainWindow()` | With `freeway.cloud.member.shutdown-drain=auto`, asks the adapter for the propagation window |
 
 **Key inference**: the adapter only needs to implement two interfaces + one module + one `Wiring`.
 **Lifecycle / health / re-registration / drain are all driven by the core's existing code; the adapter does not reimplement them.**

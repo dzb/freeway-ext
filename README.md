@@ -1,9 +1,11 @@
 ## Freeway Ext
 
-[![Core](https://img.shields.io/badge/core-2.0.0-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Core](https://img.shields.io/badge/core-2.0.1-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 Adapters and integrations for the [Freeway](https://github.com/dzb/freeway)
-framework, aligned with Freeway 2.0.0.
+framework, aligned with Freeway 2.0.1.
+
+**Latest release: 2.0.1** — [release notes](docs/releases/release-notes-2.0.1.md)
 
 [Documentation](docs/README.md) · [Modules](#modules) · [HTTP adapters](#http-adapters) · [Kafka adapter](#kafka-adapter) · [Build](#build)
 
@@ -217,14 +219,14 @@ accepts it.
 
 ### Install
 
-All extension modules track the Freeway core version. Use `2.0.0` for the current
+All extension modules track the Freeway core version. Use `2.0.1` for the current
 release:
 
 ```xml
 <dependency>
     <groupId>com.jujin8.freeway</groupId>
     <artifactId>freeway-http-undertow</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
 </dependency>
 ```
 

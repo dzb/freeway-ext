@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.1 - 2026-11-17
+
+### Changed
+
+- **Adapters follow the core membership vocabulary**: Fleet and Consul now
+  compose with `MemberModule`, `MemberHook` and `MemberReadiness`, and read the
+  member identity/lifecycle keys under `freeway.cloud.member.*` (the
+  `freeway.cloud.registry.type` backend declaration is unchanged).
+- **Consul docs and tests** now describe the core lifecycle rather than the
+  removed registration-package names; the local-backend assumption is gone.
+- **Build trains**: the parent version and `freeway.version` move to `2.0.1`,
+  matching the core release and inheriting the `f2` / `F2` configuration input
+  aliases.
+
 ## 2.0.0 - 2026-11-16
 
 ### Added

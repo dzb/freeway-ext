@@ -11,28 +11,29 @@ import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.time.Duration;
 
 /**
- * The Consul adapter module: binds the two discovery interfaces <em>primary</em>, replacing the
- * core's {@code @Local} in-process defaults.
+ * The Consul adapter module: binds the two discovery interfaces <em>primary</em> and supplies the
+ * registry/discovery backend. It has no in-process discovery default to replace: without this
+ * adapter (or another backend) the role has no binding.
  *
- * <p>Nothing else is re-implemented. The core's {@code RegistryLifecycleHook} registers on start,
- * renews, re-registers on a lost lease and unregisters on stop; its {@code
- * RegistryHealthContributor} keeps answering {@code /health/ready} with the registration, renewal
- * and draining state it observed, whichever registry is bound — that state is the core's, not the
- * backend's, so binding this module does not remove the check; {@code drainWindow()} here feeds
- * {@code freeway.cloud.registry.shutdown-drain=auto}. All of that follows from the interface, so it
- * is driven by the core, not copied.
+ * <p>Nothing else is re-implemented. The core's {@code MemberHook} registers on start, renews,
+ * re-registers on a lost lease and unregisters on stop; its {@code MemberReadiness} keeps answering
+ * {@code /health/ready} with the registration, renewal and draining state it observed, whichever
+ * registry is bound — that state is the core's, not the backend's, so binding this module does not
+ * remove the check; {@code drainWindow()} here feeds {@code
+ * freeway.cloud.member.shutdown-drain=auto}. All of that follows from the interface, so it is
+ * driven by the core, not copied.
  *
  * <p>Enable by placing the module <em>alongside</em> {@code CloudModule} (or at least {@code
- * RegistrationModule} and the HTTP module): the registration/renewal/deregistration lifecycle and
- * the {@code /health/ready} registry check live in {@code RegistrationModule}, and a primary
- * registry binding without it is registered nowhere. It cannot declare that as a submodule because
- * the container holds one declaration per module class — a user placing both would be a duplicate,
- * not a bundle.
+ * MemberModule} and the HTTP module): the service-membership lifecycle and the {@code
+ * /health/ready} member readiness check live in {@code MemberModule}, and a primary registry
+ * binding without it is registered nowhere. It cannot declare that as a submodule because the
+ * container holds one declaration per module class — a user placing both would be a duplicate, not
+ * a bundle.
  *
  * <p>The {@code freeway.cloud.registry.type} / {@code freeway.cloud.discovery.type} keys are
  * advisory: this module does not read them (the binding is the choice — placing the module is what
- * selects Consul). {@code BackendTypeGuard} stops warning once the local binding is replaced,
- * because from then on an external backend is genuinely in use.
+ * selects Consul). {@code BackendTypeGuard} warns only while the declared type has no binding; once
+ * this adapter binds the role, the declaration is satisfied.
  */
 public final class ConsulModule implements ModuleEx {
 

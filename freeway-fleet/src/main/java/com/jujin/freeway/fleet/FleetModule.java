@@ -31,8 +31,8 @@ import org.slf4j.LoggerFactory;
  * fleet; the surviving nodes keep serving, and the dead one is repopulated by the next heartbeat of
  * every instance (a renew that answers 404 re-asserts the instance on the spot).
  *
- * <p>Place this module alongside {@code CloudModule} and {@code RegistrationModule}, and name the
- * fleet with {@code freeway.fleet.nodes}; a token shared with the nodes goes in {@code
+ * <p>Place this module alongside {@code CloudModule} and {@code MemberModule}, and name the fleet
+ * with {@code freeway.fleet.nodes}; a token shared with the nodes goes in {@code
  * freeway.fleet.token}. It is one of the alternatives for the same seam — there is no built-in
  * in-process production backend; static discovery is the zero-infrastructure choice, and Consul
  * ships as an ext adapter. Switching is swapping the module and its keys, never application code.

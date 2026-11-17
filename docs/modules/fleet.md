@@ -17,11 +17,11 @@ It has no server and no in-process registry:
 FreewayApp.run(
     new HttpModule(),
     new CloudModule(),          // runtime: health, metrics, RPC, ...
-    new RegistrationModule(),   // register, renew, readiness, drain
+    new MemberModule(),         // register, renew, readiness, drain
     new FleetModule());         // Fleet client + client-side load balancer
 ```
 
-`RegistrationModule` from `freeway-cloud` drives the lifecycle; the backend
+`MemberModule` from `freeway-cloud` drives the lifecycle; the backend
 never carries it. Static discovery (`StaticModule`) does not need registration;
 it has no write side.
 
@@ -41,7 +41,7 @@ name at least one node, or startup fails with the key in the message.
 | `freeway.fleet.timeout-ms` | Per-node connect/request timeout (default `3000`). |
 | `freeway.fleet.token-previous` | Retired token accepted by a server during rotation. |
 
-`RegistrationModule.ConfigKeys` owns the endpoint identity and drain keys
+`MemberModule.ConfigKeys` owns the endpoint identity and drain keys
 (`service-id`, `service-host`, `service-scheme`, `service-port`,
 `service-instance-id`, `shutdown-drain`). The default balancer's zone key is
 `LoadBalancer.ConfigKeys.LOCAL_ZONE`.
@@ -56,7 +56,7 @@ fails startup loudly.
 and the token header. The client and the server share that class; the wire path is `/fleet`.
 Writes fan out to every configured node; reads union their answers and
 deduplicate by instance id. A node that answers a heartbeat with 404 makes the
-client report the lost lease so `RegistrationHook` can re-register.
+client report the lost lease so `MemberHook` can re-register.
 
 ## Load balancing
 

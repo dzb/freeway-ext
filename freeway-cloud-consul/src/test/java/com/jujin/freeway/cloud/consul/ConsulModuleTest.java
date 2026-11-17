@@ -10,12 +10,12 @@ import com.jujin.freeway.ioc.Freeway;
 import org.junit.jupiter.api.Test;
 
 /**
- * Placing the module replaces the core's {@code @Local} discovery defaults — the contract the
- * adapter exists to satisfy, asserted on the container rather than only on the classes.
+ * Placing the module supplies the primary discovery/registry bindings — the contract the adapter
+ * exists to satisfy, asserted on the container rather than only on the classes.
  *
  * <p>An interface binding is proxied by the container, so the concrete adapter is not what {@code
  * get} hands back; the assertion is on behavior instead. {@code drainWindow()} is the
- * discriminator: the Consul adapter answers its configured window, while the in-process default
+ * discriminator: the Consul adapter answers its configured window, while the base registry contract
  * answers {@code ZERO} (an endpoint disappears the moment it is unregistered).
  *
  * <p>The vocabulary contribution is exercised by construction: {@code KnownKeys.of} fails the bind

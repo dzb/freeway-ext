@@ -8,8 +8,8 @@ import java.util.Objects;
 
 /**
  * Consul-backed {@link ServiceRegistry}. Lifecycle, re-registration on a lost lease and shutdown
- * ordering stay in the core's {@code RegistryLifecycleHook} — this type only answers the seam's
- * operations (registration, readiness, renewal, removal and the drain window).
+ * ordering stay in the core's {@code MemberHook} — this type only answers the seam's operations
+ * (registration, readiness, renewal, removal and the drain window).
  */
 final class ConsulServiceRegistry implements ReadinessAwareRegistry {
 

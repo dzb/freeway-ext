@@ -7,7 +7,7 @@ import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.cloud.event.EventMeshModule;
-import com.jujin.freeway.cloud.registration.RegistrationModule;
+import com.jujin.freeway.cloud.member.MemberModule;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetModule;
 import com.jujin.freeway.http.HttpModule;
@@ -76,7 +76,7 @@ class FreewayFleetEndToEndTest {
     System.setProperty("freeway.cloud.event.backoff-max-ms", "300");
     ModuleEx[] clientModules =
         new ModuleEx[] {
-          new HttpModule(), new RegistrationModule(), new EventMeshModule(), new FleetModule()
+          new HttpModule(), new MemberModule(), new EventMeshModule(), new FleetModule()
         };
     System.setProperty(HttpModule.ConfigKeys.SERVER_PORT, "0");
     clientA = FreewayApp.run(clientModules);

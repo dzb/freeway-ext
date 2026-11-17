@@ -8,8 +8,8 @@ import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceEndpoint;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
-import com.jujin.freeway.cloud.registration.RegistrationModule;
-import com.jujin.freeway.cloud.registration.RegistrationModule.ConfigKeys;
+import com.jujin.freeway.cloud.member.MemberModule;
+import com.jujin.freeway.cloud.member.MemberModule.ConfigKeys;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServer;
 import java.time.Duration;
@@ -29,8 +29,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
  *
  * <p>Two shapes. The first drives the adapter directly (register → discover → renew → unregister).
  * The second is the one a stub cannot prove: a real {@code FreewayApp} whose core {@code
- * RegistryLifecycleHook} registers this process into Consul on start and deregisters it on close —
- * the adapter under the real lifecycle, not under a hand-rolled call sequence.
+ * MemberHook} registers this process into Consul on start and deregisters it on close — the adapter
+ * under the real lifecycle, not under a hand-rolled call sequence.
  */
 @EnabledIfEnvironmentVariable(named = "FREEWAY_TEST_CONSUL", matches = ".*")
 class ConsulIntegrationTest {
@@ -46,8 +46,8 @@ class ConsulIntegrationTest {
 
   @AfterEach
   void clearProperties() {
-    System.clearProperty(ConfigKeys.REGISTRY_SERVICE_ID);
-    System.clearProperty(ConfigKeys.REGISTRY_SHUTDOWN_DRAIN);
+    System.clearProperty(ConfigKeys.MEMBER_SERVICE_ID);
+    System.clearProperty(ConfigKeys.MEMBER_SHUTDOWN_DRAIN);
   }
 
   @Test
@@ -85,11 +85,11 @@ class ConsulIntegrationTest {
   @Test
   void theCoreLifecycleRegistersAndDeregistersThroughConsul() throws Exception {
     String serviceId = "freeway-it-" + UUID.randomUUID();
-    System.setProperty(ConfigKeys.REGISTRY_SERVICE_ID, serviceId);
-    System.setProperty(ConfigKeys.REGISTRY_SHUTDOWN_DRAIN, "PT0S");
+    System.setProperty(ConfigKeys.MEMBER_SERVICE_ID, serviceId);
+    System.setProperty(ConfigKeys.MEMBER_SHUTDOWN_DRAIN, "PT0S");
 
     try (AppRuntime app =
-        FreewayApp.create(new HttpModule(), new RegistrationModule(), new ConsulModule()).start()) {
+        FreewayApp.create(new HttpModule(), new MemberModule(), new ConsulModule()).start()) {
 
       int port = app.get(HttpServer.class).port();
       ServiceDiscovery discovery = app.get(ServiceDiscovery.class);

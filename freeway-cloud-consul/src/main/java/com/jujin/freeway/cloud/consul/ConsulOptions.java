@@ -16,7 +16,7 @@ import java.util.Objects;
  *     ACLs needs none)
  * @param ttl health-check TTL; must exceed the core's renew interval (10s) or the instance flaps
  * @param drainWindow how long Consul needs after a deregister for consumers to stop routing here —
- *     answered to {@code freeway.cloud.registry.shutdown-drain=auto}
+ *     answered to {@code freeway.cloud.member.shutdown-drain=auto}
  */
 record ConsulOptions(
     String agentHost,

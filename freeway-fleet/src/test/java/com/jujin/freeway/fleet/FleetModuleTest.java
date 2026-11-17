@@ -8,7 +8,7 @@ import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.CloudModule;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceRegistry;
-import com.jujin.freeway.cloud.registration.RegistrationModule;
+import com.jujin.freeway.cloud.member.MemberModule;
 import com.jujin.freeway.http.HttpModule;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,11 +54,11 @@ class FleetModuleTest {
 
   @Test
   void the_module_without_nodes_fails_startup_naming_the_key() {
-    // RegistrationModule is the lifecycle that resolves the node list at startup.
+    // MemberModule is the lifecycle that resolves the node list at startup.
     IllegalStateException failure =
         org.junit.jupiter.api.Assertions.assertThrows(
             IllegalStateException.class,
-            () -> FreewayApp.create(new FleetModule(), new RegistrationModule()).start());
+            () -> FreewayApp.create(new FleetModule(), new MemberModule()).start());
     assertTrue(
         causeChain(failure).contains(FleetKeys.NODES),
         "the failure must name the key: " + causeChain(failure));
@@ -78,10 +78,7 @@ class FleetModuleTest {
             IllegalStateException.class,
             () ->
                 FreewayApp.create(
-                        new FleetModule(),
-                        new CloudModule(),
-                        new RegistrationModule(),
-                        new HttpModule())
+                        new FleetModule(), new CloudModule(), new MemberModule(), new HttpModule())
                     .start());
     assertTrue(
         causeChain(failure).contains("registration")

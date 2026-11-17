@@ -1,10 +1,12 @@
-# Freeway Ext 2.0.1 Release Notes
+# Freeway Ext 2.0.1 Release Notes (unreleased)
 
-> Version: 2.0.1 | Highlight: **The extension train aligns with core 2.0.1 membership vocabulary and build versions.**
+> Version: 2.0.1 (unreleased) | Highlight: **The extension train aligns with core 2.0.1 membership vocabulary and build versions.**
 
 `freeway-ext` 2.0.1 is the compatibility train for Freeway core 2.0.1. The
 parent version and `freeway.version` both move to `2.0.1`, so adapters build
-against and publish consistently with the core release.
+against and publish consistently with the core release. No 2.0.1 artifact is
+published yet — Maven Central's newest extension artifact is 1.5.7 — so this
+page describes the train as planned, not as shipped.
 
 ## Highlights
 
@@ -38,15 +40,15 @@ extension modules do not maintain a second alias vocabulary.
 ## Verification
 
 ```text
-mvn -B -ntp verify -Dgpg.skip=true
-  ext modules 2.0.1 — 255 tests, 0 failures, 0 errors, 7 skipped
+mvn -o clean test
+  ext modules 2.0.1-SNAPSHOT — 255 tests, 0 failures, 0 errors, 7 skipped
 ```
 
-The full ext reactor builds against installed core 2.0.1 artifacts.
+The full ext reactor builds against the installed core 2.0.1-SNAPSHOT snapshot.
 
 ## Compatibility
 
-- Core compatibility: `2.0.1`.
+- Core compatibility: `2.0.1-SNAPSHOT` (unreleased; the latest published core is `2.0.0`).
 - Java: 25+.
 - All published ext modules track `2.0.1`.
 - The core member renames and key changes are not compatibility aliases; see

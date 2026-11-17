@@ -1,11 +1,12 @@
 ## Freeway Ext
 
-[![Core](https://img.shields.io/badge/core-2.0.1-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Core](https://img.shields.io/badge/core-2.0.1--SNAPSHOT-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 Adapters and integrations for the [Freeway](https://github.com/dzb/freeway)
-framework, aligned with Freeway 2.0.1.
+framework, built against the core version pinned in `<freeway.version>`
+(currently `2.0.1-SNAPSHOT`).
 
-**Latest release: 2.0.1** — [release notes](docs/releases/release-notes-2.0.1.md)
+**Latest release: 2.0.0** — [release notes](docs/releases/release-notes-2.0.0.md)
 
 [Documentation](docs/README.md) · [Modules](#modules) · [HTTP adapters](#http-adapters) · [Kafka adapter](#kafka-adapter) · [Build](#build)
 
@@ -219,14 +220,15 @@ accepts it.
 
 ### Install
 
-All extension modules track the Freeway core version. Use `2.0.1` for the current
-release:
+Every module here builds against the core version pinned in `<freeway.version>`.
+Maven Central carries the `1.5.7` line: the 2.0 tags exist on GitHub, but no 2.0
+artifact has been deployed, so a `2.0.x` coordinate does not resolve yet.
 
 ```xml
 <dependency>
     <groupId>com.jujin8.freeway</groupId>
     <artifactId>freeway-http-undertow</artifactId>
-    <version>2.0.1</version>
+    <version>1.5.7</version>
 </dependency>
 ```
 

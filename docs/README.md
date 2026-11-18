@@ -11,6 +11,7 @@ documentation lives in the core repository: [`freeway/docs`](https://github.com/
 | Structural consistency audit (1.5.2) | [`audits/structure-consistency-1.5.2.md`](audits/structure-consistency-1.5.2.md) |
 | Adapter contract audit (1.5.7) | [`audits/adapter-contracts-1.5.7.md`](audits/adapter-contracts-1.5.7.md) |
 | Fleet client/server | [`modules/fleet.md`](modules/fleet.md) · [`modules/fleet-server.md`](modules/fleet-server.md) |
+| Kubernetes discovery | [`modules/k8s.md`](modules/k8s.md) |
 | Consul adapter design | [`design/consul-adapter.md`](design/consul-adapter.md) |
 | Benchmark protocol reports | [`benchmarks/`](benchmarks/) |
 | Release and publishing steps | [`release.md`](release.md) |

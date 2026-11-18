@@ -48,7 +48,7 @@ This document describes only the minimum viable design for this version and expl
 | Drain | `drainWindow()` | With `freeway.cloud.member.shutdown-drain=auto`, asks the adapter for the propagation window |
 
 **Key inference**: the adapter only needs to implement two interfaces + one module + one `Wiring`.
-**Lifecycle / health / re-registration / drain are all driven by the core's existing code; the adapter does not reimplement them.**
+**Membership lifecycle, health, re-registration and drain are all driven by the core's existing code; the adapter does not reimplement them.**
 
 ## 3. Interface → Consul HTTP API Mapping
 
@@ -77,7 +77,7 @@ The body shape of `register`:
 Mapping notes:
 
 - **instanceId ↔ Consul `Service.ID`**: use `{serviceId}:{instanceId}` (Consul requires the ID to be unique within the agent). `Name` = `serviceId`.
-- **`renew` semantics aligned**: the core requires "return false when the registry no longer recognizes the instance". Once the TTL check is cleared / the instance is deregistered, `check/pass` returns 404 → false, which is exactly what triggers the core's **re-registration** logic.
+- **`renew` semantics aligned**: the core requires "return false when the registry no longer recognizes the instance". Once the TTL check is cleared / the instance is deregistered, `check/pass` returns 404 → false, which is exactly what triggers the core's **re-register** logic.
 - **`instances` returns only healthy instances**: `?passing=true` matches the "live and ready" contract of `ServiceDiscovery.instances`.
 - **`metadata`**: `ServiceInstance.metadata` ↔ Consul `Service.Meta` (a string map, naturally aligned).
 - **`Endpoint.scheme` / `basePath` land in `Meta`** (see §4; this is a fidelity requirement, not optional).

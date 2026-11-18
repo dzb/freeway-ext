@@ -165,6 +165,9 @@ final class FleetApi implements RouteHandler {
   private void register(HttpExchange ctx) throws IOException {
     String json = ctx.bodyText();
     ServiceInstance instance = codec.fromJson(json, ServiceInstance.class);
+    if (instance == null) {
+      throw new IllegalArgumentException("service instance body is required");
+    }
     // A client that already knows it is warming registers as such in one
     // write (`?ready=false`), instead of registering as ready and being
     // marked not-ready a moment later — a window in which discovery could

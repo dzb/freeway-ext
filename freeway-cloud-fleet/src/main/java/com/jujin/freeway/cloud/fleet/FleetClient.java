@@ -52,7 +52,7 @@ final class FleetClient implements AutoCloseable {
   private final HttpClient http;
   private final JsonCodec codec = FleetCodec.JSON;
   private final Metrics metrics;
-  private final ExecutorService fanout = Executors.newVirtualThreadPerTaskExecutor();
+  private final ExecutorService fanout;
 
   /**
    * Readiness this client last published; carried on every heartbeat so a restarted node learns it
@@ -68,6 +68,7 @@ final class FleetClient implements AutoCloseable {
     this.nodes = Objects.requireNonNull(nodes, "nodes");
     this.metrics = metrics == null ? NoopMetrics.INSTANCE : metrics;
     this.http = HttpClients.builder(nodes.timeout(), null).build();
+    this.fanout = Executors.newVirtualThreadPerTaskExecutor();
   }
 
   /** Writes the instance to every node; every node failing fails loudly. */
@@ -122,6 +123,7 @@ final class FleetClient implements AutoCloseable {
    * still rides the next heartbeat, so the cost of an older node is a delay, not a divergence.
    */
   public void markReady(ServiceInstance instance, boolean ready) {
+    Objects.requireNonNull(instance, "instance");
     this.ready = ready;
     List<NodeResult> results =
         fanOutOrThrow(
@@ -143,6 +145,8 @@ final class FleetClient implements AutoCloseable {
   }
 
   public boolean renew(String serviceId, String instanceId) {
+    Objects.requireNonNull(serviceId, "serviceId");
+    Objects.requireNonNull(instanceId, "instanceId");
     List<NodeResult> results =
         fanOutOrThrow(
             "renew",
@@ -180,6 +184,7 @@ final class FleetClient implements AutoCloseable {
 
   /** Removes the instance from every node; one unreachable node must not hold shutdown. */
   public void unregister(ServiceInstance instance) {
+    Objects.requireNonNull(instance, "instance");
     List<NodeResult> results;
     try {
       results =
@@ -211,6 +216,7 @@ final class FleetClient implements AutoCloseable {
    * node failing throws — "the fleet is gone" must look like a failure, not like an empty world.
    */
   public List<ServiceInstance> instances(String serviceId) {
+    Objects.requireNonNull(serviceId, "serviceId");
     List<NodeResult> results =
         fanOutOrThrow(
             "discover", node -> exchange(node, "GET", FleetProtocol.discover(serviceId), ""));
@@ -274,6 +280,9 @@ final class FleetClient implements AutoCloseable {
         futures.add(fanout.submit(() -> callNode(node, call)));
       }
     } catch (RejectedExecutionException closed) {
+      for (Future<NodeResult> future : futures) {
+        future.cancel(true);
+      }
       throw new IllegalStateException("Fleet client is closed", closed);
     }
 

@@ -178,6 +178,6 @@ decision and a test covering the rejected combination.
 
 ## Related documents
 
-- [Fleet client/server](modules/fleet.md)
-- [Fleet Server](modules/fleet-server.md)
-- [Kubernetes discovery](modules/k8s.md)
+- [Fleet client/server](../modules/fleet.md)
+- [Fleet Server](../modules/fleet-server.md)
+- [Kubernetes discovery](../modules/k8s.md)

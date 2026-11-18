@@ -62,6 +62,21 @@ class H2LeaseStoreTest {
   }
 
   @Test
+  void theDefaultEmbeddedUrlCanOpen() {
+    String db = "jdbc:h2:mem:fleet-default-" + UUID.randomUUID() + ";DB_CLOSE_DELAY=-1";
+    // The file URL cannot be reused across test JVMs; the default's H2 option
+    // combination is exercised by the distribution smoke test. Keep this
+    // unit test on an in-memory database while pinning the public default text.
+    assertTrue(FleetServerModule.ConfigKeys.URL_DEFAULT.contains("DB_CLOSE_ON_EXIT=FALSE"));
+    H2LeaseStore store = new H2LeaseStore(db, "sa", "", new JsonCodecDefault());
+    try {
+      store.ping();
+    } finally {
+      store.close();
+    }
+  }
+
+  @Test
   void pingAndExplicitEvictionWork() throws InterruptedException {
     store.ping();
     store.register(instance);

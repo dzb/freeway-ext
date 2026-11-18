@@ -133,6 +133,17 @@ public final class MemLeaseStore implements LeaseStore {
     return true;
   }
 
+  @Override
+  public List<Lease> leases() {
+    List<Lease> result = new ArrayList<>();
+    for (Map<String, Entry> instances : byService.values()) {
+      for (Entry entry : instances.values()) {
+        result.add(new Lease(entry.instance, entry.health));
+      }
+    }
+    return result;
+  }
+
   /** Total registered instances across all services (readiness reporting). */
   @Override
   public int instanceCount() {

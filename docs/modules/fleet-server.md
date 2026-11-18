@@ -1,16 +1,40 @@
 # Fleet Server
 
-`freeway-fleet-server` is a standalone registry server module. Compose it with
-`freeway-boot` and `freeway-http` to run a Fleet process:
+`freeway-fleet-server` is a standalone Fleet registry application. It ships
+as an executable jar and a small distribution with platform launchers, an
+embedded H2 store and a read-only operations dashboard. It does not need to be
+composed into an application module by the operator.
 
-```java
-FreewayApp.run(new HttpModule(), new FleetServerModule());
+Download or unpack the `*-bin.zip` / `*-bin.tar.gz` distribution and run:
+
+```bash
+# Linux / macOS
+./bin/fleet-server
+
+# Windows cmd
+bin\fleet-server.bat
+
+# Windows PowerShell
+.\bin\fleet-server.ps1
 ```
 
-It is a control plane: it owns the registry surface and a `LeaseStore`
-(default `H2LeaseStore`, embedded H2; `MemLeaseStore` for tests), and it does
-not register itself into the Fleet it serves. Applications depend on
-`freeway-cloud-fleet` (client), never on this module.
+The scripts default to `FLEET_HOST=0.0.0.0`, `FLEET_PORT=19090` and use the
+embedded H2 file in the current working directory. Set `FLEET_HOST` or
+`FLEET_PORT` to override them. `freeway-fleet-server` is an application
+artifact, not a library for business applications; applications depend on
+`freeway-cloud-fleet` (the client). `demo/registry-server` remains a
+development-only demo and is not published.
+
+The dashboard opens at:
+
+```text
+http://localhost:19090/fleet/ui
+```
+
+It lists every lease in the local node, including warming and not-ready
+instances. Its admin API is protected by the same shared token as the Fleet
+wire surface; set `freeway.fleet.token` before exposing the server. The
+dashboard is read-only: it does not provide a second way to mutate membership.
 
 ## Surface
 
@@ -24,6 +48,9 @@ not register itself into the Fleet it serves. Applications depend on
 | discover | `GET /fleet/services/{serviceId}/instances` |
 | readiness | `POST /fleet/services/{serviceId}/instances/{instanceId}/ready` |
 | self-description | `GET /fleet` |
+| dashboard | `GET /fleet/ui` |
+| admin overview | `GET /fleet/admin/overview` |
+| admin instances | `GET /fleet/admin/instances` |
 
 The server reads `freeway.fleet.token` (writer credential) and
 `freeway.fleet.token-previous` (rotation window) from `FleetKeys`, and
@@ -62,7 +89,6 @@ fleet.server.request.duration
 fleet.server.eviction
 fleet.server.eviction.failures
 fleet.server.internal.errors
-fleet.server.internal.errors
 ```
 
 Install `ObserveModule` (or a replacement `Metrics` binding) to export them.
@@ -71,16 +97,18 @@ application member lifecycle.
 
 ## Current maturity
 
-The module is a deployable starting point, not a production control plane yet:
+The executable application is ready to run as a single-node control plane, but
+it is not a production HA control plane yet:
 
 - the embedded H2 file store persists leases for one node; a restart keeps the
   table, but there is no replication or HA coordination;
-- no TLS and no admin UI/RBAC;
+- the dashboard is read-only and protected by the shared token; there is no
+  per-user RBAC or TLS built into the application itself;
 - do not share one H2 file between Fleet processes; PostgreSQL is the HA path.
 
 Those are server responsibilities and belong here, not in `freeway-cloud`.
 H2 runs embedded with the process, so a single Fleet node is self-contained:
-the default URL is `jdbc:h2:file:./fleet;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE`.
+the default URL is `jdbc:h2:file:./fleet;DB_CLOSE_ON_EXIT=FALSE`.
 An embedded H2 file must not be shared by two Fleet processes; for HA the
 `LeaseStore` seam takes a PostgreSQL implementation. Node
 discovery for the Fleet itself must be independent of the Fleet (static seed

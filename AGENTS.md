@@ -61,7 +61,7 @@ the signing key and Central credentials stay on the machine that runs it.
 | `freeway-mq-kafka` | Kafka durable event stream plane (`KafkaEvents`: producer + subscription table + poller) | core ioc + cloud + commons; kafka-clients |
 | `freeway-fleet-protocol` | Fleet wire contract: routes, headers, version and shared token keys | no runtime dependency |
 | `freeway-cloud-fleet` | Fleet client/discovery/registry adapter (`FleetModule`, `FleetClient`, `FleetDiscovery`, `FleetRegistry`) and client-only Fleet keys | core ioc + cloud + commons + http; freeway-fleet-protocol; **no third-party client** |
-| `freeway-fleet-server` | Standalone Fleet registry server (`FleetServerModule`, H2 `LeaseStore`, runtime lease keys) | core ioc + cloud + commons + http; freeway-fleet-protocol; H2; freeway-cloud-fleet (test) |
+| `freeway-fleet-server` | Standalone executable Fleet Server (`FleetServerMain`, embedded H2, dashboard, launchers, runtime lease keys) | core ioc + cloud + commons + http; freeway-fleet-protocol; H2; freeway-cloud-fleet (test) |
 | `freeway-cloud-consul` | Consul service-discovery adapter (`ServiceRegistry` + `ServiceDiscovery`, bound primary) | core ioc + cloud + commons; **no third-party client** (JDK `HttpClient`) |
 | `freeway-cloud-k8s` | Read-only Kubernetes EndpointSlice discovery adapter (`ServiceDiscovery`, bound primary; no `ServiceRegistry`) | core ioc + cloud + commons; Fabric8 Kubernetes client |
 | `freeway-db-hikari` | HikariCP pool adapter (`Pool`) | core ioc + db; HikariCP |

@@ -33,7 +33,7 @@ runtime, broker, registry or database pool.
     <tr><td nowrap>freeway-mq-kafka</td><td>Distributed event streaming across services</td><td><a href="https://kafka.apache.org">Kafka Clients</a> 4.3.1</td></tr>
     <tr><td nowrap>freeway-fleet-protocol</td><td>Fleet wire contract, headers and shared keys</td><td>none</td></tr>
     <tr><td nowrap>freeway-cloud-fleet</td><td>Fleet client, discovery and registry adapter</td><td>none — JDK HttpClient only</td></tr>
-    <tr><td nowrap>freeway-fleet-server</td><td>Standalone Fleet registry server with an H2 LeaseStore</td><td><a href="https://h2database.com">H2</a> 2.5.250</td></tr>
+    <tr><td nowrap>freeway-fleet-server</td><td>Standalone executable Fleet Server application with embedded H2 and dashboard</td><td><a href="https://h2database.com">H2</a> 2.5.250</td></tr>
     <tr><td nowrap>freeway-cloud-consul</td><td>Service discovery and membership backed by Consul (non-Kubernetes deployments)</td><td>none — JDK HttpClient only</td></tr>
     <tr><td nowrap>freeway-cloud-k8s</td><td>Read-only Kubernetes EndpointSlice discovery adapter</td><td><a href="https://github.com/fabric8io/kubernetes-client">Fabric8 Kubernetes Client</a> 8.0.0</td></tr>
     <tr><td nowrap>freeway-db-hikari</td><td>Connection pooling tuned for high-concurrency OLTP</td><td><a href="https://github.com/brettwooldridge/HikariCP">HikariCP</a> 7.1.0</td></tr>

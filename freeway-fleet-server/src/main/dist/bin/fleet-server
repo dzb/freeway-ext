@@ -1,0 +1,25 @@
+#!/usr/bin/env sh
+set -eu
+
+APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+JAVA_BIN="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+FLEET_HOST="${FLEET_HOST:-0.0.0.0}"
+FLEET_PORT="${FLEET_PORT:-19090}"
+JAVA_OPTS="${JAVA_OPTS:-}"
+JAR="$APP_HOME/lib/freeway-fleet-server.jar"
+
+if ! command -v "$JAVA_BIN" >/dev/null 2>&1; then
+  echo "Java 25+ is required; set JAVA_HOME or put java on PATH." >&2
+  exit 1
+fi
+if [ ! -f "$JAR" ]; then
+  echo "Fleet Server jar not found at $JAR" >&2
+  exit 1
+fi
+
+exec "$JAVA_BIN" $JAVA_OPTS \
+  -Dstdout.encoding=UTF-8 \
+  -Dstderr.encoding=UTF-8 \
+  -Dfreeway.http.server.host="$FLEET_HOST" \
+  -Dfreeway.http.server.port="$FLEET_PORT" \
+  -jar "$JAR" "$@"

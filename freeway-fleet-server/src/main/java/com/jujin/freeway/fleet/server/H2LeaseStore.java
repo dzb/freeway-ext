@@ -192,6 +192,27 @@ public final class H2LeaseStore implements LeaseStore, AutoCloseable {
   }
 
   @Override
+  public synchronized List<Lease> leases() {
+    try (PreparedStatement statement =
+            connection.prepareStatement(
+                "SELECT instance_json, live, ready, last_seen_ms FROM fleet_instance "
+                    + "ORDER BY service_id, instance_id");
+        ResultSet rows = statement.executeQuery()) {
+      List<Lease> result = new ArrayList<>();
+      while (rows.next()) {
+        ServiceInstance instance = codec.fromJson(rows.getString(1), ServiceInstance.class);
+        ServiceHealth health =
+            new ServiceHealth(
+                rows.getBoolean(2), rows.getBoolean(3), Instant.ofEpochMilli(rows.getLong(4)));
+        result.add(new Lease(instance, health));
+      }
+      return result;
+    } catch (SQLException e) {
+      throw failure("leases", e);
+    }
+  }
+
+  @Override
   public synchronized int instanceCount() {
     try (Statement statement = connection.createStatement();
         ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM fleet_instance")) {

@@ -42,7 +42,12 @@ fleet.client.fanout.partial
 Member lifecycle counters remain in `freeway-cloud`; discovery cache counters
 remain in `CachingDiscovery`.
 
-Fleet Server now has a `fleet-server` readiness contributor that pings its
+Fleet Server is now an executable application with an embedded H2 store and
+dashboard. The binary distribution contains `bin/fleet-server`,
+`bin/fleet-server.bat` and `bin/fleet-server.ps1`; operators do not compose the
+server library themselves. `demo/registry-server` remains non-published.
+
+Fleet Server also has a `fleet-server` readiness contributor that pings its
 `LeaseStore`, periodic lease cleanup, and the runtime keys:
 
 ```text
@@ -92,7 +97,7 @@ extension modules do not maintain a second alias vocabulary.
 
 ```text
 mvn -o clean test
-  ext modules 2.0.1-SNAPSHOT — 288 tests, 0 failures, 0 errors, 7 skipped
+  ext modules 2.0.1-SNAPSHOT — 291 tests, 0 failures, 0 errors, 7 skipped
 ```
 
 The full ext reactor builds against the installed core 2.0.1-SNAPSHOT snapshot.

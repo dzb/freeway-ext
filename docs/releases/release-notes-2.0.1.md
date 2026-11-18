@@ -43,8 +43,8 @@ Member lifecycle counters remain in `freeway-cloud`; discovery cache counters
 remain in `CachingDiscovery`.
 
 Fleet Server is now an executable application with an embedded H2 store and
-dashboard. The binary distribution contains `bin/fleet-server`,
-`bin/fleet-server.bat` and `bin/fleet-server.ps1`; operators do not compose the
+dashboard. The binary distribution contains `bin/fleet`,
+`bin/fleet.bat` and `bin/fleet.ps1`; operators do not compose the
 server library themselves. `demo/registry-server` remains non-published.
 
 Fleet Server also has a `fleet-server` readiness contributor that pings its

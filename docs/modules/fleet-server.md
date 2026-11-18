@@ -9,13 +9,13 @@ Download or unpack the `*-bin.zip` / `*-bin.tar.gz` distribution and run:
 
 ```bash
 # Linux / macOS
-./bin/fleet-server
+./bin/fleet
 
 # Windows cmd
-bin\fleet-server.bat
+bin\fleet.bat
 
 # Windows PowerShell
-.\bin\fleet-server.ps1
+.\bin\fleet.ps1
 ```
 
 The scripts default to `FLEET_HOST=0.0.0.0`, `FLEET_PORT=19090` and use the

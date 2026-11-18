@@ -142,6 +142,19 @@ class FleetServerModuleTest {
   }
 
   @Test
+  void a_null_instance_bodyIsABadRequest() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      HttpResponse<String> invalid =
+          http(
+              app,
+              HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
+                  .POST(HttpRequest.BodyPublishers.ofString("null")));
+      assertTrue(invalid.statusCode() == 400, "a null instance body is a client error");
+    }
+  }
+
+  @Test
   void a_storeFailureIsA500NotAClientError() throws Exception {
     try (AppRuntime app =
         FreewayApp.create(new HttpModule(), new FleetServerModule(new ThrowingLeaseStore()))

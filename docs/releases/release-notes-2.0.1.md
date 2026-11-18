@@ -92,7 +92,7 @@ extension modules do not maintain a second alias vocabulary.
 
 ```text
 mvn -o clean test
-  ext modules 2.0.1-SNAPSHOT — 286 tests, 0 failures, 0 errors, 7 skipped
+  ext modules 2.0.1-SNAPSHOT — 288 tests, 0 failures, 0 errors, 7 skipped
 ```
 
 The full ext reactor builds against the installed core 2.0.1-SNAPSHOT snapshot.

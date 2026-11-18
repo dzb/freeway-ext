@@ -85,6 +85,24 @@ class FleetClientTest {
   }
 
   @Test
+  void membershipOperationsRejectNullInputsBeforeAnyRequest() throws Exception {
+    StubNode node = stub();
+    FleetClient client = client(node);
+
+    org.junit.jupiter.api.Assertions.assertThrows(
+        NullPointerException.class, () -> client.markReady(null, true));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        NullPointerException.class, () -> client.renew(null, "i1"));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        NullPointerException.class, () -> client.renew("svc", null));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        NullPointerException.class, () -> client.unregister(null));
+    org.junit.jupiter.api.Assertions.assertThrows(
+        NullPointerException.class, () -> client.instances(null));
+    assertTrue(node.registrations.isEmpty(), "null input must be rejected before a request");
+  }
+
+  @Test
   void registerFansOutConcurrently() throws Exception {
     StubNode first = stub();
     StubNode second = stub();

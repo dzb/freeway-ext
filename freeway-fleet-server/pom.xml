@@ -17,7 +17,7 @@
         Standalone fleet registry server module: HTTP registry surface, lease
         store and protocol endpoint. Compose it with freeway-boot and
         freeway-http to run a deployable registry service; applications depend
-        on freeway-fleet (the client), never on this module.
+        on freeway-cloud-fleet (the client), never on this module.
     </description>
 
     <dependencies>
@@ -56,7 +56,7 @@
         </dependency>
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
-            <artifactId>freeway-fleet</artifactId>
+            <artifactId>freeway-cloud-fleet</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

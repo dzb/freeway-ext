@@ -17,7 +17,7 @@ import java.time.Duration;
  *
  * <p>Nothing else is re-implemented. The core's {@code MemberHook} registers on start, renews,
  * re-registers on a lost lease and unregisters on stop; its {@code MemberReadiness} keeps answering
- * {@code /health/ready} with the registration, renewal and draining state it observed, whichever
+ * {@code /health/ready} with the membership, renewal and draining state it observed, whichever
  * registry is bound — that state is the core's, not the backend's, so binding this module does not
  * remove the check; {@code drainWindow()} here feeds {@code
  * freeway.cloud.member.shutdown-drain=auto}. All of that follows from the interface, so it is

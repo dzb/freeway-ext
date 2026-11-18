@@ -16,6 +16,9 @@ public final class FleetProtocol {
   public static final String DISCOVER = "/fleet/services/{serviceId}/instances";
   public static final String READY = "/fleet/services/{serviceId}/instances/{instanceId}/ready";
   public static final String SELF_DESCRIPTION = "/fleet";
+  public static final String DASHBOARD = "/fleet/ui";
+  public static final String ADMIN_OVERVIEW = "/fleet/admin/overview";
+  public static final String ADMIN_INSTANCES = "/fleet/admin/instances";
 
   public static final String TOKEN_HEADER = "X-Fleet-Token";
   public static final String PROTOCOL_HEADER = "X-Fleet-Proto";

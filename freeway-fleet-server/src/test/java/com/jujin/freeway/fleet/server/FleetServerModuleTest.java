@@ -104,6 +104,53 @@ class FleetServerModuleTest {
   }
 
   @Test
+  void dashboardAndAdminSurfaceReadTheLeaseStore() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      http(
+          app,
+          HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
+              .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+
+      HttpResponse<String> dashboard =
+          http(app, HttpRequest.newBuilder(uri(app, "/fleet/ui")).GET());
+      assertTrue(dashboard.statusCode() == 200, "the dashboard is served");
+      assertTrue(dashboard.body().contains("Fleet Server"), dashboard.body());
+
+      HttpResponse<String> instances =
+          http(app, HttpRequest.newBuilder(uri(app, "/fleet/admin/instances")).GET());
+      assertTrue(instances.statusCode() == 200, "admin instances are readable");
+      assertTrue(instances.body().contains("\"serviceId\":\"svc\""), instances.body());
+
+      HttpResponse<String> overview =
+          http(app, HttpRequest.newBuilder(uri(app, "/fleet/admin/overview")).GET());
+      assertTrue(overview.statusCode() == 200, "admin overview is readable");
+      assertTrue(overview.body().contains("\"leaseTtl\""), overview.body());
+    }
+  }
+
+  @Test
+  void adminSurfaceUsesTheSharedTokenWhenConfigured() throws Exception {
+    System.setProperty(FleetKeys.TOKEN, "admin-secret");
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      HttpResponse<String> unauthorized =
+          http(app, HttpRequest.newBuilder(uri(app, "/fleet/admin/overview")).GET());
+      assertTrue(unauthorized.statusCode() == 401, "admin data must not be open");
+
+      HttpResponse<String> authorized =
+          http(
+              app,
+              HttpRequest.newBuilder(uri(app, "/fleet/admin/overview"))
+                  .header(FleetProtocol.TOKEN_HEADER, "admin-secret")
+                  .GET());
+      assertTrue(authorized.statusCode() == 200, "the shared token authorizes admin data");
+    } finally {
+      System.clearProperty(FleetKeys.TOKEN);
+    }
+  }
+
+  @Test
   void serverMetricsRecordRegisterRequests() throws Exception {
     try (AppRuntime app =
         FreewayApp.create(

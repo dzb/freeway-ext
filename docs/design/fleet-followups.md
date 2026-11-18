@@ -85,22 +85,17 @@ while a normal single-node expiry still evicts as before.
 
 ## P2 -- operate and scale
 
-### 5. Protected Fleet Server status surface
+### 5. Protected Fleet Server operations surface
 
-**Owner:** `freeway-fleet-server`
+**Status:** delivered in 2.0.1.
 
-Add a token-protected operations endpoint, for example:
+`GET /fleet/ui` serves the embedded dashboard; `GET /fleet/admin/overview` and
+`GET /fleet/admin/instances` provide the protected JSON view used by it. The
+operations API uses the shared Fleet token and reports store status, lease TTL,
+eviction interval, active instances and readiness state.
 
-```text
-GET /fleet/status
-```
-
-It should report protocol version, store status, active lease count, lease TTL
-and eviction interval. Keep the existing `/fleet` self-description open; do
-not expose the status surface without auth.
-
-**Acceptance:** status is unavailable without the configured token, reports a
-failed store, and does not expose instance payloads.
+Remaining work belongs to the richer multi-node/administration follow-ups:
+cross-node aggregation, write actions and per-user authorization.
 
 ### 6. Watch / long-poll discovery
 

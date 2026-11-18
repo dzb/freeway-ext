@@ -14,10 +14,10 @@
     <artifactId>freeway-fleet-server</artifactId>
     <name>Freeway :: Fleet Server</name>
     <description>
-        Standalone fleet registry server module: HTTP registry surface, lease
-        store and protocol endpoint. Compose it with freeway-boot and
-        freeway-http to run a deployable registry service; applications depend
-        on freeway-cloud-fleet (the client), never on this module.
+        Standalone Fleet registry application: HTTP registry surface, H2 lease
+        store, health/metrics and an embedded operations dashboard. Download
+        and start it with the bin scripts; applications depend on
+        freeway-cloud-fleet (the client), never on this application.
     </description>
 
     <dependencies>
@@ -53,7 +53,6 @@
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
             <artifactId>freeway-boot</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
@@ -67,4 +66,50 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.0</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.jujin.freeway.fleet.server.FleetServerMain</mainClass>
+                                </transformer>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-assembly-plugin</artifactId>
+                <version>3.7.1</version>
+                <executions>
+                    <execution>
+                        <id>bin</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <descriptors>
+                                <descriptor>src/assembly/bin.xml</descriptor>
+                            </descriptors>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>

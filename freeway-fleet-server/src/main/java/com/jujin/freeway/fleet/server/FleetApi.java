@@ -6,15 +6,12 @@ import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonObject;
 import com.jujin.freeway.commons.json.JsonUtils;
 import com.jujin.freeway.commons.metrics.Metrics;
-import com.jujin.freeway.commons.util.ConstantTime;
 import com.jujin.freeway.fleet.FleetCodec;
-import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.HttpExchange;
 import com.jujin.freeway.http.HttpStatus;
 import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
-import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
@@ -31,13 +28,6 @@ import org.slf4j.LoggerFactory;
 final class FleetApi implements RouteHandler {
 
   private static final Logger LOG = LoggerFactory.getLogger(FleetApi.class);
-
-  /** The shared secret; the same key a client presents. */
-  private static final SymbolSpec<String> TOKEN = SymbolSpec.of(FleetKeys.TOKEN, String.class, "");
-
-  /** Accepted in addition during a rotation window — this side only. */
-  private static final SymbolSpec<String> TOKEN_PREVIOUS =
-      SymbolSpec.of(FleetKeys.TOKEN_PREVIOUS, String.class, "");
 
   private final LeaseStore store;
   private final FleetServerOptions options;
@@ -98,7 +88,7 @@ final class FleetApi implements RouteHandler {
     }
     ctx.setHeader(FleetProtocol.PROTOCOL_HEADER, String.valueOf(FleetProtocol.PROTOCOL));
 
-    if (!authorized(ctx)) {
+    if (!FleetAuth.authorized(ctx, symbols)) {
       metrics.counter("fleet.server.auth.failures").increment();
       // A shared-secret check, not an identity system: the node is
       // reachable inside a trusted network, and the token keeps an
@@ -140,22 +130,6 @@ final class FleetApi implements RouteHandler {
       LOG.error("Fleet request failed", failed);
       ctx.sendJson(HttpStatus.INTERNAL_ERROR, Map.of("error", "fleet server failed"));
     }
-  }
-
-  /**
-   * Open when neither token is set; otherwise the presented header must match the current token or
-   * the one being retired. Two live secrets is what makes a rotation online: set the new value,
-   * move the writers, clear the old one.
-   */
-  private boolean authorized(HttpExchange ctx) {
-    String current = symbols.resolve(TOKEN);
-    String previous = symbols.resolve(TOKEN_PREVIOUS);
-    if (current.isBlank() && previous.isBlank()) {
-      return true;
-    }
-    String presented = ctx.header(FleetProtocol.TOKEN_HEADER).orElse("");
-    return (!current.isBlank() && ConstantTime.isEqual(current, presented))
-        || (!previous.isBlank() && ConstantTime.isEqual(previous, presented));
   }
 
   private void discover(HttpExchange ctx, String serviceId) throws IOException {

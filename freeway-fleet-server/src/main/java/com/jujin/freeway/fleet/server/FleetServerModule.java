@@ -17,19 +17,17 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * The registry server as a Freeway module: compose it with {@code HttpModule} (and boot) to run a
- * standalone Fleet Server.
+ * The registry server as a Freeway module. The executable distribution wraps this module with
+ * {@code FleetServerMain}, {@code HttpModule}, health, metrics and an embedded dashboard.
  *
  * <p>This is the control plane, not an application runtime: it owns the registry surface and its
  * store, and it never registers itself into the fleet it serves. The module binds a {@link
- * LeaseStore}; the app composes the HTTP listener and chooses the deployment's node discovery
- * separately (static seed list, an external load balancer, or the database the store will grow
- * into).
+ * LeaseStore}; the application chooses the deployment's node discovery separately (static seed
+ * list, an external load balancer, or the database the store will grow into).
  *
- * <p><b>Current maturity.</b> The surface has an optional shared token but no TLS, and an embedded
- * H2 lease store by default. It is a deployable single-node starting point; production hardening
- * (shared durable leases, admin UI, mTLS/RBAC, HA) belongs to this server module, not to {@code
- * freeway-cloud}.
+ * <p>The executable application has an optional shared token and a read-only dashboard protected by
+ * it, but no built-in TLS, per-user RBAC or HA coordination. Shared durable leases remain a
+ * separate deployment concern; the embedded H2 store is intentionally single-node.
  */
 public final class FleetServerModule implements ModuleEx {
 
@@ -40,8 +38,7 @@ public final class FleetServerModule implements ModuleEx {
     public static final String PREFIX = "freeway.fleet.db";
 
     public static final String URL = "freeway.fleet.db.url";
-    public static final String URL_DEFAULT =
-        "jdbc:h2:file:./fleet;AUTO_SERVER=TRUE;DB_CLOSE_ON_EXIT=FALSE";
+    public static final String URL_DEFAULT = "jdbc:h2:file:./fleet;DB_CLOSE_ON_EXIT=FALSE";
     public static final String USER = "freeway.fleet.db.user";
     public static final String USER_DEFAULT = "sa";
     public static final String PASSWORD = "freeway.fleet.db.password";
@@ -96,7 +93,25 @@ public final class FleetServerModule implements ModuleEx {
               "freeway.fleet.index",
               "GET",
               FleetProtocol.SELF_DESCRIPTION,
-              FleetIndexHandler.class));
+              FleetIndexHandler.class),
+          new Surface(
+              "dashboard",
+              "freeway.fleet.dashboard",
+              "GET",
+              FleetProtocol.DASHBOARD,
+              FleetDashboardHandler.class),
+          new Surface(
+              "admin-overview",
+              "freeway.fleet.admin.overview",
+              "GET",
+              FleetProtocol.ADMIN_OVERVIEW,
+              FleetAdminHandler.class),
+          new Surface(
+              "admin-instances",
+              "freeway.fleet.admin.instances",
+              "GET",
+              FleetProtocol.ADMIN_INSTANCES,
+              FleetAdminHandler.class));
 
   /** One served route: the index label, the contribution id, and how to route it. */
   record Surface(

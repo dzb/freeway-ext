@@ -1,5 +1,8 @@
 # Registry Server Demo
 
+> The demo is not published. Use the `freeway-fleet-server` binary distribution
+> for a runnable Fleet Server; this module exists only for development examples.
+
 A single freeway process acting as a **Fleet registry server** — the
 `LeaseStore` it owns is exposed over HTTP so that **other** freeway
 instances (running in the same or other JVMs) can register their own
@@ -36,7 +39,7 @@ DELETE /fleet/services/{serviceId}/instances/{instanceId}  unregister
 ## Run
 
 ```bash
-cd demo/fleet-server
+cd demo/registry-server
 ./run.sh            # builds the shaded jar and starts the server
 ```
 

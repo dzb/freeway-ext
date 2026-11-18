@@ -26,6 +26,19 @@ public interface LeaseStore {
     return 0;
   }
 
+  /** Point-in-time view of every lease, including warming and not-yet-expired entries. */
+  default List<Lease> leases() {
+    return List.of();
+  }
+
+  /** One stored lease as the dashboard sees it. */
+  record Lease(ServiceInstance instance, ServiceHealth health) {
+    public Lease {
+      instance = java.util.Objects.requireNonNull(instance, "instance");
+      health = java.util.Objects.requireNonNull(health, "health");
+    }
+  }
+
   void register(ServiceInstance instance);
 
   void register(ServiceInstance instance, ServiceHealth health);

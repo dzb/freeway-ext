@@ -93,3 +93,9 @@ holds an independent table; a dead node is repopulated by the next heartbeat of
 each instance. This is the current availability model and its limit: it is not
 a consensus protocol, and a node restart can briefly hide membership until the
 clients' next renewal.
+
+## Follow-up roadmap
+
+Post-2.0.1 control-plane work is tracked in
+[`design/fleet-followups.md`](../design/fleet-followups.md): self-preservation,
+status, PostgreSQL storage, TLS/authorization and protocol compatibility.

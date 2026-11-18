@@ -47,6 +47,15 @@ class MemLeaseStoreTest {
   }
 
   @Test
+  void explicitEvictionRemovesStaleInstances() throws InterruptedException {
+    MemLeaseStore store = new MemLeaseStore();
+    store.register(ServiceInstance.of("svc", "i1", ServiceEndpoint.of("http", "h", 8080)));
+    Thread.sleep(5);
+    assertTrue(store.evictExpired(java.time.Duration.ZERO) > 0);
+    assertEquals(0, store.instanceCount());
+  }
+
+  @Test
   void unknownServiceIsEmpty() {
     MemLeaseStore store = new MemLeaseStore();
     assertTrue(store.liveReadyInstances("missing", Duration.ofMinutes(1)).isEmpty());

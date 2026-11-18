@@ -154,26 +154,37 @@ public final class MemLeaseStore implements LeaseStore {
     if (instances == null || instances.isEmpty()) {
       return List.of();
     }
+    evictExpired(maxAge);
     List<ServiceInstance> result = new ArrayList<>();
     for (Map.Entry<String, Entry> me : instances.entrySet()) {
       Entry e = me.getValue();
-      // One definition of the threshold, owned by ServiceHealth — this method
-      // used to spell the same comparison out inline.
-      if (e.health.isStale(maxAge)) {
-        // Stale — evict so the map cannot grow without bound. Re-check
-        // inside the bin lock: a heartbeat may have refreshed this very
-        // Entry after the read above, which must not be evicted.
-        instances.compute(
-            me.getKey(),
-            (key, current) -> current == e && current.health.isStale(maxAge) ? null : current);
-      } else if (e.health.live() && e.health.ready()) {
+      if (e.health.live() && e.health.ready()) {
         result.add(e.instance);
       }
     }
-    if (instances.isEmpty()) {
-      evictServiceMapIfEmpty(serviceId);
-    }
     return result;
+  }
+
+  @Override
+  public int evictExpired(Duration maxAge) {
+    int removed = 0;
+    for (Map.Entry<String, Map<String, Entry>> service : byService.entrySet()) {
+      var instances = service.getValue();
+      for (Map.Entry<String, Entry> candidate : instances.entrySet()) {
+        Entry e = candidate.getValue();
+        if (!e.health.isStale(maxAge)) {
+          continue;
+        }
+        // Re-check inside the bin lock: a heartbeat may have refreshed this
+        // very Entry after the stale read above, which must not be evicted.
+        boolean evicted = instances.remove(candidate.getKey(), e);
+        if (evicted) {
+          removed++;
+        }
+      }
+      evictServiceMapIfEmpty(service.getKey());
+    }
+    return removed;
   }
 
   /**

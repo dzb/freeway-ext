@@ -62,6 +62,15 @@ class H2LeaseStoreTest {
   }
 
   @Test
+  void pingAndExplicitEvictionWork() throws InterruptedException {
+    store.ping();
+    store.register(instance);
+    Thread.sleep(5);
+    assertTrue(store.evictExpired(Duration.ZERO) > 0);
+    assertEquals(0, store.instanceCount());
+  }
+
+  @Test
   void unregisterRemovesEvenAStartingInstance() {
     store.register(instance, ServiceHealth.starting());
     assertTrue(store.unregister("orders", "i1"));

@@ -1,9 +1,14 @@
 package com.jujin.freeway.fleet.server;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.jujin.freeway.boot.AppRuntime;
 import com.jujin.freeway.boot.FreewayApp;
+import com.jujin.freeway.cloud.discovery.ServiceHealth;
+import com.jujin.freeway.cloud.discovery.ServiceInstance;
+import com.jujin.freeway.cloud.observe.MetricsDefault;
+import com.jujin.freeway.cloud.observe.ObserveModule;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
 import com.jujin.freeway.http.HttpModule;
@@ -12,6 +17,8 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +100,60 @@ class FleetServerModuleTest {
       assertTrue(
           !after.body().contains("\"i1\""),
           "after delete the store must no longer list it, got: " + after.body());
+    }
+  }
+
+  @Test
+  void serverMetricsRecordRegisterRequests() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(
+                new HttpModule(), new FleetServerModule(new MemLeaseStore()), new ObserveModule())
+            .start()) {
+      http(
+          app,
+          HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
+              .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+
+      MetricsDefault metrics = app.get(MetricsDefault.class);
+      assertTrue(
+          metrics.counterValue("fleet.server.requests") >= 1, "every Fleet request is counted");
+      assertTrue(
+          metrics.counterValue("fleet.server.register.requests") >= 1,
+          "the register operation has its own counter");
+      assertTrue(
+          metrics.timerCount("fleet.server.request.duration") >= 1,
+          "the Fleet request timer is recorded");
+    }
+  }
+
+  @Test
+  void runtimeLeaseOptionsAreResolvedFromConfiguration() {
+    System.setProperty(FleetServerModule.RuntimeKeys.LEASE_TTL, "2s");
+    System.setProperty(FleetServerModule.RuntimeKeys.EVICTION_INTERVAL, "3s");
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      FleetServerOptions options = app.get(FleetServerOptions.class);
+      assertEquals(Duration.ofSeconds(2), options.leaseTtl());
+      assertEquals(Duration.ofSeconds(3), options.evictionInterval());
+    } finally {
+      System.clearProperty(FleetServerModule.RuntimeKeys.LEASE_TTL);
+      System.clearProperty(FleetServerModule.RuntimeKeys.EVICTION_INTERVAL);
+    }
+  }
+
+  @Test
+  void a_storeFailureIsA500NotAClientError() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new ThrowingLeaseStore()))
+            .start()) {
+      HttpResponse<String> failed =
+          http(
+              app,
+              HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
+                  .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+      assertTrue(
+          failed.statusCode() == 500,
+          "a store failure must not look like a malformed client request: " + failed.statusCode());
     }
   }
 
@@ -227,6 +288,33 @@ class FleetServerModuleTest {
   }
 
   @Test
+  void a_negative_protocol_is_refused_with_426() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      HttpResponse<String> negative =
+          http(
+              app,
+              HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances"))
+                  .header(FleetProtocol.PROTOCOL_HEADER, "-1")
+                  .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+      assertTrue(negative.statusCode() == 426, "a negative protocol is not valid");
+    }
+  }
+
+  @Test
+  void an_invalid_readiness_query_is_a_clean_bad_request() throws Exception {
+    try (AppRuntime app =
+        FreewayApp.create(new HttpModule(), new FleetServerModule(new MemLeaseStore())).start()) {
+      HttpResponse<String> invalid =
+          http(
+              app,
+              HttpRequest.newBuilder(uri(app, "/fleet/services/svc/instances?ready=maybe"))
+                  .POST(HttpRequest.BodyPublishers.ofString(INSTANCE)));
+      assertTrue(invalid.statusCode() == 400, "an invalid ready value must be rejected");
+    }
+  }
+
+  @Test
   void an_older_protocol_is_accepted() throws Exception {
     // The documented promise: a server keeps accepting older clients.
     // Equality made a proto-0 client a 426 — a version answer for a client
@@ -349,6 +437,57 @@ class FleetServerModuleTest {
       assertTrue(right.statusCode() == 200, "the matching token writes, got " + right.statusCode());
     } finally {
       System.clearProperty(FleetKeys.TOKEN);
+    }
+  }
+
+  private static final class ThrowingLeaseStore implements LeaseStore {
+    @Override
+    public void register(ServiceInstance instance) {
+      throw down();
+    }
+
+    @Override
+    public void register(ServiceInstance instance, ServiceHealth health) {
+      throw down();
+    }
+
+    @Override
+    public boolean renew(String serviceId, String instanceId, boolean ready) {
+      throw down();
+    }
+
+    @Override
+    public boolean markReady(String serviceId, String instanceId, boolean ready) {
+      throw down();
+    }
+
+    @Override
+    public boolean renew(String serviceId, String instanceId) {
+      throw down();
+    }
+
+    @Override
+    public void unregister(ServiceInstance instance) {
+      throw down();
+    }
+
+    @Override
+    public boolean unregister(String serviceId, String instanceId) {
+      throw down();
+    }
+
+    @Override
+    public int instanceCount() {
+      throw down();
+    }
+
+    @Override
+    public List<ServiceInstance> liveReadyInstances(String serviceId, Duration maxAge) {
+      throw down();
+    }
+
+    private static IllegalStateException down() {
+      return new IllegalStateException("store down");
     }
   }
 }

@@ -7,9 +7,9 @@ import com.jujin.freeway.boot.FreewayApp;
 import com.jujin.freeway.cloud.discovery.ServiceDiscovery;
 import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.cloud.event.EventMeshModule;
+import com.jujin.freeway.cloud.fleet.FleetModule;
 import com.jujin.freeway.cloud.member.MemberModule;
 import com.jujin.freeway.fleet.FleetKeys;
-import com.jujin.freeway.fleet.FleetModule;
 import com.jujin.freeway.http.HttpModule;
 import com.jujin.freeway.http.HttpServer;
 import com.jujin.freeway.ioc.ModuleEx;
@@ -47,7 +47,7 @@ class FreewayFleetEndToEndTest {
     }
     System.clearProperty(HttpModule.ConfigKeys.SERVER_PORT);
     System.clearProperty(FleetKeys.TOKEN);
-    System.clearProperty(FleetKeys.NODES);
+    System.clearProperty(FleetModule.ConfigKeys.NODES);
     System.clearProperty("freeway.cloud.event.enabled");
     System.clearProperty("freeway.cloud.event.discovery-feed-ms");
     System.clearProperty("freeway.cloud.event.backoff-base-ms");
@@ -68,7 +68,7 @@ class FreewayFleetEndToEndTest {
 
     // The clients: write through the wire, read through the wire, feed the mesh
     // from what the wire answers.
-    System.setProperty(FleetKeys.NODES, "127.0.0.1:" + nodePort);
+    System.setProperty(FleetModule.ConfigKeys.NODES, "127.0.0.1:" + nodePort);
     System.setProperty(FleetKeys.TOKEN, "s3cret");
     System.setProperty("freeway.cloud.event.enabled", "true");
     System.setProperty("freeway.cloud.event.discovery-feed-ms", "100");
@@ -120,7 +120,7 @@ class FreewayFleetEndToEndTest {
   // key read by both sides (freeway.fleet.token), so a node and a client in
   // the same JVM necessarily share its value. The refusal is pinned in
   // FleetServerModuleTest (wrong/missing header → 401); a refused
-  // registration is pinned in FleetModuleTest.
+  // register behavior is pinned in FleetModuleTest.
 
   private static boolean meshed(AppRuntime app) {
     return !app.get(com.jujin.freeway.cloud.event.PeerHub.class).connections().isEmpty();

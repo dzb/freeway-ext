@@ -93,3 +93,9 @@ remain in `freeway-cloud`'s `MemberHook`.
 candidate list; `LoadBalancerDefault` in `freeway-cloud` chooses per RPC
 attempt (weighted, zone-aware). A VIP-only deployment belongs in static
 discovery, not here.
+
+## Follow-up roadmap
+
+Post-2.0.1 transport and discovery work is tracked in
+[`design/fleet-followups.md`](../design/fleet-followups.md): node backoff,
+fan-out parallelism, cache invalidation and watch/long-poll evaluation.

@@ -2,6 +2,21 @@
 
 ## 2.0.1 - unreleased
 
+### Added
+
+- **Fleet client transport hardening**: writes fan out concurrently, node
+  failures are collected per node, `freeway.fleet.fanout-min-successes`
+  controls the write threshold, and the client records transport-only
+  `fleet.client.*` metrics. Member lifecycle and cache metrics remain
+  core-owned.
+- **Fleet server health and lease maintenance**: `LeaseStore.ping` /
+  `evictExpired`, a `fleet-server` health contributor,
+  `freeway.fleet.lease-ttl`, `freeway.fleet.eviction-interval`, periodic
+  cleanup and `fleet.server.*` metrics.
+- **Kubernetes discovery adapter**: `freeway-cloud-k8s` reads ready
+  `EndpointSlice` endpoints and binds `ServiceDiscovery` only. Kubernetes
+  owns membership; the adapter intentionally binds no `ServiceRegistry`.
+
 ### Changed
 
 - **Adapters follow the core membership vocabulary**: Fleet and Consul now
@@ -13,6 +28,18 @@
 - **Build trains**: the parent version and `freeway.version` move to `2.0.1`,
   matching the core release and inheriting the `f2` / `F2` configuration input
   aliases.
+- **Fleet write adapter is named by role**: `FleetRegistrar` → `FleetRegistry`,
+  matching the `ServiceRegistry` contract and the existing `FleetDiscovery`
+  read-side adapter.
+- **Fleet key ownership follows the readers**: shared token keys remain in
+  `FleetKeys`; client-only nodes/timeout/cache keys move to
+  `FleetModule.ConfigKeys`. The Fleet server H2 dependency is now runtime, not
+  test-only, so the published server artifact actually contains its default
+  store.
+- **Fleet client artifact follows the cloud adapter naming**: `freeway-fleet` →
+  `freeway-cloud-fleet`; the adapter package is now
+  `com.jujin.freeway.cloud.fleet`. The independent
+  `freeway-fleet-protocol` and `freeway-fleet-server` modules keep their names.
 
 ## 2.0.0 - 2026-11-16
 

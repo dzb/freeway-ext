@@ -11,7 +11,7 @@
   core-owned.
 - **Fleet Server is now an executable application**: `FleetServerMain`, an
   embedded dashboard/admin API, a shaded executable jar and Linux/macOS/Windows
-  launchers are packaged as a binary distribution. `demo/registry-server`
+  launchers are packaged as one `fleet-<version>.zip` binary distribution. `demo/registry-server`
   remains a non-published development demo.
 - **Fleet server health and lease maintenance**: `LeaseStore.ping` /
   `evictExpired`, a `fleet-server` health contributor,

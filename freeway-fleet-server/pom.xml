@@ -103,6 +103,8 @@
                             <goal>single</goal>
                         </goals>
                         <configuration>
+                            <finalName>fleet-${project.version}</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
                             <descriptors>
                                 <descriptor>src/assembly/bin.xml</descriptor>
                             </descriptors>

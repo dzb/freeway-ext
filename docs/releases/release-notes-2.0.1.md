@@ -10,6 +10,57 @@ page describes the train as planned, not as shipped.
 
 ## Highlights
 
+### Fleet write adapter is named by role
+
+`FleetRegistrar` is now `FleetRegistry`. It implements the core
+`ServiceRegistry` contract and pairs with the existing `FleetDiscovery`
+read-side adapter; the rename is internal and does not change Fleet's wire
+protocol or configuration.
+
+The client artifact is now `freeway-cloud-fleet`, matching
+`freeway-cloud-consul`; its package is `com.jujin.freeway.cloud.fleet`.
+`freeway-fleet-protocol` remains the shared wire contract and
+`freeway-fleet-server` remains the deployable control plane.
+
+Shared token keys remain in `FleetKeys`; client-only node, timeout and cache
+keys live in `FleetModule.ConfigKeys`. The Fleet server's H2 dependency is now
+runtime-scoped, matching its embedded default store.
+
+### Fleet client transport and server maintenance
+
+Fleet client writes now fan out concurrently. `freeway.fleet.fanout-min-successes`
+sets the minimum accepting-node count for a write (default `1`), and a partial
+fan-out is recorded rather than silently treated as a full success. The client
+records only transport signals:
+
+```text
+fleet.client.node.request.duration
+fleet.client.node.errors
+fleet.client.fanout.partial
+```
+
+Member lifecycle counters remain in `freeway-cloud`; discovery cache counters
+remain in `CachingDiscovery`.
+
+Fleet Server now has a `fleet-server` readiness contributor that pings its
+`LeaseStore`, periodic lease cleanup, and the runtime keys:
+
+```text
+freeway.fleet.lease-ttl
+freeway.fleet.eviction-interval
+```
+
+Server request, auth, protocol, eviction and latency signals are exposed under
+`fleet.server.*`.
+
+### Kubernetes discovery is a read-only adapter
+
+`freeway-cloud-k8s` watches `discovery.k8s.io/v1` EndpointSlices and exposes
+ready Pod endpoints through the core `ServiceDiscovery` contract. It does not
+bind `ServiceRegistry`, install `MemberModule`, or invent a heartbeat: Kubernetes
+owns service membership and readiness. In-cluster SDK configuration is
+automatic; local development can point at a kubeconfig.
+
 ### Fleet and Consul follow `cloud.member`
 
 The core now owns service membership in `MemberModule` / `MemberHook` /
@@ -41,7 +92,7 @@ extension modules do not maintain a second alias vocabulary.
 
 ```text
 mvn -o clean test
-  ext modules 2.0.1-SNAPSHOT — 255 tests, 0 failures, 0 errors, 7 skipped
+  ext modules 2.0.1-SNAPSHOT — 286 tests, 0 failures, 0 errors, 7 skipped
 ```
 
 The full ext reactor builds against the installed core 2.0.1-SNAPSHOT snapshot.

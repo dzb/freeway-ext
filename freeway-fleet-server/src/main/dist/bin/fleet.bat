@@ -9,7 +9,7 @@ if defined JAVA_HOME (
 )
 if not defined FLEET_HOST set "FLEET_HOST=0.0.0.0"
 if not defined FLEET_PORT set "FLEET_PORT=19090"
-set "JAR=%APP_HOME%\lib\freeway-fleet-server.jar"
+set "JAR=%APP_HOME%\lib\fleet.jar"
 
 if not exist "%JAR%" (
   echo Fleet Server jar not found at %JAR% 1>&2

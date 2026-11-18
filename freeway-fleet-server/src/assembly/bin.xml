@@ -4,7 +4,6 @@
   <id>bin</id>
   <formats>
     <format>zip</format>
-    <format>tar.gz</format>
   </formats>
   <includeBaseDirectory>true</includeBaseDirectory>
   <fileSets>
@@ -18,7 +17,7 @@
     <file>
       <source>${project.build.directory}/${project.build.finalName}.jar</source>
       <outputDirectory>lib</outputDirectory>
-      <destName>freeway-fleet-server.jar</destName>
+      <destName>fleet.jar</destName>
     </file>
   </files>
 </assembly>

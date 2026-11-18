@@ -38,6 +38,7 @@
         <hikari.version>7.1.0</hikari.version>
         <sqlite.version>3.53.4.0</sqlite.version>
         <h2.version>2.5.250</h2.version>
+        <fabric8.kubernetes.version>8.0.0</fabric8.kubernetes.version>
         <robaho.version>1.0.29</robaho.version>
         <!-- Overrides of freeway-parent properties: latest JUnit (6.x) and the
              latest stable SLF4J 2.x (2.1.0 is still an alpha release). -->
@@ -85,7 +86,7 @@
         </dependency>
         <dependency>
             <groupId>com.jujin8.freeway</groupId>
-            <artifactId>freeway-fleet</artifactId>
+            <artifactId>freeway-cloud-fleet</artifactId>
             <version>${freeway.version}</version>
         </dependency>
         <dependency>
@@ -146,6 +147,31 @@
                 <scope>test</scope>
             </dependency>
             <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-client</artifactId>
+                <version>${fabric8.kubernetes.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-client-api</artifactId>
+                <version>${fabric8.kubernetes.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-model-core</artifactId>
+                <version>${fabric8.kubernetes.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-model-discovery</artifactId>
+                <version>${fabric8.kubernetes.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-httpclient-jdk</artifactId>
+                <version>${fabric8.kubernetes.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>io.github.robaho</groupId>
                 <artifactId>httpserver</artifactId>
                 <version>${robaho.version}</version>
@@ -171,9 +197,10 @@
         <module>freeway-http-undertow</module>
         <module>freeway-mq-kafka</module>
         <module>freeway-fleet-protocol</module>
-        <module>freeway-fleet</module>
+        <module>freeway-cloud-fleet</module>
         <module>freeway-fleet-server</module>
         <module>freeway-cloud-consul</module>
+        <module>freeway-cloud-k8s</module>
         <module>freeway-db-hikari</module>
         <module>freeway-benchmark</module>
         <module>demo/registry-server</module>

@@ -1,5 +1,7 @@
 package com.jujin.freeway.fleet.server;
 
+import com.jujin.freeway.cloud.health.CloudHealthContributor;
+import com.jujin.freeway.commons.metrics.Metrics;
 import com.jujin.freeway.fleet.FleetCodec;
 import com.jujin.freeway.fleet.FleetKeys;
 import com.jujin.freeway.fleet.FleetProtocol;
@@ -7,9 +9,11 @@ import com.jujin.freeway.http.route.Route;
 import com.jujin.freeway.http.route.RouteHandler;
 import com.jujin.freeway.ioc.Binder;
 import com.jujin.freeway.ioc.ModuleEx;
+import com.jujin.freeway.ioc.RuntimeHook;
 import com.jujin.freeway.ioc.symbol.KnownKeys;
 import com.jujin.freeway.ioc.symbol.SymbolSource;
 import com.jujin.freeway.ioc.symbol.SymbolSpec;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -41,6 +45,23 @@ public final class FleetServerModule implements ModuleEx {
     public static final String USER = "freeway.fleet.db.user";
     public static final String USER_DEFAULT = "sa";
     public static final String PASSWORD = "freeway.fleet.db.password";
+  }
+
+  /** Runtime keys owned by the Fleet Server, outside the database namespace. */
+  public static final class RuntimeKeys {
+    private RuntimeKeys() {}
+
+    public static final String PREFIX = FleetKeys.PREFIX;
+
+    /** Lease eviction horizon; must exceed the member heartbeat interval. */
+    public static final String LEASE_TTL = "freeway.fleet.lease-ttl";
+
+    public static final Duration LEASE_TTL_DEFAULT = Duration.ofSeconds(30);
+
+    /** Periodic cleanup cadence for expired leases. */
+    public static final String EVICTION_INTERVAL = "freeway.fleet.eviction-interval";
+
+    public static final Duration EVICTION_INTERVAL_DEFAULT = Duration.ofSeconds(30);
   }
 
   private final LeaseStore suppliedStore;
@@ -85,6 +106,7 @@ public final class FleetServerModule implements ModuleEx {
   public void bind(Binder b) {
     b.contribute(KnownKeys.class)
         .add(KnownKeys.of(FleetKeys.class, FleetKeys.PREFIX))
+        .add(KnownKeys.of(RuntimeKeys.class, RuntimeKeys.PREFIX))
         .add(KnownKeys.of(ConfigKeys.class, ConfigKeys.PREFIX));
     b.bind(LeaseStore.class)
         .to(
@@ -101,6 +123,32 @@ public final class FleetServerModule implements ModuleEx {
                   symbols.resolve(SymbolSpec.of(ConfigKeys.PASSWORD, String.class, "")),
                   FleetCodec.JSON);
             });
+    b.bind(FleetServerOptions.class)
+        .to(
+            container -> {
+              SymbolSource symbols = container.get(SymbolSource.class);
+              return new FleetServerOptions(
+                  symbols.resolve(
+                      SymbolSpec.of(
+                          RuntimeKeys.LEASE_TTL, Duration.class, RuntimeKeys.LEASE_TTL_DEFAULT)),
+                  symbols.resolve(
+                      SymbolSpec.of(
+                          RuntimeKeys.EVICTION_INTERVAL,
+                          Duration.class,
+                          RuntimeKeys.EVICTION_INTERVAL_DEFAULT)));
+            });
+    b.contribute(CloudHealthContributor.class)
+        .addDeferred(
+            "freeway.fleet.server.health",
+            container -> new FleetServerHealth(container.get(LeaseStore.class)));
+    b.contribute(RuntimeHook.class)
+        .addDeferred(
+            "freeway.fleet.server.maintenance",
+            container ->
+                new FleetMaintenanceHook(
+                    container.get(LeaseStore.class),
+                    container.get(FleetServerOptions.class),
+                    container.get(Metrics.class)));
     for (Surface surface : SURFACE) {
       b.contribute(Route.class).add(surface.id(), route(surface));
     }

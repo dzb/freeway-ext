@@ -172,6 +172,26 @@ public final class H2LeaseStore implements LeaseStore, AutoCloseable {
   }
 
   @Override
+  public synchronized void ping() {
+    try (Statement statement = connection.createStatement();
+        ResultSet ignored = statement.executeQuery("SELECT 1")) {
+      ignored.next();
+    } catch (SQLException e) {
+      throw failure("ping", e);
+    }
+  }
+
+  @Override
+  public synchronized int evictExpired(Duration maxAge) {
+    long cutoff = Instant.now().minus(maxAge).toEpochMilli();
+    try {
+      return update("DELETE FROM fleet_instance WHERE last_seen_ms < ?", cutoff);
+    } catch (SQLException e) {
+      throw failure("evictExpired", e);
+    }
+  }
+
+  @Override
   public synchronized int instanceCount() {
     try (Statement statement = connection.createStatement();
         ResultSet rows = statement.executeQuery("SELECT COUNT(*) FROM fleet_instance")) {
@@ -184,9 +204,8 @@ public final class H2LeaseStore implements LeaseStore, AutoCloseable {
 
   @Override
   public synchronized List<ServiceInstance> liveReadyInstances(String serviceId, Duration maxAge) {
-    long cutoff = Instant.now().minus(maxAge).toEpochMilli();
+    evictExpired(maxAge);
     try {
-      update("DELETE FROM fleet_instance WHERE last_seen_ms < ?", cutoff);
       try (PreparedStatement statement =
           connection.prepareStatement(
               "SELECT instance_json FROM fleet_instance "

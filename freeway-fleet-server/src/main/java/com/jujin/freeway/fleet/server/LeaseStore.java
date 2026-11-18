@@ -18,6 +18,14 @@ public interface LeaseStore {
   /** Default staleness threshold for lease stores. */
   Duration DEFAULT_EVICTION = Duration.ofSeconds(30);
 
+  /** Lightweight connectivity check used by the server health contributor. */
+  default void ping() {}
+
+  /** Removes stale entries and returns how many were removed. */
+  default int evictExpired(Duration maxAge) {
+    return 0;
+  }
+
   void register(ServiceInstance instance);
 
   void register(ServiceInstance instance, ServiceHealth health);

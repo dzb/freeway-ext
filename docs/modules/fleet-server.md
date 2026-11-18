@@ -10,7 +10,7 @@ FreewayApp.run(new HttpModule(), new FleetServerModule());
 It is a control plane: it owns the registry surface and a `LeaseStore`
 (default `H2LeaseStore`, embedded H2; `MemLeaseStore` for tests), and it does
 not register itself into the Fleet it serves. Applications depend on
-`freeway-fleet` (client), never on this module.
+`freeway-cloud-fleet` (client), never on this module.
 
 ## Surface
 
@@ -28,13 +28,46 @@ not register itself into the Fleet it serves. Applications depend on
 The server reads `freeway.fleet.token` (writer credential) and
 `freeway.fleet.token-previous` (rotation window) from `FleetKeys`, and
 `freeway.fleet.db.url` / `.user` / `.password` from
-`FleetServerModule.ConfigKeys`.
+`FleetServerModule.ConfigKeys`; runtime lease keys live in
+`FleetServerModule.RuntimeKeys`:
+
+| Key | Meaning |
+|---|---|
+| `freeway.fleet.lease-ttl` | Lease eviction horizon (default `30s`); must exceed the core member heartbeat interval. |
+| `freeway.fleet.eviction-interval` | Periodic cleanup cadence (default `30s`). |
 
 Requests may carry `X-Fleet-Proto`; a newer protocol is refused with `426`
 rather than a misleading `404`. The self-description is open so a client can
 learn the protocol before presenting credentials. `X-Fleet-Token` is checked
 when `freeway.fleet.token` is set; `freeway.fleet.token-previous`
 supports a rotation window.
+
+## Health and metrics
+
+`FleetServerModule` contributes a `CloudHealthContributor` named
+`fleet-server`; its check pings the bound `LeaseStore`. Install `HealthModule`
+(or `CloudModule`) to expose `/health/ready`. A `RuntimeHook` periodically calls
+`LeaseStore.evictExpired`; the server records:
+
+```text
+fleet.server.requests
+fleet.server.register.requests
+fleet.server.renew.requests
+fleet.server.unregister.requests
+fleet.server.ready.requests
+fleet.server.discover.requests
+fleet.server.auth.failures
+fleet.server.protocol.rejects
+fleet.server.request.duration
+fleet.server.eviction
+fleet.server.eviction.failures
+fleet.server.internal.errors
+fleet.server.internal.errors
+```
+
+Install `ObserveModule` (or a replacement `Metrics` binding) to export them.
+The server does not register itself into the Fleet and does not own the
+application member lifecycle.
 
 ## Current maturity
 

@@ -5,6 +5,7 @@ import com.jujin.freeway.cloud.discovery.ServiceInstance;
 import com.jujin.freeway.commons.json.JsonCodec;
 import com.jujin.freeway.commons.json.JsonObject;
 import com.jujin.freeway.commons.json.JsonUtils;
+import com.jujin.freeway.commons.metrics.Metrics;
 import com.jujin.freeway.commons.util.ConstantTime;
 import com.jujin.freeway.fleet.FleetCodec;
 import com.jujin.freeway.fleet.FleetKeys;
@@ -17,6 +18,8 @@ import com.jujin.freeway.ioc.symbol.SymbolSpec;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * The HTTP surface of a Fleet Server.
@@ -27,6 +30,8 @@ import java.util.Objects;
  */
 final class FleetApi implements RouteHandler {
 
+  private static final Logger LOG = LoggerFactory.getLogger(FleetApi.class);
+
   /** The shared secret; the same key a client presents. */
   private static final SymbolSpec<String> TOKEN = SymbolSpec.of(FleetKeys.TOKEN, String.class, "");
 
@@ -35,6 +40,8 @@ final class FleetApi implements RouteHandler {
       SymbolSpec.of(FleetKeys.TOKEN_PREVIOUS, String.class, "");
 
   private final LeaseStore store;
+  private final FleetServerOptions options;
+  private final Metrics metrics;
   private final JsonCodec codec = FleetCodec.JSON;
 
   /**
@@ -43,15 +50,18 @@ final class FleetApi implements RouteHandler {
    */
   private final SymbolSource symbols;
 
-  FleetApi(LeaseStore store, SymbolSource symbols) {
+  FleetApi(LeaseStore store, SymbolSource symbols, FleetServerOptions options, Metrics metrics) {
     this.store = Objects.requireNonNull(store, "store");
     this.symbols = Objects.requireNonNull(symbols, "symbols");
+    this.options = Objects.requireNonNull(options, "options");
+    this.metrics = Objects.requireNonNull(metrics, "metrics");
   }
 
-  /** True when {@code announced} is a protocol this node speaks: older or equal. */
+  /** True when {@code announced} is a non-negative protocol this node speaks: older or equal. */
   private static boolean supports(String announced) {
     try {
-      return Integer.parseInt(announced.trim()) <= FleetProtocol.PROTOCOL;
+      int version = Integer.parseInt(announced.trim());
+      return version >= 0 && version <= FleetProtocol.PROTOCOL;
     } catch (NumberFormatException notANumber) {
       return false;
     }
@@ -59,12 +69,23 @@ final class FleetApi implements RouteHandler {
 
   @Override
   public void handle(HttpExchange ctx) throws IOException {
+    long started = System.nanoTime();
+    try {
+      handleRequest(ctx);
+    } finally {
+      metrics.timer("fleet.server.request.duration").record(System.nanoTime() - started);
+    }
+  }
+
+  private void handleRequest(HttpExchange ctx) throws IOException {
+    metrics.counter("fleet.server.requests").increment();
     // Version first: a client that speaks a newer protocol gets a readable
     // 426 here instead of a 404 on whichever route moved. Older protocols
     // are accepted — the documented promise is "a server keeps accepting
     // older clients", and equality made a proto-0 client a 426.
     String announced = ctx.header(FleetProtocol.PROTOCOL_HEADER).orElse("");
     if (!announced.isEmpty() && !supports(announced)) {
+      metrics.counter("fleet.server.protocol.rejects").increment();
       ctx.setHeader(FleetProtocol.PROTOCOL_HEADER, String.valueOf(FleetProtocol.PROTOCOL));
       ctx.sendJson(
           HttpStatus.UPGRADE_REQUIRED,
@@ -78,6 +99,7 @@ final class FleetApi implements RouteHandler {
     ctx.setHeader(FleetProtocol.PROTOCOL_HEADER, String.valueOf(FleetProtocol.PROTOCOL));
 
     if (!authorized(ctx)) {
+      metrics.counter("fleet.server.auth.failures").increment();
       // A shared-secret check, not an identity system: the node is
       // reachable inside a trusted network, and the token keeps an
       // accidental writer from registering into it.
@@ -89,24 +111,34 @@ final class FleetApi implements RouteHandler {
     String instanceId = ctx.pathVar("instanceId").orElse(null);
     try {
       if ("GET".equalsIgnoreCase(method)) {
+        metrics.counter("fleet.server.discover.requests").increment();
         discover(ctx, serviceId);
       } else if ("DELETE".equalsIgnoreCase(method)) {
+        metrics.counter("fleet.server.unregister.requests").increment();
         unregister(ctx, serviceId, instanceId);
       } else if ("POST".equalsIgnoreCase(method)) {
         if (ctx.path().endsWith("/renew")) {
+          metrics.counter("fleet.server.renew.requests").increment();
           renew(ctx, serviceId, instanceId);
         } else if (ctx.path().endsWith("/ready")) {
+          metrics.counter("fleet.server.ready.requests").increment();
           ready(ctx, serviceId, instanceId);
         } else {
+          metrics.counter("fleet.server.register.requests").increment();
           register(ctx);
         }
       } else {
         ctx.sendText(HttpStatus.METHOD_NOT_ALLOWED, "");
       }
-    } catch (RuntimeException e) {
-      // Advertising a malformed payload must surface as a 400, without leaking
-      // a stack trace that says little in a log.
-      ctx.sendJson(HttpStatus.BAD_REQUEST, Map.of("error", e.getMessage()));
+    } catch (IllegalArgumentException invalid) {
+      // A malformed payload or readiness value is the caller's input error.
+      ctx.sendJson(HttpStatus.BAD_REQUEST, Map.of("error", invalid.getMessage()));
+    } catch (RuntimeException failed) {
+      // Store/connection failures are not client errors. Keep the details in the
+      // server log and expose only a stable message to the caller.
+      metrics.counter("fleet.server.internal.errors").increment();
+      LOG.error("Fleet request failed", failed);
+      ctx.sendJson(HttpStatus.INTERNAL_ERROR, Map.of("error", "fleet server failed"));
     }
   }
 
@@ -127,7 +159,7 @@ final class FleetApi implements RouteHandler {
   }
 
   private void discover(HttpExchange ctx, String serviceId) throws IOException {
-    ctx.sendJson(HttpStatus.OK, store.liveReadyInstances(serviceId, LeaseStore.DEFAULT_EVICTION));
+    ctx.sendJson(HttpStatus.OK, store.liveReadyInstances(serviceId, options.leaseTtl()));
   }
 
   private void register(HttpExchange ctx) throws IOException {
@@ -188,6 +220,15 @@ final class FleetApi implements RouteHandler {
       }
     }
     String query = ctx.queryParam("ready").orElse(null);
-    return query == null ? null : Boolean.valueOf(query);
+    if (query == null) {
+      return null;
+    }
+    if ("true".equalsIgnoreCase(query)) {
+      return true;
+    }
+    if ("false".equalsIgnoreCase(query)) {
+      return false;
+    }
+    throw new IllegalArgumentException("ready must be true or false: " + query);
   }
 }

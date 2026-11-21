@@ -27,7 +27,7 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
-      # The adapters pin 2.0.1. Building core main first (instead of
+      # The adapters pin a core version. Building core main first (instead of
       # resolving whatever snapshot Central holds) makes this job fail on the
       # ABI break it is meant to catch, and keeps the two repositories moving
       # together.

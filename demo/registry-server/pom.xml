@@ -12,7 +12,7 @@
     <properties>
         <!-- Follows the core version; bump this one line with a release.
              Build from the ext repository root; the ext reactor resolves it without an install step. -->
-        <freeway.version>2.0.1-SNAPSHOT</freeway.version>
+        <freeway.version>2.0.2-SNAPSHOT</freeway.version>
         <!-- Demo only: do not publish to Maven Central. -->
         <skipPublishing>true</skipPublishing>
         <maven.deploy.skip>true</maven.deploy.skip>

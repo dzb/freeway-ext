@@ -1,10 +1,10 @@
 ## Freeway Ext
 
-[![Core](https://img.shields.io/badge/core-2.0.1--SNAPSHOT-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![Core](https://img.shields.io/badge/core-2.0.2--SNAPSHOT-blue)](https://github.com/dzb/freeway) [![JDK](https://img.shields.io/badge/JDK-25%2B-orange)](https://jdk.java.net/25/) [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 Adapters and integrations for the [Freeway](https://github.com/dzb/freeway)
 framework, built against the core version pinned in `<freeway.version>`
-(currently `2.0.1-SNAPSHOT`).
+(currently `2.0.2-SNAPSHOT`).
 
 **Latest release: 2.0.0** — [release notes](docs/releases/release-notes-2.0.0.md)
 

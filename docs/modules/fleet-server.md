@@ -5,7 +5,7 @@ as an executable jar and a small distribution with platform launchers, an
 embedded H2 store and a read-only operations dashboard. It does not need to be
 composed into an application module by the operator.
 
-Download or unpack `fleet-2.0.1-SNAPSHOT.zip` and run:
+Download or unpack `fleet-2.0.2-SNAPSHOT.zip` and run:
 
 ```bash
 # Linux / macOS
